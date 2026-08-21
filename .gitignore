@@ -3,6 +3,7 @@ lib/*
 !lib/client.js
 *.tsbuildinfo
 _scratch/
+.worktrees/
 .DS_Store
 Thumbs.db
 desktop.ini
