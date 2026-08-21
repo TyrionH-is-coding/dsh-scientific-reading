@@ -96,11 +96,25 @@ export function registerRoutes(ctx: Context, config: Config): void {
     ctx.effect(() => registerSafe({ kind: 'prefix', path, handler }), 'sr-route:' + path)
   }
 
-  // ── 文献库列表 ──────────────────────────────────────────────────────
+  // ── 文献库列表（富化：每篇并入 job.json 实时状态）────────────────────
   exact('/sr/api/papers', async (_req, res) => {
     const r = await engineList(config)
     if (!r.ok) return sendJson(res, 500, { error: r.stderr || 'list_failed' })
-    sendJson(res, 200, { papers: r.json ?? [] })
+    const papers = (r.json as Array<Record<string, unknown>> | null) ?? []
+    const enriched = []
+    for (const p of papers) {
+      const pid = String(p.paper_id ?? '')
+      const jobRaw = await readOrNull(join(paperRoot(pid), 'job.json'))
+      if (jobRaw) {
+        try {
+          const job = JSON.parse(jobRaw)
+          p.status = job.status ?? p.status
+          p.job_status = job.status ?? null
+        } catch { /* 保留库状态 */ }
+      }
+      enriched.push(p)
+    }
+    sendJson(res, 200, { papers: enriched })
   })
 
   // ── 新建论文（添加文献）─────────────────────────────────────────────

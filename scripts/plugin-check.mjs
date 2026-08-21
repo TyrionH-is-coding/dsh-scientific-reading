@@ -19,16 +19,19 @@ async function walk(dir) {
   return out
 }
 
-// 1) 构建新鲜度：lib/*.js 不得晚于 src/*.ts
-let srcNewest = 0
-let libOldest = Infinity
-for (const f of await walk(join(root, 'src'))) {
-  if (f.endsWith('.ts')) { const s = await stat(f); srcNewest = Math.max(srcNewest, s.mtimeMs) }
+// 1) 构建新鲜度：src/*.ts 与其对应 lib/*.js 一一比较（tsc 只重写变更文件，不能拿全局新旧比）
+const srcFiles = (await walk(join(root, 'src'))).filter((f) => f.endsWith('.ts'))
+for (const f of srcFiles) {
+  const rel = relative(join(root, 'src'), f).replace(/\.ts$/, '.js')
+  const libFile = join(root, 'lib', rel)
+  try {
+    const s = await stat(f)
+    const l = await stat(libFile)
+    if (s.mtimeMs - l.mtimeMs > 2000) failures.push('构建过期: ' + relative(root, f) + ' 比 ' + relative(root, libFile) + ' 新')
+  } catch {
+    failures.push('缺构建产物: ' + rel + '（对应 lib/' + rel + ' 不存在）')
+  }
 }
-for (const f of await walk(join(root, 'lib'))) {
-  if (f.endsWith('.js')) { const s = await stat(f); libOldest = Math.min(libOldest, s.mtimeMs) }
-}
-if (srcNewest > libOldest) failures.push('构建过期：src 比 lib 新（' + relative(root, join(root, 'lib')) + ' 需重新编译）')
 
 // 2) lib 内不得有 .ts 产物
 for (const f of await walk(join(root, 'lib'))) {
