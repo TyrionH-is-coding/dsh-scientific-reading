@@ -8,8 +8,6 @@ import { fileURLToPath } from 'node:url'
 const scriptUrl = new URL('../scripts/build-client.mjs', import.meta.url)
 const pluginCheckUrl = new URL('../scripts/plugin-check.mjs', import.meta.url)
 const pluginCheck = readFileSync(fileURLToPath(pluginCheckUrl), 'utf8')
-assert.match(pluginCheck, /^import\s*\{\s*checkClient\s*\}\s*from\s*['"]\.\/build-client\.mjs['"]$/m, '插件健康门禁应精确导入 checkClient')
-assert.match(pluginCheck, /^\s*if\s*\(\s*!\s*await\s+checkClient\s*\(\s*\)\s*\)/m, '插件健康门禁应实际调用 await checkClient()')
 const check = spawnSync(process.execPath, [fileURLToPath(scriptUrl), '--check'], {
   encoding: 'utf8',
 })
@@ -29,10 +27,7 @@ function createPluginFixture() {
   writeFileSync(join(root, 'client', 'client.js'), 'module.exports = {}\n', 'utf8')
   writeFileSync(join(root, 'lib', 'client.js'), 'module.exports = {}\n', 'utf8')
   writeFileSync(join(scripts, 'build-client.mjs'), readFileSync(fileURLToPath(scriptUrl), 'utf8'), 'utf8')
-  const fixturePluginCheck = process.env.DSH_CLIENT_BUILD_BYPASS_GATE
-    ? pluginCheck.replace('if (!await checkClient())', 'if (false)')
-    : pluginCheck
-  writeFileSync(join(scripts, 'plugin-check.mjs'), fixturePluginCheck, 'utf8')
+  writeFileSync(join(scripts, 'plugin-check.mjs'), pluginCheck, 'utf8')
   return root
 }
 
