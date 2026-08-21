@@ -53,6 +53,10 @@ FEISHU_APP_SECRET=你的AppSecret
 同步时先运行零网络的 `sr_feishu_preview`；仅在核对预览后，针对该篇论文以
 `confirm=true` 调用 `sr_feishu_sync`。
 
+从旧版升级时，如果曾在设置卡片填写过 `feishuAppId` 或 `feishuAppSecret`，请在
+DSH 停止后从 `scientific-reading` 设置分节删除这两个旧键。新版本不会读取它们；
+也不会自动改写用户设置文件。当前配置从未填写过这两个字段时无需处理。
+
 ## 验证
 
 ```powershell

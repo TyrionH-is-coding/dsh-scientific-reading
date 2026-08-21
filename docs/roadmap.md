@@ -57,7 +57,7 @@
 | D4 | 引擎接入方式 = **CLI 子进程包装**（`python -m ...`） | 复用全部引擎逻辑；独立进程 + 磁盘状态，宿主重启不丢 |
 | D5 | scansci-pdf 先走 CLI 包装；未来可切 `dsh-mcp-client` MCP 直连 | 当前安装版无 MCP 客户端装配；MCP 留作后路 |
 | D6 | 学校认证 = scansci-pdf 真实浏览器登录（CARSI/WebVPN/Cookie），密码不经过插件 | 安全底线 |
-| D7 | 飞书 = 自建应用密钥（App ID/Secret，secret 存储，preview + confirm 写） | 个人自建官方标准做法 |
+| D7 | 飞书 = 自建应用密钥（App ID/Secret 仅由 DSH 宿主环境提供，preview + confirm 写） | 避免凭证进入插件设置或配置文件 |
 | D8 | 引擎以 git submodule 锁版本；`sr_setup` 自动建 venv 安装 | 可复现 |
 | D9 | Zotero 旧数据提供一次性迁移工具（Phase 3），默认不启用兼容层 | 平滑过渡 |
 
