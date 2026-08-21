@@ -1,0 +1,314 @@
+import { execFile } from 'node:child_process'
+import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+import type { Config } from './config.js'
+import { resolveOutputDir, scansciDataDir } from './config.js'
+
+// 垫片脚本路径（相对本包，junction 后同样可达）
+const WRAP_REL = '../scripts/scansci_wrap.py'
+
+/**
+ * scansci-pdf CLI 适配器（Phase 0）。
+ * 只做确定性包装：子进程调用 + JSON 解析 + 配置读写；不做任何判断。
+ */
+
+export interface RunResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
+const MAX_BUFFER = 64 * 1024 * 1024
+
+export function runCommand(
+  exe: string,
+  args: string[],
+  opts: { timeoutMs?: number; env?: Record<string, string> } = {},
+): Promise<RunResult> {
+  return new Promise((resolve) => {
+    const child = execFile(
+      exe,
+      args,
+      {
+        encoding: 'utf8',
+        maxBuffer: MAX_BUFFER,
+        windowsHide: true,
+        timeout: opts.timeoutMs ?? 60_000,
+        env: {
+          ...process.env,
+          TERM: 'dumb',
+          NO_COLOR: '1',
+          PYTHONIOENCODING: 'utf-8',
+          ...(opts.env ?? {}),
+        },
+      },
+      (error, stdout, stderr) => {
+        const exitCode = error && typeof (error as { code?: unknown }).code === 'number'
+          ? (error as { code: number }).code
+          : error ? 1 : 0
+        resolve({ exitCode, stdout: stdout ?? '', stderr: stderr ?? '' })
+      },
+    )
+    // 超时由 execFile 的 timeout 处理（SIGTERM）；这里兜底清理
+    child.on('error', () => { /* 已由回调处理 */ })
+  })
+}
+
+/**
+ * 从混合输出里提取第一个可解析的 JSON 对象。
+ * scansci 的 to_json 是 indent=2 的多行结构，rich 控制台还会混入其他行，
+ * 所以按“{ 开头的行 → 花括号配平”提取。
+ */
+export function extractJson(stdout: string): Record<string, unknown> | null {
+  const lines = stdout.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim().startsWith('{')) continue
+    let buf = ''
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let j = i; j < lines.length; j++) {
+      buf += (buf ? '\n' : '') + lines[j]
+      for (const ch of lines[j]) {
+        if (inString) {
+          if (escaped) { escaped = false; continue }
+          if (ch === '\\') { escaped = true; continue }
+          if (ch === '"') inString = false
+          continue
+        }
+        if (ch === '"') { inString = true; continue }
+        if (ch === '{') depth++
+        else if (ch === '}') depth--
+      }
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(buf)
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+        } catch { /* 下一个候选起点 */ }
+        break
+      }
+    }
+  }
+  return null
+}
+
+// ── scansci-pdf 运行入口（fetch 走垫片；其余命令走 exe）────────────
+
+export function wrapScriptPath(): string {
+  return new URL(WRAP_REL, import.meta.url).pathname
+    .replace(/^\/([A-Za-z]:\/)/, '$1') // Windows file URL → 路径
+}
+
+/** 解析装有 scansci-pdf 的 Python：显式配置 → uv tool 环境 → PATH python */
+export async function resolveScansciPython(config: Config): Promise<string | null> {
+  if (config.scansciPython.trim()) {
+    try { await access(config.scansciPython.trim()); return config.scansciPython.trim() } catch { /* fallthrough */ }
+  }
+  const candidates = [
+    join(process.env.APPDATA ?? '', 'uv', 'tools', 'scansci-pdf', 'Scripts', 'python.exe'),
+    join(process.env.USERPROFILE ?? '', '.local', 'share', 'uv', 'tools', 'scansci-pdf', 'Scripts', 'python.exe'),
+  ]
+  for (const c of candidates) {
+    try { await access(c); return c } catch { /* 继续 */ }
+  }
+  return null
+}
+
+/** fetch 类命令用垫片 Python 运行（避免未配置机构时浏览器崩溃），其余走 exe */
+export async function runScansci(
+  exe: string,
+  args: string[],
+  config: Config,
+  opts: { timeoutMs?: number; useWrap?: boolean } = {},
+): Promise<RunResult> {
+  if (opts.useWrap) {
+    const python = await resolveScansciPython(config)
+    const wrap = wrapScriptPath()
+    if (python) {
+      try { await access(wrap); return await runCommand(python, [wrap, ...args], opts) } catch { /* 回退 exe */ }
+    }
+  }
+  return runCommand(exe, args, opts)
+}
+
+// ── scansci-pdf 探活 ──────────────────────────────────────────────
+
+export async function probeScansci(exe: string): Promise<boolean> {
+  const r = await runCommand(exe, ['--help'], { timeoutMs: 15_000 })
+  return r.exitCode === 0
+}
+
+export async function doctorScansci(exe: string): Promise<string> {
+  const r = await runCommand(exe, ['doctor'], { timeoutMs: 30_000 })
+  return r.exitCode === 0 ? r.stdout : (r.stderr || r.stdout).slice(-3000)
+}
+
+// ── 安装 ──────────────────────────────────────────────────────────
+
+export async function installScansci(python: string): Promise<RunResult> {
+  // 优先 uv tool（隔离、官方推荐），失败退回 python -m pip --user
+  const uv = await runCommand('uv', ['tool', 'install', 'scansci-pdf'], { timeoutMs: 10 * 60_000 })
+  if (uv.exitCode === 0) return uv
+  return runCommand(python, ['-m', 'pip', 'install', '--user', 'scansci-pdf'], {
+    timeoutMs: 10 * 60_000,
+  })
+}
+
+// ── 合法来源配置（默认关灰色来源）──────────────────────────────────
+
+export interface LegalConfigState {
+  path: string
+  legalOnly: boolean
+  school: string
+  outputDir: string
+  existed: boolean
+  changed: boolean
+}
+
+export async function readScansciConfig(): Promise<Record<string, unknown>> {
+  const file = join(scansciDataDir(), 'config.json')
+  try {
+    return JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+export async function ensureScansciConfig(config: Config): Promise<LegalConfigState> {
+  const dir = scansciDataDir()
+  const file = join(dir, 'config.json')
+  let existed = true
+  let current: Record<string, unknown>
+  try {
+    current = JSON.parse(await readFile(file, 'utf8'))
+  } catch {
+    existed = false
+    current = {}
+  }
+  const target: Record<string, unknown> = {
+    ...current,
+    // email 缺失时 fetch 会交互询问导致子进程挂起；预置官方默认占位
+    email: typeof current.email === 'string' && current.email
+      ? current.email
+      : 'scansci-pdf@example.invalid',
+    download_strategy: config.legalOnly ? 'legal_only' : 'fastest',
+    scihub_enabled: !config.legalOnly,
+    // 未配学校时禁止自动弹浏览器重新登录（过期 cookie 会让 fetch 以空 URL 崩溃）
+    auto_relogin: config.school.trim() ? true : false,
+  }
+  if (config.school.trim()) {
+    target.vpnsci_school = config.school.trim()
+    target.carsi_enabled = true
+    target.carsi_idp_name = config.school.trim()
+  }
+  const changed = existed
+    ? current.download_strategy !== target.download_strategy ||
+      current.scihub_enabled !== target.scihub_enabled ||
+      current.carsi_idp_name !== target.carsi_idp_name
+    : true
+  if (changed) {
+    await mkdir(dir, { recursive: true })
+    const tmp = file + '.tmp'
+    await writeFile(tmp, JSON.stringify(target, null, 2) + '\n', 'utf8')
+    await rename(tmp, file)
+  }
+  return {
+    path: file,
+    legalOnly: config.legalOnly,
+    school: config.school.trim(),
+    outputDir: resolveOutputDir(config),
+    existed,
+    changed,
+  }
+}
+
+// ── 下载 ──────────────────────────────────────────────────────────
+
+export interface PaperInfo {
+  doi: string
+  title: string
+  authors: string[]
+  journal: string
+  year: number | null
+  source: string
+  url: string
+  pdf_path: string
+}
+
+export interface FetchOutcome {
+  status: string
+  quality: string
+  reason?: string
+  next_action?: { kind: string; message: string; command?: string } | null
+  paper?: PaperInfo
+  raw?: Record<string, unknown>
+}
+
+export async function fetchPaper(
+  exe: string,
+  identifier: string,
+  outputDir: string,
+  config: Config,
+): Promise<FetchOutcome> {
+  await mkdir(outputDir, { recursive: true })
+  // 走垫片：未配置机构时跳过浏览器登录，开放论文也能稳定输出 JSON
+  const r = await runScansci(
+    exe,
+    ['fetch', identifier, '--output', outputDir, '--format', 'json'],
+    config,
+    { timeoutMs: 10 * 60_000, useWrap: true },
+  )
+  const parsed = extractJson(r.stdout)
+  if (!parsed) {
+    return {
+      status: 'cli_error',
+      quality: 'none',
+      reason: r.exitCode !== 0 ? 'scansci_fetch_failed' : 'unparseable_output',
+      raw: { exit_code: r.exitCode, stderr: r.stderr.slice(-2000) },
+    }
+  }
+  const paper = parsed.paper as Record<string, unknown> | undefined
+  const info: PaperInfo | undefined = paper
+    ? {
+        doi: String(paper.doi ?? ''),
+        title: String(paper.title ?? ''),
+        authors: Array.isArray(paper.authors) ? (paper.authors as string[]) : [],
+        journal: String(paper.journal ?? ''),
+        year: typeof paper.year === 'number' ? paper.year : null,
+        source: String(paper.source ?? ''),
+        url: String(paper.url ?? ''),
+        pdf_path: String(paper.pdf_path ?? ''),
+      }
+    : undefined
+  const nextAction = parsed.next_action as { kind: string; message: string; command?: string } | null | undefined
+  return {
+    status: String(parsed.status ?? 'unknown'),
+    quality: String(parsed.quality ?? 'none'),
+    reason: parsed.reason ? String(parsed.reason) : undefined,
+    next_action: nextAction ?? null,
+    paper: info,
+    raw: parsed,
+  }
+}
+
+// ── 机构登录 ──────────────────────────────────────────────────────
+
+export async function loginScansci(
+  exe: string,
+  loginType: string,
+  url?: string,
+): Promise<RunResult> {
+  const args = ['login', '--login-type', loginType]
+  if (url) args.push('--url', url)
+  // 登录要弹浏览器并等用户交互，给足时间
+  return runCommand(exe, args, { timeoutMs: 10 * 60_000 })
+}
+
+export async function setSchoolScansci(exe: string, school: string): Promise<RunResult> {
+  return runCommand(exe, ['setup', '--school', school], { timeoutMs: 60_000 })
+}
+
+export async function defaultDownloadDir(): Promise<string> {
+  return join(homedir(), 'scientific-reading-data', 'downloads')
+}

@@ -1,0 +1,208 @@
+# dsh-scientific-reading 技术路线文档（v0.2 定稿）
+
+> 配套：`docs/design.md`（详细设计，含 CLI 契约、工具目录、gate 协议）。
+> 本文是**执行路线图**：按阶段列出做什么、怎么做、怎么验收。
+> 决策编号（D1…）供后续沟通引用。
+
+---
+
+## 1. 目标与原则
+
+**目标**：把 [Scientific-Reading-for-Newbies](https://github.com/TyrionH-is-coding/Scientific-Reading-for-Newbies)
+的完整文献工作流搬进 DSH，并**摒弃 Zotero Desktop**，让用户一句话完成
+"下载 → 解析 → 入库 → 笔记"，在 DSH 对话栏的【文献】标签页里管理全部文献。
+
+**原则**（全部沿用原项目纪律）：
+1. **包装不重写**：解析/浅读/精读/飞书等引擎逻辑复用，只替换"存储/读回"层；
+2. **确定性引擎 + agent 判断分离**：脚本不做歧义判断，agent 只在 gate 介入；
+3. **合法优先**：默认只走合法来源（arXiv/OA/机构访问），灰色来源留开关（D1）；
+4. **数据边界**：论文/笔记/任务状态全部在仓库外 `dataRoot`，插件不存数据；
+5. **人工底线**：学校账号密码、验证码、MFA 只由用户输入；写飞书必须 preview + confirm。
+
+---
+
+## 2. 最终架构总览
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│ DSH 界面                                                    │
+│  · 对话栏标签：对话 | 轨迹 | 【文献】(conversation.view slot)│
+│  · 文献页三栏：左=分类/标签 · 中=论文表格 · 右=详情/操作      │
+│  · 设置页：插件配置卡片（数据目录/学校/飞书密钥/开关）        │
+├────────────────────────────────────────────────────────────┤
+│ 插件（@dsh-external/dsh-scientific-reading）                │
+│  · client：文献页 React 组件（dsh.client，Phase 2）          │
+│  · host：sr_* 工具 + /sr/* 路由 + 设置 + cli.ts 适配器       │
+│  · 引擎（pip 安装，位于独立 venv）：                        │
+│     - scientific-reading（解析/浅读/精读/飞书/本地库）        │
+│     - scansci-pdf（PDF 下载：OA/机构/CARSI/WebVPN）          │
+├────────────────────────────────────────────────────────────┤
+│ 数据层（`dataRoot`，仓库外）                               │
+│  · library.sqlite     文献库（条目/标签/分类/全文索引）       │
+│  · papers/<id>/       每篇论文全部产物（PDF/解析/笔记/HTML）  │
+│  · jobs/<id>/         后台任务状态（断点续传）               │
+│  · config/            飞书配置、scansci 配置                │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. 关键技术决策
+
+| 编号 | 决策 | 理由 |
+|---|---|---|
+| D1 | scansci-pdf 接入，**默认 `scihub_enabled=false`**（合法来源优先） | 原项目铁律"不绕过付费墙"；灰色来源留开关 |
+| D2 | 文献库用 **SQLite + FTS5**，产物存磁盘文件 | Zotero 同款方案；搜索快；无网络依赖 |
+| D3 | 【文献】= 对话栏**顶级标签页**（`conversation.view`, order: 20） | 已实测轨迹同款机制可行 |
+| D4 | 引擎接入方式 = **CLI 子进程包装**（`python -m ...`） | 复用全部引擎逻辑；独立进程 + 磁盘状态，宿主重启不丢 |
+| D5 | scansci-pdf 先走 CLI 包装；未来可切 `dsh-mcp-client` MCP 直连 | 当前安装版无 MCP 客户端装配；MCP 留作后路 |
+| D6 | 学校认证 = scansci-pdf 真实浏览器登录（CARSI/WebVPN/Cookie），密码不经过插件 | 安全底线 |
+| D7 | 飞书 = 自建应用密钥（App ID/Secret，secret 存储，preview + confirm 写） | 个人自建官方标准做法 |
+| D8 | 引擎以 git submodule 锁版本；`sr_setup` 自动建 venv 安装 | 可复现 |
+| D9 | Zotero 旧数据提供一次性迁移工具（Phase 3），默认不启用兼容层 | 平滑过渡 |
+
+---
+
+## 4. 数据模型草案（SQLite schema）
+
+```sql
+-- 条目（替代 Zotero items）
+CREATE TABLE items (
+  paper_id      TEXT PRIMARY KEY,   -- doi_xxx / pmid_xxx / title_xxx
+  title         TEXT NOT NULL,
+  authors_json  TEXT NOT NULL,      -- ["A","B"]
+  doi           TEXT, pmid TEXT,
+  year          INTEGER, journal TEXT,
+  zotero_key    TEXT,               -- 迁移时保留旧 key
+  status        TEXT NOT NULL,      -- library_ready/pdf_ready/parsed_fast/quick_read_ready/...
+  created_at    TEXT, updated_at TEXT
+);
+-- 附件（PDF）
+CREATE TABLE attachments (
+  paper_id TEXT PRIMARY KEY REFERENCES items(paper_id),
+  rel_path TEXT NOT NULL,           -- papers/<id>/source.pdf
+  sha256   TEXT NOT NULL,
+  size     INTEGER, validated_at TEXT
+);
+-- 标签 / 分类
+CREATE TABLE tags (tag TEXT PRIMARY KEY);
+CREATE TABLE item_tags (paper_id TEXT REFERENCES items(paper_id), tag TEXT REFERENCES tags(tag), PRIMARY KEY(paper_id, tag));
+CREATE TABLE collections (collection_id TEXT PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE collection_items (collection_id TEXT, paper_id TEXT, PRIMARY KEY(collection_id, paper_id));
+-- 全文索引（FTS5，搜 parsed/*/full.md 文本层）
+CREATE VIRTUAL TABLE fulltext USING fts5(paper_id UNINDEXED, content);
+-- 笔记/产物登记（只存路径与状态，内容在磁盘）
+CREATE TABLE artifacts (
+  paper_id TEXT, kind TEXT,          -- quick_read/full_read/parse
+  rel_path TEXT, status TEXT, updated_at TEXT,
+  PRIMARY KEY(paper_id, kind)
+);
+```
+
+---
+
+## 5. 认证方案
+
+### 5.1 学校认证（Phase 0 提供登录工具）
+
+| 方式 | 流程 | 何时用 |
+|---|---|---|
+| CARSI | 出版社页 → 选学校 → 学校统一认证页 → **用户登录** → 回跳 | 支持 CARSI 的高校（主流） |
+| WebVPN | 学校 VPN 门户登录 → 下载走学校出口 | 校内 VPN 场景 |
+| Cookie 提取 | 用户在自己浏览器登录 → 工具保存本地会话 cookie | 其他机构代理 |
+
+插件职责：登录按钮（弹真实浏览器）、学校设置（`--school`）、会话健康检测（已登录/失效）。
+用户职责：选学校、输账号、过验证码/MFA——密码只在浏览器页面内，插件不可见。
+
+### 5.2 飞书（Phase 3）
+
+1. 用户（一次性 5 分钟）：飞书开放平台建自建应用 → 拿 App ID/Secret → 开多维表格权限 → 建表并配置列；
+2. 设置页填 ID/Secret（secret 字段，页面不回显）+ app_token/table_id/字段映射；
+3. 插件：密钥只进子进程 env → 测试连接 → 零网络 preview → `confirm` 后幂等写入 → 读回比对。
+
+---
+
+## 6. 阶段路线图
+
+### Phase 0 —— 下载段（scansci-pdf 接入）★ 当前开始
+
+**任务清单**：
+- [x] T0.1 插件工程骨架（package.json / tsconfig / build.sh / src）
+- [x] T0.2 `config.ts`：dataRoot / python / scansciExe / school / legalOnly 等配置 + 校验
+- [x] T0.3 `cli.ts`：子进程适配器（scansci-pdf 与 scientific-reading 两套 CLI 通用）
+- [x] T0.4 `sr_setup`：检查/安装 scansci-pdf（pip/uv），探活
+- [x] T0.5 `sr_scansci_fetch`：DOI/URL → PDF 落盘 + 元数据 JSON
+- [x] T0.6 `sr_scansci_login`：机构登录（CARSI/WebVPN/Cookie）+ 会话检测
+- [x] T0.7 构建 + 注入 DSH，工具可用（已注入并热重载验证）
+- [x] T0.8 用开放论文实测下载成功（arXiv 10.48550/arXiv.1706.03762，full_text 命中）
+
+**验收**：一篇 arXiv/OA 论文通过对话/工具实际下载到 `dataRoot`；登录工具可打开学校登录页；`sr_status` 显示引擎健康。（下载段已实测通过 ✅；登录工具待用户首次使用验证）
+
+> Phase 0 实测记录（2026-08-21）：发现并修复 scansci-pdf 1.9.0 三个问题——
+> ① 未配置机构时 Step 7 无条件弹浏览器并以空 URL 崩溃；② arXiv 源返回 key 为
+> `file` 而 fetcher 读 `path`，PDF 落盘却永不认领；③ 中文 Windows 控制台 GBK
+> 编码打印 JSON 报 UnicodeEncodeError。全部在插件自带垫片 `scripts/scansci_wrap.py`
+> 内修复（未改扫描器安装），配置学校后走原逻辑。
+
+### Phase 1 —— 文献库核心 + 闭环（替代 Zotero）
+
+**任务清单**：
+- [ ] T1.1 引擎包新增 `library_service`（SQLite：§4 schema + CRUD + 查重 + FTS5）
+- [ ] T1.2 入库/读回改造：`zotero_ready → library_ready`；`pdf_ready` 读回改本地哈希校验
+- [ ] T1.3 工具改造：`sr_init`/查重/写入/PDF 登记 全部走本地库
+- [ ] T1.4 闭环：下载 → 校验 → 解析 → 浅读 → 笔记（原流程，读回改本地）
+- [ ] T1.5 断点恢复演练（重启宿主/热重载全景无损）
+
+**验收**：端到端演练（合成工科 PDF）：入库→下载→解析→浅读笔记 完成；全程零 Zotero。
+
+### Phase 2 —— 文献标签页 UI（模拟 Zotero）
+
+**任务清单**：
+- [ ] T2.1 client 模块（dsh.client + React）注册 `conversation.view`（id: literature, order: 20, label: 文献）
+- [ ] T2.2 三栏布局：左=分类/标签 · 中=论文表格（搜索/排序/状态）· 右=详情/笔记/操作
+- [ ] T2.3 页面动作直调 `sr_*` 工具；"添加文献"（DOI/题名）走下载流水线
+- [ ] T2.4 设置卡片（settings plugin card）；热重载验证
+
+**验收**：对话栏出现【文献】标签；页面内完成 添加→下载→解析→浅读；重启无损；热重载即时生效。
+
+### Phase 3 —— 增强与收尾
+
+- [ ] 飞书 preview/sync（§5.2）
+- [ ] 精读全链路（`reader_full.html` 路由）
+- [ ] Zotero 旧数据一次性迁移工具
+- [ ] 可选：纯确定性部分 TS 移植（早期阶段脱离 Python）
+
+---
+
+## 7. DSH 集成点清单
+
+| 集成点 | 机制 | 阶段 |
+|---|---|---|
+| 工具 | `ctx.tools.register(defineTool(...))`（@deepseek-ai/dsh-tools） | 0 |
+| 设置 | `installSettingsSection(ctx, ns, Config, config, {...})` | 0 |
+| 路由 | `ctx.webServer.register({kind, path, handler})`（/sr/*） | 1 |
+| 标签页 | client 模块 `ctx.slots.inject('conversation.view', ...)` | 2 |
+| 技能 | `skills/scientific-reading/SKILL.md`（会话 agent 操作手册） | 1 |
+| 后台 | 引擎自带 worker 进程 + `jobs/<id>` 磁盘状态（不占用 DSH jobs） | 1 |
+
+---
+
+## 8. 风险与对策
+
+| 风险 | 对策 |
+|---|---|
+| scansci-pdf 灰色来源误开 | 默认 `scihub_enabled=false`；设置页显式开关 + 首次启用提示 |
+| 学校会话失效/IP 漂移 | 会话健康检测工具，明确提示"需重新登录"，不硬闯 |
+| 飞书密钥泄露 | secret 字段只进 env；不进配置/日志/job；写前 preview |
+| Python 环境缺失 | `sr_setup` 一键建 venv 安装；失败降级 `engine: missing` 不崩溃 |
+| 引擎版本漂移 | submodule 锁 commit；升级显式进行 |
+| 精读 token 成本 | 沿用 40 块/64 KiB 分批，提交即落盘可恢复 |
+
+---
+
+## 9. 里程碑检查点
+
+- M0（Phase 0 完）：开放论文实际下载成功；登录工具可用；`sr_status` 健康
+- M1（Phase 1 完）：零 Zotero 闭环（下载→解析→笔记）演练通过；重启无损
+- M2（Phase 2 完）：【文献】标签页三栏可用；页面内完成全流程
+- M3（Phase 3 完）：飞书/精读/迁移可用；文档与测试齐备
