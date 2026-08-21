@@ -22,6 +22,7 @@ import { Config, resolveDataRoot, type Config as PluginConfig } from './config.j
 import { registerTools } from './tools.js'
 import { registerLibraryTools } from './library_tools.js'
 import { registerRoutes } from './routes.js'
+import { registerSettings } from './settings.js'
 
 export const name = '@dsh-external/dsh-scientific-reading'
 export const inject = ['tools', 'webServer']
@@ -29,6 +30,7 @@ export const inject = ['tools', 'webServer']
 export { Config }
 
 export function apply(ctx: Context, config: PluginConfig): void {
+  registerSettings(ctx, config)
   registerTools(ctx, config)
   registerLibraryTools(ctx, config)
   try {

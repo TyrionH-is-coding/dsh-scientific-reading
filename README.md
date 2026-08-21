@@ -36,7 +36,9 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 
 - 宿主路由 `/sr/api/*`：论文列表（含 job 实时状态富化）/详情/新建/下载/挂PDF/解析/浅读/任务/笔记/精读HTML
 - 文献页标签：`conversation.view`（id: literature, order: 20），三栏界面（筛选/表格/详情+操作），纯 DOM 实现
+- 设置卡片：`settings.plugin.item`（key: scientific-reading），设置页【插件】tab 可编辑数据目录/学校/合法来源等
 - 库状态同步：worker 阶段完成后自动更新 SQLite（parsed_fast/quick_read_ready…）
+- client 渲染契约：`__ModuleLoader__.load` id = 包名；组件用 React 元素 + ref 桥接真实 DOM（React 拒绝裸 DOM 节点）
 
 ## 验证
 

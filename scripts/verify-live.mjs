@@ -35,6 +35,20 @@ const clientUrl = '/plugins/@dsh-external/dsh-scientific-reading/client.js'
 const client = await get(clientUrl)
 if (client.status === 200 && client.text.includes('__ModuleLoader__')) {
   console.log('OK  文献页 client 包已服务')
+  // 2b) 注册契约校验（防"bundle 服务但浏览器从未注册"盲区）：
+  //     __ModuleLoader__.load 的 id 必须是包名（不能带 /client 后缀）
+  const loadIdMatch = client.text.match(/__ModuleLoader__\.load\(\{\s*id:\s*['"]([^'"]+)['"]/)
+  if (!loadIdMatch || loadIdMatch[1] !== '@dsh-external/dsh-scientific-reading') {
+    failures.push('client bundle 注册 id 错误（' + (loadIdMatch ? loadIdMatch[1] : '缺失') + '，应为 @dsh-external/dsh-scientific-reading）——浏览器端将报 loaded without registering')
+  } else {
+    console.log('OK  client 注册 id = 包名（浏览器端可注册）')
+  }
+  //     组件必须是 React 元素 + ref 桥接（返回裸 DOM 节点会导致 React 崩 → data-slot-error）
+  if (!client.text.includes("React.createElement('div', { ref:") && !client.text.includes('React.createElement("div", { ref:')) {
+    failures.push('client 组件未用 React.createElement ref 桥接（返回裸 DOM 会被 React 拒绝）')
+  } else {
+    console.log('OK  client 组件为 React 桥接形式（可真实渲染）')
+  }
 } else {
   failures.push('文献页 client 包未服务（' + client.status + '）——需宿主重启/重注入使 dsh.client 生效')
 }

@@ -51,6 +51,7 @@ link_pkg schemastery vendor/schemastery
 link_pkg @deepseek-ai/dsh-tools packages/core/tools
 link_pkg @deepseek-ai/dsh-llm packages/llm/llm
 link_pkg @deepseek-ai/dsh-system-prompt packages/core/system-prompt
+link_pkg @deepseek-ai/dsh-settings packages/core/settings
 # @types/node（编译类型；checkout 自带）
 link_pkg @types/node node_modules/@types/node
 

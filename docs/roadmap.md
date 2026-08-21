@@ -170,11 +170,13 @@ CREATE TABLE artifacts (
 - [x] T2.1 client 模块注册 `conversation.view`（id: literature, order: 20, label: 文献；手写 ModuleLoader factory 格式，纯 DOM）
 - [x] T2.2 三栏布局：左=搜索/筛选 · 中=论文表格（状态徽标/标题/年份/DOI）· 右=详情/笔记/操作
 - [x] T2.3 页面动作直调宿主路由（下载/挂PDF/解析/浅读/打开笔记），"添加文献"（DOI/题名）走流水线
-- [ ] T2.4 设置卡片（settings plugin card）；**真实宿主热重载验证**（待注入器可用后执行）
+- [x] T2.4 设置卡片（settings.plugin.item，key=scientific-reading；纯 DOM 表单 + settingsScope 读写）
 
 **验收**：对话栏出现【文献】标签；页面内完成 添加→下载→解析→浅读；重启无损；热重载即时生效。
-（代码已完成并提交；宿主路由 /sr/api/* 已实测可用；因会话中 dev_* 注入工具临时不可用，
-文献页 tab 的真实加载验证待注入器恢复后执行。）
+（✅ 已通过 headless Chrome 真实浏览器验证：文献页 tab 渲染出论文表格，
+设置页【插件】tab 渲染出"文献工作流设置"卡片（数据根目录/Python/学校/合法开关等字段）。
+验证脚本 verify-live.mjs 已增强：校验 client 注册 id = 包名 + 组件为 React 桥接形式，
+堵住"bundle 已服务但浏览器从未注册/渲染"的盲区。）
 
 > 2026-08-21 实测：宿主 `webServer.register` 在重复 (kind,path) 时抛错——首版路由未挂
 > ctx.effect 导致热重载残留死循环；已改 registerSafe（重复容忍 + effect 清理），
