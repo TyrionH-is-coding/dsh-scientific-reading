@@ -7,8 +7,9 @@
 
 | 项目 | 当前状态 |
 |---|---|
-| DSH 插件仓库 | `dsh-scientific-reading`，实现基线 `1cbf8d2`，分支 `main` |
-| Python 引擎仓库 | `Scientific-Reading-for-Newbies`，基线 `8f57ed6`，分支 `main` |
+| DSH 插件仓库 | `dsh-scientific-reading`，分支 `main`（以当前仓库 HEAD 为准） |
+| Python 引擎仓库 | `Scientific-Reading-for-Newbies`，基线 `b259754`，分支 `main` |
+| 已测试 DSH 宿主 | `@deepseek-ai/dsh@0.1.0-rc.7`；Node 22 |
 | 数据目录 | `%USERPROFILE%\scientific-reading-data`，与两个仓库分离 |
 | 引擎 Python | `%USERPROFILE%\scientific-reading-data\.venv\Scripts\python.exe` |
 | 引擎安装方式 | editable install，当前 import 直接指向相邻 Python 仓库的 `src\scientific_reading` |
@@ -88,25 +89,28 @@ Scientific-Reading-for-Newbies（Python 确定性引擎）
 
 ### 5.1 修改插件
 
-在插件仓库中修改 host `src/*.ts`；client 的唯一源码是 `client/client.js`，修改后必须构建生成 `lib/client.js`：
+在插件仓库中修改 host `src/*.ts`；client 的唯一源码是 `client/client.js`。首次安装或 lockfile 变化后，从空依赖目录执行：
 
 ```powershell
-node "D:\Vibe Coding\_tsc\node_modules\typescript\lib\tsc.js" -p tsconfig.json
-node scripts\build-client.mjs
+npm.cmd ci --ignore-scripts --legacy-peer-deps
+npm.cmd run build:ci
+npm.cmd run test:offline
 ```
 
-本地门禁：
+`test:offline` 包含 client 构建测试、DSH rc.7 兼容检查、workflow 自检、挂载冒烟、
+飞书凭证边界和 plugin-check。`--legacy-peer-deps` 只避免 npm 自动安装完整宿主 peer 图；
+所有插件直接加载的依赖仍由 lockfile 精确固定。
 
-```powershell
-node tests\harness.mjs
-node tests\feishu-env-only.mjs
-node scripts\plugin-check.mjs
-```
+GitHub Actions 只运行可独立复现的 build 与 `test:offline`。`verify-live` 需要真实 DSH，
+restart recovery 需要相邻 Python 引擎，所以保留为本地集成验收；Python 全量 pytest
+由 `Scientific-Reading-for-Newbies/.github/workflows/ci.yml` 独立负责。
 
-随后在 DSH 开发环境执行 `dev_build_plugin`、`dev_inject_plugin` 或 `dev_reload_package`。需要重新装载 client、宿主环境变量或 package 声明时，优先完整重启 DSH，再运行：
+随后在 DSH 开发环境执行 `dev_build_plugin`、`dev_inject_plugin` 或 `dev_reload_package`。
+需要重新装载 client、宿主环境变量或 package 声明时，优先完整重启 DSH，再运行：
 
 ```powershell
 node scripts\verify-live.mjs
+npm.cmd run verify:restart-recovery
 ```
 
 ### 5.2 修改 Python 引擎
@@ -133,7 +137,7 @@ $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 ### 5.3 联调顺序
 
 1. Python 引擎定向测试及全量测试。
-2. TypeScript 构建与三个本地插件门禁。
+2. `npm run build:ci` 与 `npm run test:offline`。
 3. DSH 重载或重启。
 4. `verify-live.mjs` 验证真实路由、client 注册和文献状态。
 5. 涉及飞书时先做 preview；没有本次明确确认，不做 sync。
@@ -145,8 +149,7 @@ $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 client 已纳入正式源码与构建：`client/client.js` 为规范源，生成 `lib/client.js`（已完成）。
 
 1. **做最终表结构下的首次真实飞书写入验收**：只选一篇非敏感测试文献，preview 后取得用户明确确认，再验证 create、重复 sync 的 update/缓存行为及完整读回。当前表仍为 0 条记录，因此这项尚未完成；没有用户针对本次写入的明确确认，不执行 sync。
-2. **补 CI 与版本锁定**：至少自动运行 TypeScript 构建、harness、凭证边界测试、重启恢复行为验收和 Python 全量测试；再明确 DSH 兼容版本。
-3. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
+2. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
 
 ## 7. 已知文档偏差与注意事项
 
@@ -162,6 +165,7 @@ client 已纳入正式源码与构建：`client/client.js` 为规范源，生成
 - 插件挂载：18 个工具、8 条路由，重复挂载测试通过。
 - 飞书凭证：仅继承宿主环境变量测试通过。
 - 插件健康门禁：构建、产物、client 声明和仓库边界通过。
+- 插件 CI：Windows + Node 22 + Python 3.11；DSH rc.7 精确依赖闭包从 lockfile 安装，离线门禁通过。
 - DSH 上线验证：论文列表、详情、client 包、模块注册、React 桥接、库状态全部通过。
 - 重启恢复：父进程退出后由新 CLI 观察到 `running → completed`，SQLite 状态读回为 `restart_probe_ready`；未直接重启当前 DSH。
 - Python 引擎：399 通过、1 跳过。

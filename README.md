@@ -23,12 +23,19 @@
 `node scripts/build-client.mjs`，并以 `node scripts/build-client.mjs --check` 确认产物最新；
 `plugin-check` 也会比较源码和产物，过期时失败。
 
+当前已测试宿主基线为 `@deepseek-ai/dsh@0.1.0-rc.7`，CI 使用 Node 22、Python 3.11
+和 `package-lock.json` 中的精确插件依赖。首次安装或 lockfile 更新后可在空依赖目录复现：
+
 ```powershell
-# 编译（typescript 在隔离目录 D:\Vibe Coding\_tsc）
-node "D:\Vibe Coding\_tsc\node_modules\typescript\lib\tsc.js" -p tsconfig.json
-# 客户端产物
-node scripts\build-client.mjs
-node scripts\build-client.mjs --check
+npm.cmd ci --ignore-scripts --legacy-peer-deps
+npm.cmd run build:ci
+npm.cmd run test:offline
+```
+
+`--legacy-peer-deps` 是有意的：插件 CI 只安装编译与挂载冒烟实际加载的最小闭包，
+其余 peer 由真实 DSH 宿主提供；不会把接近 200 个宿主包复制进插件开发依赖。
+
+```powershell
 # 注入/重载（DSH dev 工具）
 dev_build_plugin / dev_inject_plugin / dev_reload_package
 ```
@@ -69,11 +76,17 @@ DSH 停止后从 `scientific-reading` 设置分节删除这两个旧键。新版
 ## 验证
 
 ```powershell
+node tests\ci-workflow.mjs       # CI 只能执行离线门禁
+node tests\dsh-compat.mjs        # rc.7 兼容契约与安装版本
 node scripts\plugin-check.mjs   # 插件健康门禁（构建/产物/边界）
 node tests\feishu-env-only.mjs  # 飞书凭证仅继承宿主环境
 node tests\harness.mjs          # 挂载冒烟（工具/路由注册 + 重复挂载容忍）
 node scripts\verify-live.mjs    # 上线验证（路由/文献页 client/库状态）
 ```
+
+GitHub Actions 只运行构建与上述离线门禁。`verify-live.mjs` 和
+`verify:restart-recovery` 依赖真实 DSH 或相邻 Python 引擎，继续作为本地集成验收；
+Python 全量测试由引擎仓库自己的 workflow 负责。
 
 ## 路线图
 

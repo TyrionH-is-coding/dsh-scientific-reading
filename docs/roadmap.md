@@ -205,7 +205,12 @@ CREATE TABLE artifacts (
   实测：dry-run 正确返回条目列表/连接拒绝；引擎 389 测试通过。真实迁移需用户本机运行 Zotero。）
 - [ ] 可选：纯确定性部分 TS 移植（早期阶段脱离 Python）
 - [ ] 文献页选型复核：better-sidebar 可装时做小 demo 对比（borrowed-ideas §3.1）
-- [ ] CI 冒烟 + 钉 DSH 版本（borrowed-ideas §4.3）
+- [x] CI 冒烟 + 钉 DSH 版本（borrowed-ideas §4.3）
+
+  （2026-08-21：已固定 `@deepseek-ai/dsh@0.1.0-rc.7` 测试基线、Node 22、
+  Python 3.11 和 npm lockfile；Windows CI 自动执行 TypeScript/client 构建、
+  DSH 兼容检查、挂载冒烟、飞书凭证边界、workflow 自检和 plugin-check。
+  真实 DSH 读回与跨进程恢复继续作为本地集成门禁，不在无状态 CI 中运行。）
 
 ---
 
