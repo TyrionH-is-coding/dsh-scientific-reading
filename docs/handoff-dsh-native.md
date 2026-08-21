@@ -88,10 +88,11 @@ Scientific-Reading-for-Newbies（Python 确定性引擎）
 
 ### 5.1 修改插件
 
-在插件仓库中修改 `src/*.ts`；当前文献页是例外，直接维护 `lib/client.js`。构建 host：
+在插件仓库中修改 host `src/*.ts`；client 的唯一源码是 `client/client.js`，修改后必须构建生成 `lib/client.js`：
 
 ```powershell
 node "D:\Vibe Coding\_tsc\node_modules\typescript\lib\tsc.js" -p tsconfig.json
+node scripts\build-client.mjs
 ```
 
 本地门禁：
@@ -131,18 +132,19 @@ $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 
 按优先级继续：
 
-1. **把 client 纳入正式源码与构建**：目前只有手写 `lib/client.js`，没有对应的 `src/client`；这是继续做原生 UI 前最值得先还的工程债。
-2. **完成重启恢复演练**：在解析或浅读任务运行中重启 DSH，确认独立 worker 继续执行，重启后 `sr_job_status` 和 SQLite 状态能够恢复。
-3. **做最终表结构下的首次真实飞书写入验收**：只选一篇非敏感测试文献，preview 后取得用户明确确认，再验证 create、重复 sync 的 update/缓存行为及完整读回。当前表仍为 0 条记录，因此这项尚未完成。
-4. **补 CI 与版本锁定**：至少自动运行 TypeScript 构建、harness、凭证边界测试和 Python 全量测试；再明确 DSH 兼容版本。
-5. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
+client 已纳入正式源码与构建：`client/client.js` 为规范源，生成 `lib/client.js`（已完成）。
+
+1. **完成重启恢复演练**：在解析或浅读任务运行中重启 DSH，确认独立 worker 继续执行，重启后 `sr_job_status` 和 SQLite 状态能够恢复。
+2. **做最终表结构下的首次真实飞书写入验收**：只选一篇非敏感测试文献，preview 后取得用户明确确认，再验证 create、重复 sync 的 update/缓存行为及完整读回。当前表仍为 0 条记录，因此这项尚未完成。
+3. **补 CI 与版本锁定**：至少自动运行 TypeScript 构建、harness、凭证边界测试和 Python 全量测试；再明确 DSH 兼容版本。
+4. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
 
 ## 7. 已知文档偏差与注意事项
 
 - `README.md`、`docs/features.md`、`docs/roadmap.md` 和部分源码头注释仍残留“Phase 0/下一步”的旧状态描述，不能据此判断功能是否完成。
 - `docs/roadmap.md` 的飞书章节仍有“在设置卡片填 App ID/Secret”的旧文字；当前实现严格使用宿主环境变量。
 - 旧设计提到 git submodule，但当前没有 `.gitmodules`，也没有 vendor 引擎目录。
-- `lib/client.js` 是手写 lazy-CJS bundle；`plugin-check` 能检查它存在和注册契约，但不能检查其源码新鲜度。
+- `client/client.js` 是 lazy-CJS 规范源，`lib/client.js` 为生成产物；`plugin-check` 会比较两者的新鲜度。
 - `legalOnly` 默认必须保持 `true`；机构密码、Cookie、验证码和 MFA 只由用户在可见浏览器中处理。
 - 不要把飞书密钥、表 token、用户本地绝对路径或论文资产提交进仓库。
 

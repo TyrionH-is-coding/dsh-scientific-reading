@@ -47,7 +47,7 @@ if (pkg.dsh?.client) {
   try {
     if (!await checkClient()) failures.push('client/client.js → lib/client.js 构建产物缺失或过期')
   } catch (error) {
-    failures.push('client/client.js → lib/client.js 构建新鲜度检查失败: ' + error.message)
+    failures.push('client/client.js → lib/client.js 构建新鲜度检查失败: ' + (error instanceof Error ? error.message : String(error)))
   }
 }
 
