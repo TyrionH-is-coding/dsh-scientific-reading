@@ -57,7 +57,7 @@
     "check:client": "node scripts/build-client.mjs --check",
     "test:client": "node tests/client-build.mjs",
     "test:compat": "node tests/dsh-compat.mjs",
-    "test:offline": "node tests/client-build.mjs && node tests/dsh-compat.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",
+    "test:offline": "node tests/client-build.mjs && node tests/dsh-compat.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",
     "verify:restart-recovery": "python scripts/verify_restart_recovery.py",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
