@@ -19,9 +19,16 @@
 
 ## 构建与注入
 
+客户端唯一规范源码是 `client/client.js`，不要直接编辑 `lib/client.js`。修改客户端后运行
+`node scripts/build-client.mjs`，并以 `node scripts/build-client.mjs --check` 确认产物最新；
+`plugin-check` 也会比较源码和产物，过期时失败。
+
 ```powershell
 # 编译（typescript 在隔离目录 D:\Vibe Coding\_tsc）
 node "D:\Vibe Coding\_tsc\node_modules\typescript\lib\tsc.js" -p tsconfig.json
+# 客户端产物
+node scripts\build-client.mjs
+node scripts\build-client.mjs --check
 # 注入/重载（DSH dev 工具）
 dev_build_plugin / dev_inject_plugin / dev_reload_package
 ```

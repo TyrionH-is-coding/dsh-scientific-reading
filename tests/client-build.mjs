@@ -6,6 +6,9 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const scriptUrl = new URL('../scripts/build-client.mjs', import.meta.url)
+const pluginCheckUrl = new URL('../scripts/plugin-check.mjs', import.meta.url)
+const pluginCheck = readFileSync(fileURLToPath(pluginCheckUrl), 'utf8')
+assert.match(pluginCheck, /checkClient/, '插件健康门禁应接入客户端构建新鲜度检查')
 const check = spawnSync(process.execPath, [fileURLToPath(scriptUrl), '--check'], {
   encoding: 'utf8',
 })

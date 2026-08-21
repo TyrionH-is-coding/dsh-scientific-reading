@@ -1,6 +1,7 @@
 // scripts/plugin-check.mjs — 插件健康门禁（borrowed-ideas §4.1：dsh-plugin-check 的轻量本地版）
 // 检查：构建新鲜度 / 产物纯净 / 仓库边界 / 客户端声明一致性。node scripts/plugin-check.mjs
 import { readFile, readdir, stat } from 'node:fs/promises'
+import { checkClient } from './build-client.mjs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
@@ -43,6 +44,11 @@ const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
 if (pkg.dsh?.client) {
   if (!pkg.exports?.['./client']) failures.push('dsh.client 声明但 exports 缺 ./client')
   try { await stat(join(root, 'lib', 'client.js')) } catch { failures.push('dsh.client 声明但 lib/client.js 不存在') }
+  try {
+    if (!await checkClient()) failures.push('client/client.js → lib/client.js 构建产物缺失或过期')
+  } catch (error) {
+    failures.push('client/client.js → lib/client.js 构建新鲜度检查失败: ' + error.message)
+  }
 }
 
 // 4) 仓库边界：git 跟踪文件不得含论文资产/密钥/本机用户名路径
