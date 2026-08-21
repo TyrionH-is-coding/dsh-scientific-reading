@@ -22,7 +22,7 @@
 
 - `dshCompatibility.testedHost === "0.1.0-rc.7"`；
 - Node/Python 基线分别为字符串 `22` / `3.11`；
-- `@deepseek-ai/dsh`、`dsh-tools`、`dsh-llm`、`dsh-settings` 的 devDependency 都精确为 `0.1.0-rc.7`；
+- `dsh-tools`、`dsh-llm`、`dsh-scope`、`dsh-session`、`dsh-settings`、`dsh-timeout` 的 devDependency 都精确为 `0.1.0-rc.7`；
 - `@deepseek-ai/cordis` / `schemastery` 与两个 npm alias 精确一致；
 - 安装后从各 package 的 `package.json` 读回同样版本。
 
@@ -55,8 +55,8 @@ Expected: FAIL，原因是 `dshCompatibility` 和精确 devDependency 尚不存�
 Run:
 
 ```powershell
-npm.cmd install --package-lock-only --ignore-scripts
-npm.cmd ci --ignore-scripts
+npm.cmd install --package-lock-only --ignore-scripts --legacy-peer-deps
+npm.cmd ci --ignore-scripts --legacy-peer-deps
 npm.cmd run build:ci
 npm.cmd run test:offline
 ```
@@ -78,7 +78,7 @@ node-version: "22"
 python-version: "3.11"
 ```
 
-依次运行 `npm ci --ignore-scripts`、`npm run build:ci`、`npm run test:offline`。不得运行 live、restart recovery、下载、MinerU 或飞书 sync。
+依次运行 `npm ci --ignore-scripts --legacy-peer-deps`、`npm run build:ci`、`npm run test:offline`。不得运行 live、restart recovery、下载、MinerU 或飞书 sync。
 
 - [ ] **Step 2: 机械检查 workflow**
 
@@ -111,7 +111,7 @@ python-version: "3.11"
 Run:
 
 ```powershell
-npm.cmd ci --ignore-scripts
+npm.cmd ci --ignore-scripts --legacy-peer-deps
 npm.cmd run build:ci
 npm.cmd run test:offline
 npm.cmd run verify:restart-recovery

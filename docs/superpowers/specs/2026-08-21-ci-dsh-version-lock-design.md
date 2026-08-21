@@ -19,7 +19,7 @@
 
 ### 方案 B：精确开发依赖 + lockfile + Windows CI
 
-用 npm 公开包固定已验证的 rc.7 运行接口；为源码中的非 scoped import 使用 npm alias；生成 lockfile；CI 在 Windows 上安装、编译并运行现有离线门禁。
+用 npm 公开包固定插件直接使用的 rc.7 运行接口；为源码中的非 scoped import 使用 npm alias；生成 lockfile；CI 在 Windows 上安装、编译并运行现有离线门禁。
 
 优点是改动小、与真实 Windows 运行环境一致、无需 DSH 源码 checkout。采用此方案。
 
@@ -39,15 +39,17 @@
 }
 ```
 
+`@deepseek-ai/dsh` 完整宿主不进入 devDependency。它的 rc.7 依赖图接近 200 个包，且内部宽 peer 会让 npm 混入 rc.8；CI 只安装插件编译和挂载冒烟实际加载的最小运行闭包，其余 peer 由真实 DSH 宿主提供。因此 npm 安装统一使用 `--legacy-peer-deps`，避免自动扩张宿主 peer 图。
+
 开发依赖使用精确版本：
 
-- `@deepseek-ai/dsh`、`dsh-tools`、`dsh-llm`、`dsh-settings`：`0.1.0-rc.7`；
+- `dsh-tools`、`dsh-llm`、`dsh-scope`、`dsh-session`、`dsh-settings`、`dsh-timeout`：`0.1.0-rc.7`；
 - `@deepseek-ai/cordis`：`4.0.1`；
 - `@deepseek-ai/schemastery`：`3.18.1`；
 - `cordis` 与 `schemastery` 使用 npm alias 指向上述 scoped 包，保持现有源码 import 不变；
 - `@types/node`：`24.13.3`；TypeScript：`5.9.3`。
 
-`package-lock.json` 是唯一依赖解析锁。`tests/dsh-compat.mjs` 读取 package 声明和实际安装的 package metadata，确保宿主与三个直接使用的 DSH 包均为同一 rc.7 基线；版本变化必须显式修改契约、lockfile 和文档。
+`package-lock.json` 是唯一依赖解析锁。`tests/dsh-compat.mjs` 读取 package 声明和实际安装的 package metadata，确保兼容契约仍指向 rc.7，且插件直接加载的 DSH 包均为同一 rc.7 基线；版本变化必须显式修改契约、lockfile 和文档。
 
 这里锁定的是“已测试开发/CI 基线”，不是阻止用户未来试用更新宿主。现有 peer range 暂不收窄，避免把一次 CI 加固变成运行时兼容策略变更。
 
@@ -57,7 +59,7 @@
 
 1. `windows-latest`；
 2. Node 22、Python 3.11；
-3. `npm ci --ignore-scripts`；
+3. `npm ci --ignore-scripts --legacy-peer-deps`；
 4. TypeScript + client 构建；
 5. client build、DSH compatibility、harness、飞书环境变量边界和 plugin-check。
 
@@ -72,7 +74,7 @@ Python 引擎自己的 workflow 继续负责完整 `pytest`。这样两个仓库
 ## 验收
 
 1. 兼容性测试在缺少契约或版本不一致时失败；
-2. `npm ci --ignore-scripts` 能从空 `node_modules` 复现安装；
+2. `npm ci --ignore-scripts --legacy-peer-deps` 能从空 `node_modules` 复现安装；
 3. TypeScript 与 client 构建成功；
 4. 所有离线插件门禁通过，且不访问用户数据或飞书；
 5. workflow 结构检查通过；
