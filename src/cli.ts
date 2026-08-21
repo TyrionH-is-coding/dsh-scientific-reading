@@ -340,7 +340,7 @@ export async function resolveEnginePython(config: Config): Promise<string | null
 export async function runEngine(
   config: Config,
   args: string[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; env?: Record<string, string> } = {},
 ): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
   const python = await resolveEnginePython(config)
   if (!python) {
@@ -355,6 +355,7 @@ export async function runEngine(
   const dataRoot = resolveDataRoot(config)
   const r = await runCommand(python, ['-m', 'scientific_reading', '--data-root', dataRoot, ...args], {
     timeoutMs: opts.timeoutMs ?? 60_000,
+    ...(opts.env ? { env: opts.env } : {}),
   })
   const parsed = extractJson(r.stdout)
   // 0=成功；2=user gate；3=agent gate（协议合法状态，job-status 对 gate 返回非零退出）
@@ -409,6 +410,28 @@ export async function engineQuickRead(config: Config, metadataPath: string, proj
 /** full-read：后台准备按需全文精读（到达 produce_full_read gate 时 agent 提交批次） */
 export async function engineFullRead(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['full-read', '--metadata', metadataPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** feishu-preview：零网络生成飞书多维表格同步预览（需 feishuConfig JSON） */
+export async function engineFeishuPreview(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const cfg = config.feishuConfig.trim()
+  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
+  const r = await runEngine(config, ['feishu-preview', '--metadata', metadataPath, '--config', cfg])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** feishu-sync：显式授权后后台同步飞书多维表格（需 confirm + FEISHU_APP_ID/SECRET env） */
+export async function engineFeishuSync(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const cfg = config.feishuConfig.trim()
+  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
+  const r = await runEngine(config, ['feishu-sync', '--metadata', metadataPath, '--config', cfg, '--confirm-write'], {
+    env: {
+      ...process.env,
+      ...(config.feishuAppId.trim() ? { FEISHU_APP_ID: config.feishuAppId.trim() } : {}),
+      ...(config.feishuAppSecret.trim() ? { FEISHU_APP_SECRET: config.feishuAppSecret.trim() } : {}),
+    },
+  })
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 

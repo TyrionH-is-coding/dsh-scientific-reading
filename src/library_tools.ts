@@ -17,6 +17,8 @@ import {
   engineQuickRead,
   engineJobStatus,
   engineFullRead,
+  engineFeishuPreview,
+  engineFeishuSync,
 } from './cli.js'
 
 type Block = { type: 'text'; text: string }
@@ -366,6 +368,82 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return { ok: true, job_id: String(r.json.job_id ?? ''), detail: String(r.json.status ?? '') }
     },
   })), '@dsh-external/dsh-scientific-reading: sr_full_read')
+
+  // ── sr_feishu_preview：零网络生成飞书同步预览 ───────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_feishu_preview',
+    description: '零网络生成飞书多维表格同步预览（需设置页配置 feishuConfig JSON 路径）。返回预览文件路径与去重键，写库前先预览确认。',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: '论文 ID' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          status: { type: 'string' },
+          path: { type: 'string' },
+          payload_sha256: { type: 'string' },
+          dedupe_keys: { type: 'array' },
+          detail: { type: 'string' },
+        },
+      },
+      render: (_args: unknown, value: unknown) => {
+        const v = value as Record<string, unknown>
+        return v.ok ? text('飞书预览就绪：' + String(v.path)) : text('失败：' + String(v.detail))
+      },
+    },
+    async execute(args: { paper_id: string }) {
+      const r = await engineFeishuPreview(config, resolveMeta(config, args.paper_id))
+      if (!r.ok || !r.json || r.json.error) {
+        return { ok: false, status: '', path: '', payload_sha256: '', dedupe_keys: [], detail: (r.json?.error as string) || r.stderr || '预览失败' }
+      }
+      return {
+        ok: true,
+        status: String(r.json.status ?? ''),
+        path: String(r.json.path ?? ''),
+        payload_sha256: String(r.json.payload_sha256 ?? ''),
+        dedupe_keys: Array.isArray(r.json.dedupe_keys) ? r.json.dedupe_keys : [],
+        detail: 'preview_ready',
+      }
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_feishu_preview')
+
+  // ── sr_feishu_sync：显式授权后同步飞书多维表格 ──────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_feishu_sync',
+    description: '显式授权后后台同步飞书多维表格（需设置页配置 feishuConfig + FEISHU_APP_ID/SECRET）。写库前必须先用 sr_feishu_preview 预览并取得用户确认（confirm=true）。',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: '论文 ID' },
+      confirm: { type: 'boolean', required: true, description: '是否已获得用户对本次飞书写入的确认（必须先预览）' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          job_id: { type: 'string' },
+          detail: { type: 'string', required: true },
+        },
+      },
+      render: (_args: unknown, value: unknown) => {
+        const v = value as Record<string, unknown>
+        return v.ok ? text('飞书同步已排队：' + String(v.job_id)) : text('失败：' + String(v.detail))
+      },
+    },
+    async execute(args: { paper_id: string; confirm: boolean }) {
+      if (!args.confirm) {
+        return { ok: false, job_id: '', detail: 'write_confirmation_required：请先 sr_feishu_preview 预览并取得用户确认' }
+      }
+      const r = await engineFeishuSync(config, resolveMeta(config, args.paper_id))
+      if (!r.ok || !r.json || r.json.error) {
+        return { ok: false, job_id: '', detail: (r.json?.error as string) || r.stderr || '同步失败' }
+      }
+      return { ok: true, job_id: String(r.json.job_id ?? ''), detail: String(r.json.status ?? '') }
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_feishu_sync')
 
   // ── sr_job_status：查询后台任务状态 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({

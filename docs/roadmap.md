@@ -184,7 +184,10 @@ CREATE TABLE artifacts (
 
 ### Phase 3 —— 增强与收尾
 
-- [ ] 飞书 preview/sync（借鉴 dsh-lark 扫码建应用授权模式，borrowed-ideas §3.2）
+- [x] 飞书 preview/sync 插件接入（sr_feishu_preview 零网络预览 + sr_feishu_sync 确认写；设置卡片字段 feishuConfig/App ID/Secret）
+  （2026-08-21 实测：引擎 feishu-preview 对测试论文返回 preview_ready（payload_sha256 + dedupe_keys），
+  设置卡片飞书字段真实渲染；sync 需用户配置 FEISHU_APP_ID/SECRET 与真实 app_token/table_id 后走
+  preview → confirm → sync 全链路。）
 - [x] 精读全链路（sr_full_read 工具 + /sr/api/paper/<id>/full-read 路由 + 文献页精读按钮 + /sr/reader HTML 服务）
   （2026-08-21 实测：full-read 排队成功 → 后台准备 → waiting_agent（mineru_required_for_full_read），
   到达 agent gate 后提交 full-read-submit 批次 → reader_full.html 产出即由 /sr/reader 服务。
