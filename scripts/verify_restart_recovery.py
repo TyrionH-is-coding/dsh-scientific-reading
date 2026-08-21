@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -133,6 +132,7 @@ def write_launch_parent(path: Path) -> None:
         textwrap.dedent(
             f"""
             import json
+            import os
             import sys
             from pathlib import Path
 
@@ -162,7 +162,7 @@ def write_launch_parent(path: Path) -> None:
             print(json.dumps({{
                 "job_id": launched.job_id,
                 "paper_id": item["paper_id"],
-                "launcher_pid": None,
+                "launcher_pid": os.getpid(),
             }}))
             """
         ).lstrip(),
@@ -176,7 +176,13 @@ def terminate_test_worker(data_root: Path, job_id: str) -> str:
         return ""
     status = json.loads(status_path.read_text(encoding="utf-8"))
     pid = status.get("pid")
-    if isinstance(pid, int):
+    if (
+        status.get("job_id") == job_id
+        and status.get("state") == "running"
+        and isinstance(pid, int)
+        and not isinstance(pid, bool)
+        and pid > 0
+    ):
         try:
             os.kill(pid, 0)
         except OSError:
@@ -209,7 +215,7 @@ def verify(python: Path) -> dict[str, object]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(overlay)
         cli_env = os.environ.copy()
-        cli_env.pop("PYTHONPATH", None)
+        cli_env["PYTHONPATH"] = str(real_package.parent)
         parent = subprocess.run(
             [str(python), str(launch_parent), str(data_root)],
             capture_output=True,
