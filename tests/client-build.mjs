@@ -22,6 +22,7 @@ try {
   writeFileSync(sourcePath, source, 'utf8')
 
   assert.equal(normalizeClientSource(source), normalized, 'CRLF 与 CR 应规范为 LF')
+  assert.equal(checkClient({ sourcePath, outputPath }), false, '缺失产物应被识别为过期')
   buildClient({ sourcePath, outputPath })
   assert.equal(readFileSync(outputPath, 'utf8'), normalized, '首次构建应写入规范化内容')
   assert.equal(checkClient({ sourcePath, outputPath }), true, '首次构建后应保持最新')
