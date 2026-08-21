@@ -40,6 +40,7 @@
     "build:client": "node scripts/build-client.mjs",
     "check:client": "node scripts/build-client.mjs --check",
     "test:client": "node tests/client-build.mjs",
+    "verify:restart-recovery": "python scripts/verify_restart_recovery.py",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

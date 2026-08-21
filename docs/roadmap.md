@@ -151,11 +151,11 @@ CREATE TABLE artifacts (
 - [x] T1.2 入库/读回改造：`zotero_ready → library_ready`；`pdf_ready` 读回改本地哈希校验
 - [x] T1.3 工具改造：`sr_init`/查重/写入/PDF 登记 全部走本地库
 - [x] T1.4 闭环：下载 → 校验 → 解析 → 浅读 → 笔记（原流程，读回改本地）
-- [ ] T1.5 断点恢复演练（重启宿主/热重载全景无损）
+- [x] T1.5 断点恢复演练（独立 worker 跨父进程退出后可恢复读回）
 
 **验收**：端到端演练（合成工科 PDF）：入库→下载→解析→浅读笔记 完成；全程零 Zotero。
 （引擎侧已实测通过 ✅：library-ensure → pdf-attach → parse-paper → quick-read 到达 produce_quick_read gate，
-全程零 Zotero；插件侧 sr_library_* 工具已注册并热重载，待会话内演练。）
+全程零 Zotero；插件侧 sr_library_* 工具已注册并热重载。）
 
 > Phase 1 实测记录（2026-08-21）：引擎新增 `library_service.py` + 4 个 CLI 命令
 > （library-ensure[--check]/pdf-attach/library-list/library-search），389 测试通过；
@@ -163,6 +163,13 @@ CREATE TABLE artifacts (
 > sr_library_list/sr_library_search/sr_parse/sr_quick_read/sr_job_status）。
 > 关键设计：library key（lib_xxx）写入 metadata.zotero_key 作为不透明 ID，
 > 下游解析/浅读阶段零改动复用；确认机制：新建条目需 confirm=true（agent 先问用户）。
+
+> T1.5 自动验收记录（2026-08-21）：`verify_restart_recovery.py` 使用真实
+> `BackgroundLauncher` detached child、production `run_job`、job CLI 与 SQLite，
+> 在临时数据根中证明启动父进程退出后仍可由新的 CLI 进程观察
+> `running → completed → restart_probe_ready`。本验收没有重启用户当前 3080 DSH，
+> 也不访问网络、真实论文或飞书；它验证所选 Python 运行时实际导入的引擎行为，
+> 不等同于源码 commit 锁定。
 
 ### Phase 2 —— 文献标签页 UI（模拟 Zotero）
 

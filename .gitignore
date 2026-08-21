@@ -2,6 +2,8 @@
 lib/*
 !lib/client.js
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 _scratch/
 .worktrees/
 .DS_Store

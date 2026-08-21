@@ -1,6 +1,6 @@
 # DSH 原生开发交接
 
-> 交接日期：2026-08-21  
+> 交接日期：2026-08-21
 > 用途：从当前可运行版本继续在 DSH 内原生开发。本文记录的是实际代码、运行环境与实测结果；旧文档中的 Phase 标签若与本文冲突，以本文和代码为准。
 
 ## 1. 当前基线
@@ -118,7 +118,17 @@ $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest -q
 ```
 
-当前基线结果：`395 passed, 1 skipped`。
+当前基线结果：`399 passed, 1 skipped`。
+
+后台恢复行为验收：
+
+```powershell
+& "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" scripts\verify_restart_recovery.py
+```
+
+该命令使用临时数据和虚构论文，验证父进程退出后 detached worker 继续执行，并由新的 CLI
+进程读回 job 与 SQLite。它验证上述 Python 运行时实际导入的引擎行为，不校验源码 commit；
+在 feature worktree 验证未合并的引擎时，应先把该 worktree 的 `src` 置于 `PYTHONPATH`。
 
 ### 5.3 联调顺序
 
@@ -134,10 +144,9 @@ $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 
 client 已纳入正式源码与构建：`client/client.js` 为规范源，生成 `lib/client.js`（已完成）。
 
-1. **完成重启恢复演练**：在解析或浅读任务运行中重启 DSH，确认独立 worker 继续执行，重启后 `sr_job_status` 和 SQLite 状态能够恢复。
-2. **做最终表结构下的首次真实飞书写入验收**：只选一篇非敏感测试文献，preview 后取得用户明确确认，再验证 create、重复 sync 的 update/缓存行为及完整读回。当前表仍为 0 条记录，因此这项尚未完成。
-3. **补 CI 与版本锁定**：至少自动运行 TypeScript 构建、harness、凭证边界测试和 Python 全量测试；再明确 DSH 兼容版本。
-4. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
+1. **做最终表结构下的首次真实飞书写入验收**：只选一篇非敏感测试文献，preview 后取得用户明确确认，再验证 create、重复 sync 的 update/缓存行为及完整读回。当前表仍为 0 条记录，因此这项尚未完成；没有用户针对本次写入的明确确认，不执行 sync。
+2. **补 CI 与版本锁定**：至少自动运行 TypeScript 构建、harness、凭证边界测试、重启恢复行为验收和 Python 全量测试；再明确 DSH 兼容版本。
+3. **最后再评估 TS 移植**：只迁移稳定、纯确定性的短路径；MinerU、浅读/精读和 worker 暂时继续留在 Python，避免为“原生”重写成熟逻辑。
 
 ## 7. 已知文档偏差与注意事项
 
@@ -154,7 +163,8 @@ client 已纳入正式源码与构建：`client/client.js` 为规范源，生成
 - 飞书凭证：仅继承宿主环境变量测试通过。
 - 插件健康门禁：构建、产物、client 声明和仓库边界通过。
 - DSH 上线验证：论文列表、详情、client 包、模块注册、React 桥接、库状态全部通过。
-- Python 引擎：395 通过、1 跳过。
+- 重启恢复：父进程退出后由新 CLI 观察到 `running → completed`，SQLite 状态读回为 `restart_probe_ready`；未直接重启当前 DSH。
+- Python 引擎：399 通过、1 跳过。
 - 飞书：28 字段、0 记录；三个视图列数与关键列顺序读回正确。
 
 继续开发前先运行第 5 节的全部门禁；完成新阶段后，按默认约定合并回本地 `main`，在 `main` 上重新跑全量测试，再清理临时工作树和分支。

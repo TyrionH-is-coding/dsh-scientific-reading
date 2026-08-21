@@ -323,8 +323,16 @@ def verify(python: Path) -> dict[str, object]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--python")
+    parser = argparse.ArgumentParser(
+        description=(
+            "验证所选 Python 运行时实际导入的 scientific_reading 是否支持父进程退出后的任务恢复；"
+            "这是行为验收，不校验源码 commit。"
+        )
+    )
+    parser.add_argument(
+        "--python",
+        help="引擎 Python 的绝对路径；默认依次读取环境变量、用户 venv 和当前 Python",
+    )
     args = parser.parse_args()
     print(json.dumps(verify(resolve_python(args.python)), ensure_ascii=False))
 
