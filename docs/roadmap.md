@@ -167,19 +167,27 @@ CREATE TABLE artifacts (
 ### Phase 2 —— 文献标签页 UI（模拟 Zotero）
 
 **任务清单**：
-- [ ] T2.1 client 模块（dsh.client + React）注册 `conversation.view`（id: literature, order: 20, label: 文献）
-- [ ] T2.2 三栏布局：左=分类/标签 · 中=论文表格（搜索/排序/状态）· 右=详情/笔记/操作
-- [ ] T2.3 页面动作直调 `sr_*` 工具；"添加文献"（DOI/题名）走下载流水线
-- [ ] T2.4 设置卡片（settings plugin card）；热重载验证
+- [x] T2.1 client 模块注册 `conversation.view`（id: literature, order: 20, label: 文献；手写 ModuleLoader factory 格式，纯 DOM）
+- [x] T2.2 三栏布局：左=搜索/筛选 · 中=论文表格（状态徽标/标题/年份/DOI）· 右=详情/笔记/操作
+- [x] T2.3 页面动作直调宿主路由（下载/挂PDF/解析/浅读/打开笔记），"添加文献"（DOI/题名）走流水线
+- [ ] T2.4 设置卡片（settings plugin card）；**真实宿主热重载验证**（待注入器可用后执行）
 
 **验收**：对话栏出现【文献】标签；页面内完成 添加→下载→解析→浅读；重启无损；热重载即时生效。
+（代码已完成并提交；宿主路由 /sr/api/* 已实测可用；因会话中 dev_* 注入工具临时不可用，
+文献页 tab 的真实加载验证待注入器恢复后执行。）
+
+> 2026-08-21 实测：宿主 `webServer.register` 在重复 (kind,path) 时抛错——首版路由未挂
+> ctx.effect 导致热重载残留死循环；已改 registerSafe（重复容忍 + effect 清理），
+> 并补 tests/harness.mjs（挂载冒烟，含重复挂载回归）与 scripts/plugin-check.mjs（健康门禁）。
 
 ### Phase 3 —— 增强与收尾
 
-- [ ] 飞书 preview/sync（§5.2）
+- [ ] 飞书 preview/sync（借鉴 dsh-lark 扫码建应用授权模式，borrowed-ideas §3.2）
 - [ ] 精读全链路（`reader_full.html` 路由）
 - [ ] Zotero 旧数据一次性迁移工具
 - [ ] 可选：纯确定性部分 TS 移植（早期阶段脱离 Python）
+- [ ] 文献页选型复核：better-sidebar 可装时做小 demo 对比（borrowed-ideas §3.1）
+- [ ] CI 冒烟 + 钉 DSH 版本（borrowed-ideas §4.3）
 
 ---
 
