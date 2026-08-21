@@ -414,7 +414,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_feishu_sync：显式授权后同步飞书多维表格 ──────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_feishu_sync',
-    description: '显式授权后后台同步飞书多维表格（需设置页配置 feishuConfig + FEISHU_APP_ID/SECRET）。写库前必须先用 sr_feishu_preview 预览并取得用户确认（confirm=true）。',
+    description: '显式授权后后台同步飞书多维表格（设置页只配 feishuConfig；FEISHU_APP_ID/SECRET 须在启动 DSH 前设为宿主环境变量）。写库前必须先用 sr_feishu_preview 预览并取得用户确认（confirm=true）。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       confirm: { type: 'boolean', required: true, description: '是否已获得用户对本次飞书写入的确认（必须先预览）' },

@@ -27,10 +27,6 @@ export interface Config {
   enginePython: string
   /** 飞书多维表格配置 JSON 路径（feishu-config-v1，含 app_token/table_id/field_map） */
   feishuConfig: string
-  /** 飞书 App ID（子进程 env FEISHU_APP_ID，写多维表格鉴权用） */
-  feishuAppId: string
-  /** 飞书 App Secret（子进程 env FEISHU_APP_SECRET，写多维表格鉴权用） */
-  feishuAppSecret: string
 }
 
 export const Config = z.object({
@@ -44,8 +40,6 @@ export const Config = z.object({
   scansciPython: z.string().default(''),
   enginePython: z.string().default(''),
   feishuConfig: z.string().default(''),
-  feishuAppId: z.string().default(''),
-  feishuAppSecret: z.string().default(''),
 })
 
 export function resolveDataRoot(config: Config): string {

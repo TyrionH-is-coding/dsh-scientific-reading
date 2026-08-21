@@ -40,10 +40,24 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 - 库状态同步：worker 阶段完成后自动更新 SQLite（parsed_fast/quick_read_ready…）
 - client 渲染契约：`__ModuleLoader__.load` id = 包名；组件用 React 元素 + ref 桥接真实 DOM（React 拒绝裸 DOM 节点）
 
+## 飞书凭证
+
+设置卡片只保存仓库外 `feishu-config-v1` JSON 路径。App ID 与 App Secret 不进入
+插件设置或 JSON；请在启动 DSH 的宿主环境中设置后重启 DSH：
+
+```ini
+FEISHU_APP_ID=你的AppID
+FEISHU_APP_SECRET=你的AppSecret
+```
+
+同步时先运行零网络的 `sr_feishu_preview`；仅在核对预览后，针对该篇论文以
+`confirm=true` 调用 `sr_feishu_sync`。
+
 ## 验证
 
 ```powershell
 node scripts\plugin-check.mjs   # 插件健康门禁（构建/产物/边界）
+node tests\feishu-env-only.mjs  # 飞书凭证仅继承宿主环境
 node tests\harness.mjs          # 挂载冒烟（工具/路由注册 + 重复挂载容忍）
 node scripts\verify-live.mjs    # 上线验证（路由/文献页 client/库状态）
 ```

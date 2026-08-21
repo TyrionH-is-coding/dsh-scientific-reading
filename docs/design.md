@@ -272,15 +272,15 @@ dsh-scientific-reading/
 | `venvDir` | string | 否 | 缺省 `<dataRoot>/.venv` |
 | `zoteroBaseUrl` | string | 否 | 缺省 `http://127.0.0.1:23119` |
 | `mineruExe` | string | 否 | 本地 MinerU 3.4.x executable 绝对路径；也可用 env `SCIENTIFIC_READING_MINERU` |
-| `feishuConfig` | object | 否 | appToken/tableId/fieldMap；由插件物化为 `<dataRoot>/config/feishu.json` |
-| `feishuAppId` | string(secret) | 否 | 只进子进程 env `FEISHU_APP_ID` |
-| `feishuAppSecret` | string(secret) | 否 | 只进子进程 env `FEISHU_APP_SECRET` |
+| `feishuConfig` | string | 否 | 仓库外 `feishu-config-v1` JSON 绝对路径，含 appToken/tableId/fieldMap |
 | `browserDownloadDir` | string | 否 | Chrome 下载目录（`browser-download-prepare` 缺省值） |
 
 校验规则（写拒绝而非用时报错）：
 - `dataRoot` 必须绝对路径且不允许是插件包目录；
 - `python` 若为绝对路径必须存在；
-- secret 字段永不进响应、日志、job 文件；只注入子进程 env。
+- 飞书 App ID/Secret 不属于插件设置；只读取 DSH 宿主启动时的
+  `FEISHU_APP_ID`/`FEISHU_APP_SECRET` 环境变量，并由引擎 worker 继承。
+- 飞书凭证永不进入响应、日志、job 文件、预览或 `feishu-config-v1`。
 
 ---
 
