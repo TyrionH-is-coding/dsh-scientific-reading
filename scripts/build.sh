@@ -68,4 +68,5 @@ fi
 
 echo "=== Compiling src → lib ==="
 "$TSC" -p tsconfig.json
+node scripts/build-client.mjs
 echo "=== Build complete ==="

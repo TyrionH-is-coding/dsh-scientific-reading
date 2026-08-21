@@ -37,6 +37,9 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
+    "build:client": "node scripts/build-client.mjs",
+    "check:client": "node scripts/build-client.mjs --check",
+    "test:client": "node tests/client-build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
