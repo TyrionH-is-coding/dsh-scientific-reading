@@ -147,13 +147,22 @@ CREATE TABLE artifacts (
 ### Phase 1 —— 文献库核心 + 闭环（替代 Zotero）
 
 **任务清单**：
-- [ ] T1.1 引擎包新增 `library_service`（SQLite：§4 schema + CRUD + 查重 + FTS5）
-- [ ] T1.2 入库/读回改造：`zotero_ready → library_ready`；`pdf_ready` 读回改本地哈希校验
-- [ ] T1.3 工具改造：`sr_init`/查重/写入/PDF 登记 全部走本地库
-- [ ] T1.4 闭环：下载 → 校验 → 解析 → 浅读 → 笔记（原流程，读回改本地）
+- [x] T1.1 引擎包新增 `library_service`（SQLite：§4 schema + CRUD + 查重 + FTS5）
+- [x] T1.2 入库/读回改造：`zotero_ready → library_ready`；`pdf_ready` 读回改本地哈希校验
+- [x] T1.3 工具改造：`sr_init`/查重/写入/PDF 登记 全部走本地库
+- [x] T1.4 闭环：下载 → 校验 → 解析 → 浅读 → 笔记（原流程，读回改本地）
 - [ ] T1.5 断点恢复演练（重启宿主/热重载全景无损）
 
 **验收**：端到端演练（合成工科 PDF）：入库→下载→解析→浅读笔记 完成；全程零 Zotero。
+（引擎侧已实测通过 ✅：library-ensure → pdf-attach → parse-paper → quick-read 到达 produce_quick_read gate，
+全程零 Zotero；插件侧 sr_library_* 工具已注册并热重载，待会话内演练。）
+
+> Phase 1 实测记录（2026-08-21）：引擎新增 `library_service.py` + 4 个 CLI 命令
+> （library-ensure[--check]/pdf-attach/library-list/library-search），389 测试通过；
+> 插件新增 9 个工具（sr_init/sr_library_check/sr_library_ensure/sr_pdf_attach/
+> sr_library_list/sr_library_search/sr_parse/sr_quick_read/sr_job_status）。
+> 关键设计：library key（lib_xxx）写入 metadata.zotero_key 作为不透明 ID，
+> 下游解析/浅读阶段零改动复用；确认机制：新建条目需 confirm=true（agent 先问用户）。
 
 ### Phase 2 —— 文献标签页 UI（模拟 Zotero）
 

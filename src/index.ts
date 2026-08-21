@@ -18,6 +18,7 @@
 import type { Context } from 'cordis'
 import { Config, type Config as PluginConfig } from './config.js'
 import { registerTools } from './tools.js'
+import { registerLibraryTools } from './library_tools.js'
 
 export const name = '@dsh-external/dsh-scientific-reading'
 export const inject = ['tools']
@@ -26,6 +27,7 @@ export { Config }
 
 export function apply(ctx: Context, config: PluginConfig): void {
   registerTools(ctx, config)
+  registerLibraryTools(ctx, config)
   const root = config.dataRoot || '(默认 ~/scientific-reading-data)'
   ctx.logger?.('scientific-reading 插件已加载（dataRoot: ' + root + '，legalOnly: ' + config.legalOnly + '）')
 }

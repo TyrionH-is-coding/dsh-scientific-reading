@@ -23,6 +23,8 @@ export interface Config {
   loginType: string
   /** 装有 scansci-pdf 的 Python 解释器绝对路径（垫片运行用）。空 = 自动探测 uv 工具环境 */
   scansciPython: string
+  /** 装有 scientific-reading 引擎的 Python 解释器绝对路径。空 = 自动探测（优先复用 scansci 同环境） */
+  enginePython: string
 }
 
 export const Config = z.object({
@@ -34,6 +36,7 @@ export const Config = z.object({
   outputDir: z.string().default(''),
   loginType: z.string().default('carsi'),
   scansciPython: z.string().default(''),
+  enginePython: z.string().default(''),
 })
 
 export function resolveDataRoot(config: Config): string {

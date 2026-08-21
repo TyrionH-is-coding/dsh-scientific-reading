@@ -3,7 +3,7 @@ import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import type { Config } from './config.js'
-import { resolveOutputDir, scansciDataDir } from './config.js'
+import { resolveOutputDir, resolveDataRoot, scansciDataDir } from './config.js'
 
 // 垫片脚本路径（相对本包，junction 后同样可达）
 const WRAP_REL = '../scripts/scansci_wrap.py'
@@ -311,4 +311,100 @@ export async function setSchoolScansci(exe: string, school: string): Promise<Run
 
 export async function defaultDownloadDir(): Promise<string> {
   return join(homedir(), 'scientific-reading-data', 'downloads')
+}
+// ── scientific-reading 引擎适配器（Phase 1：本地文献库）───────────────
+
+/** 解析装有 scientific-reading 引擎的 Python：显式配置 → env → 复用 scansci 环境 */
+export async function resolveEnginePython(config: Config): Promise<string | null> {
+  if (config.enginePython.trim()) {
+    try { await access(config.enginePython.trim()); return config.enginePython.trim() } catch { /* fallthrough */ }
+  }
+  if (process.env.SCIENTIFIC_READING_PYTHON) {
+    try { await access(process.env.SCIENTIFIC_READING_PYTHON); return process.env.SCIENTIFIC_READING_PYTHON } catch { /* fallthrough */ }
+  }
+  const scansci = await resolveScansciPython(config)
+  if (scansci) {
+    const probe = await runCommand(scansci, ['-c', 'import scientific_reading'], { timeoutMs: 15_000 })
+    if (probe.exitCode === 0) return scansci
+  }
+  return null
+}
+
+/** 运行引擎 CLI：python -m scientific_reading --data-root <dataRoot> ... */
+export async function runEngine(
+  config: Config,
+  args: string[],
+  opts: { timeoutMs?: number } = {},
+): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
+  const python = await resolveEnginePython(config)
+  if (!python) {
+    return {
+      ok: false,
+      exitCode: 1,
+      stdout: '',
+      stderr: '未找到 scientific-reading 引擎（请配置 enginePython 或先运行 sr_setup 安装引擎）',
+      json: null,
+    }
+  }
+  const dataRoot = resolveDataRoot(config)
+  const r = await runCommand(python, ['-m', 'scientific_reading', '--data-root', dataRoot, ...args], {
+    timeoutMs: opts.timeoutMs ?? 60_000,
+  })
+  const parsed = extractJson(r.stdout)
+  return { ok: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, json: parsed }
+}
+
+/** library-ensure：写入本地文献库条目（查重+读回） */
+export async function engineEnsureItem(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['library-ensure', '--metadata', metadataPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** pdf-attach：本地 PDF 登记到文献库附件（校验+复制+读回） */
+export async function engineAttachPdf(config: Config, metadataPath: string, pdfPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['pdf-attach', '--metadata', metadataPath, '--pdf', pdfPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** library-list：列出文献库条目 */
+export async function engineList(config: Config): Promise<{ ok: boolean; json: unknown; stderr: string }> {
+  const r = await runEngine(config, ['library-list'])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** library-search：全文搜索 */
+export async function engineSearch(config: Config, query: string): Promise<{ ok: boolean; json: unknown; stderr: string }> {
+  const r = await runEngine(config, ['library-search', '--query', query])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** init：初始化论文工作区 */
+export async function engineInit(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['init', '--metadata', metadataPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** parse-paper：后台快速解析 */
+export async function engineParse(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['parse-paper', '--metadata', metadataPath, '--mode', 'auto'])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** quick-read：后台准备默认中文浅读 */
+export async function engineQuickRead(config: Config, metadataPath: string, projectContext?: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const args = ['quick-read', '--metadata', metadataPath]
+  if (projectContext) args.push('--project-context', projectContext)
+  const r = await runEngine(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** job-status：查询后台任务状态 */
+export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['job-status', '--job-id', jobId])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+/** library-ensure --check：只读查重 */
+export async function engineCheckItem(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['library-ensure', '--metadata', metadataPath, '--check'])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
