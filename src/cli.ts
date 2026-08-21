@@ -406,6 +406,12 @@ export async function engineQuickRead(config: Config, metadataPath: string, proj
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
+/** full-read：后台准备按需全文精读（到达 produce_full_read gate 时 agent 提交批次） */
+export async function engineFullRead(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await runEngine(config, ['full-read', '--metadata', metadataPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
 /** job-status：查询后台任务状态 */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])

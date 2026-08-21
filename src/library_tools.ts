@@ -16,6 +16,7 @@ import {
   engineParse,
   engineQuickRead,
   engineJobStatus,
+  engineFullRead,
 } from './cli.js'
 
 type Block = { type: 'text'; text: string }
@@ -334,6 +335,37 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return { ok: true, job_id: String(r.json.job_id ?? ''), detail: String(r.json.status ?? '') }
     },
   })), '@dsh-external/dsh-scientific-reading: sr_quick_read')
+
+  // ── sr_full_read：后台准备按需全文精读 ─────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_full_read',
+    description: '把已解析的论文排入后台全文精读任务。到达 produce_full_read gate 时，agent 需读取 gate 列出的本地文件并提交 full-read-v1 提案（含翻译与复核）。',
+    parameters: {
+      paper_id: { type: 'string', required: true, description: '论文 ID' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          job_id: { type: 'string' },
+          detail: { type: 'string', required: true },
+        },
+      },
+      render: (_args: unknown, value: unknown) => {
+        const v = value as Record<string, unknown>
+        return v.ok ? text('精读任务已排队：' + String(v.job_id)) : text('失败：' + String(v.detail))
+      },
+    },
+    async execute(args: { paper_id: string }) {
+      const r = await engineFullRead(config, resolveMeta(config, args.paper_id))
+      if (!r.ok || !r.json) {
+        return { ok: false, job_id: '', detail: r.stderr || '排队失败' }
+      }
+      return { ok: true, job_id: String(r.json.job_id ?? ''), detail: String(r.json.status ?? '') }
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_full_read')
 
   // ── sr_job_status：查询后台任务状态 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({

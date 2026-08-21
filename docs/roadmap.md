@@ -185,7 +185,10 @@ CREATE TABLE artifacts (
 ### Phase 3 —— 增强与收尾
 
 - [ ] 飞书 preview/sync（借鉴 dsh-lark 扫码建应用授权模式，borrowed-ideas §3.2）
-- [ ] 精读全链路（`reader_full.html` 路由）
+- [x] 精读全链路（sr_full_read 工具 + /sr/api/paper/<id>/full-read 路由 + 文献页精读按钮 + /sr/reader HTML 服务）
+  （2026-08-21 实测：full-read 排队成功 → 后台准备 → waiting_agent（mineru_required_for_full_read），
+  到达 agent gate 后提交 full-read-submit 批次 → reader_full.html 产出即由 /sr/reader 服务。
+  同时修复历史遗留：job 状态路由原为 exact（/sr/api/job/<id> 永不命中），改 exact+prefix 双注册。）
 - [ ] Zotero 旧数据一次性迁移工具
 - [ ] 可选：纯确定性部分 TS 移植（早期阶段脱离 Python）
 - [ ] 文献页选型复核：better-sidebar 可装时做小 demo 对比（borrowed-ideas §3.1）

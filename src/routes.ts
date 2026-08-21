@@ -27,6 +27,7 @@ import {
   engineAttachPdf,
   engineCheckItem,
   engineInit,
+  engineFullRead,
   fetchPaper,
 } from './cli.js'
 
@@ -215,6 +216,12 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
+      if (req.method === 'POST' && action === 'full-read') {
+        const r = await engineFullRead(config, metaPath)
+        sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'full_read_failed' })
+        return
+      }
+
       sendJson(res, 404, { error: 'not_found' })
     } catch (e) {
       sendJson(res, 500, { error: (e as Error).message })
@@ -222,8 +229,12 @@ export function registerRoutes(ctx: Context, config: Config): void {
   })
 
   // ── 任务状态 ────────────────────────────────────────────────────────
+  // exact 兜底：无 job id 时 404；真正匹配走 prefix（/sr/api/job/<id>）
   exact('/sr/api/job', async (req, res) => {
-    const id = decodeURIComponent((req.url ?? '').slice('/sr/api/job'.length))
+    sendJson(res, 404, { error: 'bad_job_id' })
+  })
+  prefix('/sr/api/job', async (req, res) => {
+    const id = decodeURIComponent((req.url ?? '').slice('/sr/api/job'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!JOB_ID_RE.test(id)) return sendJson(res, 404, { error: 'bad_job_id' })
     const r = await engineJobStatus(config, id)
     sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'job_failed' })

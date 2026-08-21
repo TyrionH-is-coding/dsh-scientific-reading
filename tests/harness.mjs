@@ -50,7 +50,7 @@ const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_sca
 for (const t of expectedTools) {
   if (!tools.some((x) => x === 'tool:' + t)) failures.push('缺工具: ' + t)
 }
-const expectedRoutes = ['route:exact:/sr/api/papers','route:exact:/sr/api/paper','route:prefix:/sr/api/paper','route:exact:/sr/api/job','route:prefix:/sr/reading','route:prefix:/sr/reader','route:exact:/sr']
+const expectedRoutes = ['route:exact:/sr/api/papers','route:exact:/sr/api/paper','route:prefix:/sr/api/paper','route:exact:/sr/api/job','route:prefix:/sr/api/job','route:prefix:/sr/reading','route:prefix:/sr/reader','route:exact:/sr']
 for (const r of expectedRoutes) {
   if (!routes.includes(r)) failures.push('缺路由: ' + r)
 }
