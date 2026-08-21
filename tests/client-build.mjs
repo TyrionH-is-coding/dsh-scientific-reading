@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 const scriptUrl = new URL('../scripts/build-client.mjs', import.meta.url)
 const pluginCheckUrl = new URL('../scripts/plugin-check.mjs', import.meta.url)
 const pluginCheck = readFileSync(fileURLToPath(pluginCheckUrl), 'utf8')
-assert.match(pluginCheck, /checkClient/, '插件健康门禁应接入客户端构建新鲜度检查')
+assert.match(pluginCheck, /^import\s*\{\s*checkClient\s*\}\s*from\s*['"]\.\/build-client\.mjs['"]$/m, '插件健康门禁应精确导入 checkClient')
+assert.match(pluginCheck, /^\s*if\s*\(\s*!\s*await\s+checkClient\s*\(\s*\)\s*\)/m, '插件健康门禁应实际调用 await checkClient()')
 const check = spawnSync(process.execPath, [fileURLToPath(scriptUrl), '--check'], {
   encoding: 'utf8',
 })
