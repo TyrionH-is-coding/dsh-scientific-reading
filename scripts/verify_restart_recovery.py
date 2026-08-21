@@ -170,6 +170,41 @@ def write_launch_parent(path: Path) -> None:
     )
 
 
+def worker_command_matches(pid: int, job_id: str, data_root: Path) -> bool:
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Get-CimInstance Win32_Process "
+                    f"-Filter 'ProcessId = {pid}' | "
+                    "Select-Object -ExpandProperty CommandLine",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=2,
+                check=False,
+            )
+            if result.returncode:
+                return False
+            command_line = result.stdout
+        else:
+            command_line = (Path("/proc") / str(pid) / "cmdline").read_bytes().decode(
+                "utf-8", errors="replace"
+            )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return (
+        "scientific_reading.worker" in command_line
+        and command_line.count(job_id) == 1
+        and str(data_root) in command_line
+    )
+
+
 def terminate_test_worker(data_root: Path, job_id: str) -> str:
     status_path = data_root / "jobs" / job_id / "status.json"
     if not status_path.is_file():
@@ -182,6 +217,7 @@ def terminate_test_worker(data_root: Path, job_id: str) -> str:
         and isinstance(pid, int)
         and not isinstance(pid, bool)
         and pid > 0
+        and worker_command_matches(pid, job_id, data_root)
     ):
         try:
             os.kill(pid, 0)
