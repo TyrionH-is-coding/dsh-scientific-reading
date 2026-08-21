@@ -192,7 +192,10 @@ CREATE TABLE artifacts (
   （2026-08-21 实测：full-read 排队成功 → 后台准备 → waiting_agent（mineru_required_for_full_read），
   到达 agent gate 后提交 full-read-submit 批次 → reader_full.html 产出即由 /sr/reader 服务。
   同时修复历史遗留：job 状态路由原为 exact（/sr/api/job/<id> 永不命中），改 exact+prefix 双注册。）
-- [ ] Zotero 旧数据一次性迁移工具
+- [x] Zotero 旧数据一次性迁移工具（引擎 zotero-migrate 命令 + 插件 sr_zotero_migrate 工具）
+  （引擎：读 Zotero Desktop 本地 API 条目列表 → 批量 LibraryService.ensure_item 写入本地库，
+  保留 zotero_key 不透明 ID（D9），--dry-run 只列不写；Zotero 未运行优雅报 zotero_unreachable。
+  实测：dry-run 正确返回条目列表/连接拒绝；引擎 389 测试通过。真实迁移需用户本机运行 Zotero。）
 - [ ] 可选：纯确定性部分 TS 移植（早期阶段脱离 Python）
 - [ ] 文献页选型复核：better-sidebar 可装时做小 demo 对比（borrowed-ideas §3.1）
 - [ ] CI 冒烟 + 钉 DSH 版本（borrowed-ideas §4.3）

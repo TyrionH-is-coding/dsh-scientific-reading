@@ -435,6 +435,13 @@ export async function engineFeishuSync(config: Config, metadataPath: string): Pr
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
+/** zotero-migrate：一次性迁移（读 Zotero Desktop 列表 → 批量本地入库）。dryRun 时只列条目。 */
+export async function engineZoteroMigrate(config: Config, dryRun: boolean): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const args = dryRun ? ['zotero-migrate', '--dry-run'] : ['zotero-migrate']
+  const r = await runEngine(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
 /** job-status：查询后台任务状态 */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])
