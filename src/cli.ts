@@ -421,7 +421,9 @@ export async function engineFeishuPreview(config: Config, metadataPath: string):
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
-/** feishu-sync：显式授权后后台同步飞书多维表格（需 confirm + FEISHU_APP_ID/SECRET env） */
+/** feishu-sync：显式授权后后台同步飞书多维表格。
+ * 注意：sync 由独立 worker 进程执行（继承宿主环境变量），FEISHU_APP_ID/SECRET
+ * 必须在宿主环境设置（或由引擎 launcher 注入），插件设置字段不直达 worker。 */
 export async function engineFeishuSync(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const cfg = config.feishuConfig.trim()
   if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
