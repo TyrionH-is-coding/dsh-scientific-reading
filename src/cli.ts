@@ -61,9 +61,15 @@ export function runCommand(
  * 所以按“{ 开头的行 → 花括号配平”提取。
  */
 export function extractJson(stdout: string): Record<string, unknown> | null {
+  return extractJsonValue(stdout) as Record<string, unknown> | null
+}
+
+/** 通用 JSON 提取：对象或数组（library-list/search 输出 JSON 数组） */
+export function extractJsonValue(stdout: string): unknown {
   const lines = stdout.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trim().startsWith('{')) continue
+    const first = lines[i].trim().charAt(0)
+    if (first !== '{' && first !== '[') continue
     let buf = ''
     let depth = 0
     let inString = false
@@ -78,13 +84,13 @@ export function extractJson(stdout: string): Record<string, unknown> | null {
           continue
         }
         if (ch === '"') { inString = true; continue }
-        if (ch === '{') depth++
-        else if (ch === '}') depth--
+        if (ch === '{' || ch === '[') depth++
+        else if (ch === '}' || ch === ']') depth--
       }
       if (depth === 0) {
         try {
           const parsed = JSON.parse(buf)
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+          if (parsed !== null && typeof parsed === 'object') return parsed
         } catch { /* 下一个候选起点 */ }
         break
       }
@@ -351,7 +357,9 @@ export async function runEngine(
     timeoutMs: opts.timeoutMs ?? 60_000,
   })
   const parsed = extractJson(r.stdout)
-  return { ok: r.exitCode === 0, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, json: parsed }
+  // 0=成功；2=user gate；3=agent gate（协议合法状态，job-status 对 gate 返回非零退出）
+  const gateOk = r.exitCode === 0 || r.exitCode === 2 || r.exitCode === 3
+  return { ok: gateOk, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, json: parsed }
 }
 
 /** library-ensure：写入本地文献库条目（查重+读回） */

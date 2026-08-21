@@ -120,11 +120,12 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       if (!r.ok || !r.json) {
         return { ok: false, dedupe: 'error', library_key: '', candidate_keys: [], detail: r.stderr || '查重失败' }
       }
+      const d = (r.json.detail ?? {}) as Record<string, unknown>
       return {
         ok: true,
-        dedupe: String(r.json.dedupe ?? 'none'),
-        library_key: r.json.library_key ? String(r.json.library_key) : '',
-        candidate_keys: Array.isArray(r.json.candidate_keys) ? (r.json.candidate_keys as string[]) : [],
+        dedupe: String(d.dedupe ?? r.json.dedupe ?? 'none'),
+        library_key: String(d.library_key ?? ''),
+        candidate_keys: Array.isArray(d.candidate_keys) ? (d.candidate_keys as string[]) : [],
         detail: '',
       }
     },
@@ -180,7 +181,8 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       if (String(r.json.dedupe) === 'ambiguous') {
         return { ok: false, status: 'ambiguous_reference', dedupe: 'ambiguous', gate: 'agent', reason_code: 'ambiguous_reference', library_key: '', candidate_keys: Array.isArray(r.json.candidate_keys) ? (r.json.candidate_keys as string[]) : [], detail: '' }
       }
-      return { ok: true, status: String(r.json.status ?? 'library_ready'), dedupe: String(r.json.dedupe ?? ''), gate: '', reason_code: '', library_key: String(r.json.library_key ?? ''), candidate_keys: [], detail: '' }
+      const d2 = (r.json.detail ?? {}) as Record<string, unknown>
+      return { ok: true, status: String(r.json.status ?? 'library_ready'), dedupe: String(d2.dedupe ?? ''), gate: '', reason_code: '', library_key: String(d2.library_key ?? ''), candidate_keys: [], detail: '' }
     },
   })), '@dsh-external/dsh-scientific-reading: sr_library_ensure')
 
