@@ -3,6 +3,8 @@
 文献工作流插件（Phase 0：下载段已可用）。把 Scientific-Reading-for-Newbies 的
 完整文献流水线搬进 DSH：下载 → 解析 → 入库 → 笔记。
 
+继续在 DSH 内原生开发前，请先阅读 [`docs/handoff-dsh-native.md`](docs/handoff-dsh-native.md)；该文档记录当前实际基线、验证命令、飞书最终结构和已知旧文档偏差。
+
 ## 当前状态（Phase 0）
 
 已注入 DSH 并热重载验证，工具：
