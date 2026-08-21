@@ -1,29 +1,32 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const workflowPath = fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url))
+const root = fileURLToPath(new URL('..', import.meta.url))
+const workflowPath = join(root, '.github', 'workflows', 'ci.yml')
 assert.equal(existsSync(workflowPath), true, '缺少 CI workflow')
 
 const workflow = readFileSync(workflowPath, 'utf8')
+const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 assert.match(workflow, /^on:\s*\r?\n\s+push:\s*\r?\n\s+pull_request:/m, 'workflow 必须覆盖 push 与 pull request')
 assert.match(workflow, /runs-on:\s*windows-latest/, 'workflow 必须使用 windows-latest')
-assert.match(workflow, /uses:\s*actions\/setup-node@v4[\s\S]*?node-version:\s*["']22["']/, 'workflow 必须配置 Node 22')
-assert.match(workflow, /uses:\s*actions\/setup-python@v5[\s\S]*?python-version:\s*["']3\.11["']/, 'workflow 必须配置 Python 3.11')
-assert.match(workflow, /npm ci --ignore-scripts --legacy-peer-deps/, 'workflow 必须执行可复现安装')
-assert.match(workflow, /npm run build:ci/, 'workflow 必须执行 CI 构建')
-assert.match(workflow, /npm run test:offline/, 'workflow 必须执行离线门禁')
 
-for (const forbidden of [
-  'verify-live',
-  'restart-recovery',
-  'scansci',
-  'mineru',
-  'feishu_sync',
-  'sr_feishu_sync',
-]) {
-  assert.doesNotMatch(workflow, new RegExp(forbidden, 'i'), `workflow 不得运行 ${forbidden}`)
-}
+const uses = [...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)\s*$/gm)].map((match) => match[1])
+const runs = [...workflow.matchAll(/^\s*(?:-\s*)?run:\s*(.+?)\s*$/gm)].map((match) => match[1])
+
+assert.deepEqual(uses, [
+  'actions/checkout@v4',
+  'actions/setup-node@v4',
+  'actions/setup-python@v5',
+], 'workflow 只能使用允许的 actions')
+assert.deepEqual(runs, [
+  'npm ci --ignore-scripts --legacy-peer-deps',
+  'npm run build:ci',
+  'npm run test:offline',
+], 'workflow 只能执行离线命令')
+assert.equal(manifest.scripts?.['build:ci'], 'tsc -p tsconfig.json && node scripts/build-client.mjs')
+assert.equal(manifest.scripts?.['test:offline'], 'node tests/client-build.mjs && node tests/dsh-compat.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs')
 
 console.log('PASS: CI workflow 仅执行离线门禁')
