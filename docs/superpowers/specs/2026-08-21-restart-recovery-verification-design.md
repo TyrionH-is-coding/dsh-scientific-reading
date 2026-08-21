@@ -77,4 +77,3 @@ overlay 只替换 `scientific_reading.worker` 入口；其 `__path__` 继续指�
 5. 引擎全量 pytest 通过。
 6. 插件的 restart recovery、client build、harness、飞书凭证边界、plugin-check 和 verify-live 全部通过。
 7. 最终报告必须区分：已完成“真实 OS 进程边界自动演练”；未直接杀掉用户当前的真实 DSH 进程。
-
