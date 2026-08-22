@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+
+const root = fileURLToPath(new URL('..', import.meta.url))
+const fixture = mkdtempSync(join(tmpdir(), 'sr-profile-fixture-'))
+const fakeDsh = join(fixture, 'fake-dsh.mjs')
+const capturePath = join(fixture, 'capture.json')
+
+writeFileSync(capturePath, '{}', 'utf8')
+writeFileSync(fakeDsh, `
+import { existsSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve, sep } from 'node:path'
+
+const args = process.argv.slice(2)
+if (args.length === 1 && args[0] === '--version') {
+  console.log('0.1.0-rc.7')
+  process.exit(0)
+}
+
+if (args[0] === 'plugin') {
+  const expected = ['plugin', '--profile', 'sr-scientific-reading-verify', 'add']
+  const expectedEnd = ['--offline', '--ignore-scripts']
+  if (args.length !== 7 || !expected.every((value, index) => args[index] === value) ||
+      !existsSync(args[4]) || !expectedEnd.every((value, index) => args[index + 5] === value) ||
+      !process.env.DSH_HOME || !process.env.DSH_HOME.startsWith(resolve(tmpdir()) + sep)) {
+    process.exit(8)
+  }
+  writeFileSync(process.env.FAKE_DSH_CAPTURE, JSON.stringify({
+    dshHome: process.env.DSH_HOME,
+    secretPresent: Boolean(process.env.FEISHU_APP_ID || process.env.FEISHU_APP_SECRET),
+  }))
+  process.exit(0)
+}
+
+if (args.length === 3 && args[0] === '--profile' && args[1] === 'sr-scientific-reading-verify' && args[2] === '--dump-config') {
+  const row = '  - id: scientific-reading\\n    name: @dsh-external/dsh-scientific-reading'
+  if (process.env.FAKE_DSH_MODE === 'success') console.log(row)
+  if (process.env.FAKE_DSH_MODE === 'zero') console.log('[]')
+  if (process.env.FAKE_DSH_MODE === 'multi') console.log(row + '\\n' + row)
+  process.exit(0)
+}
+
+process.exit(9)
+`, 'utf8')
+
+function run(mode) {
+  return spawnSync(process.execPath, [join(root, 'scripts', 'verify-profile-bundle.mjs'), '--dsh-bin', fakeDsh], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      FAKE_DSH_MODE: mode,
+      FAKE_DSH_CAPTURE: capturePath,
+      FEISHU_APP_ID: 'must-not-leak',
+      FEISHU_APP_SECRET: 'must-not-leak',
+    },
+  })
+}
+
+try {
+  const success = run('success')
+  assert.equal(success.status, 0, success.stderr)
+  assert.match(success.stdout, /profile_bundle_verified/)
+  const capture = JSON.parse(readFileSync(capturePath, 'utf8'))
+  assert.equal(capture.secretPresent, false)
+  assert.equal(existsSync(capture.dshHome), false)
+
+  const zero = run('zero')
+  assert.notEqual(zero.status, 0)
+  assert.match(zero.stderr, /profile_bundle_row_count_0/)
+
+  const multi = run('multi')
+  assert.notEqual(multi.status, 0)
+  assert.match(multi.stderr, /profile_bundle_row_count_2/)
+
+  console.log('PASS: Profile Bundle 隔离激活验证器')
+} finally {
+  rmSync(fixture, { recursive: true, force: true })
+}
