@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -18,9 +18,8 @@ function run(label, command, args, env) {
     cwd: root,
     encoding: 'utf8',
     env,
-    shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(command),
   })
-  if (result.error) throw new Error(`${label}_failed`)
+  if (result.error) throw new Error(`${label}_failed error=${tail(result.error.message)}`)
   if (result.status !== 0) {
     throw new Error(`${label}_failed exit=${result.status} stdout=${tail(result.stdout)} stderr=${tail(result.stderr)}`)
   }
@@ -31,18 +30,25 @@ function parseDshBin(args) {
   if (args.length !== 2 || args[0] !== '--dsh-bin' || !isAbsolute(args[1]) || !existsSync(args[1]) || !statSync(args[1]).isFile()) {
     throw new Error('dsh_bin_absolute_existing_file_required')
   }
+  if (/\.(cmd|bat)$/i.test(args[1])) throw new Error('dsh_bin_shell_wrapper_not_supported')
   return args[1]
 }
 
 function countProfileRows(config) {
+  const scalar = (value) => {
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return `(?:${escaped}|'${escaped}'|"${escaped}")`
+  }
+  const idLine = new RegExp(`^\\s*-\\s+id:\\s*${scalar(rowId)}\\s*$`)
+  const nameLine = new RegExp(`^\\s+name:\\s*${scalar(packageName)}\\s*$`)
   const blocks = []
   for (const line of config.split(/\r?\n/)) {
     if (/^\s*-\s+/.test(line)) blocks.push([])
     if (blocks.length > 0) blocks.at(-1).push(line)
   }
   return blocks.filter((block) =>
-    block.some((line) => /^\s*-\s+id:\s*scientific-reading\s*$/.test(line)) &&
-    block.some((line) => /^\s+name:\s*@dsh-external\/dsh-scientific-reading\s*$/.test(line)),
+    block.some((line) => idLine.test(line)) &&
+    block.some((line) => nameLine.test(line)),
   ).length
 }
 
@@ -51,7 +57,11 @@ function resolveNpm() {
   if (npmExecPath && isAbsolute(npmExecPath) && existsSync(npmExecPath)) {
     return { command: process.execPath, prefix: [npmExecPath] }
   }
-  return { command: process.platform === 'win32' ? 'npm.cmd' : 'npm', prefix: [] }
+  const bundledNpm = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  if (process.platform === 'win32' && existsSync(bundledNpm)) {
+    return { command: process.execPath, prefix: [bundledNpm] }
+  }
+  return { command: 'npm', prefix: [] }
 }
 
 function main() {

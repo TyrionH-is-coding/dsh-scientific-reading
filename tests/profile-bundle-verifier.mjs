@@ -8,7 +8,9 @@ import { spawnSync } from 'node:child_process'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const fixture = mkdtempSync(join(tmpdir(), 'sr-profile-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
+const fakeShellWrapper = join(fixture, 'fake-dsh.cmd')
 
+writeFileSync(fakeShellWrapper, '@echo off\r\nexit /b 0\r\n', 'utf8')
 writeFileSync(fakeDsh, `
 import { existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,7 +38,7 @@ if (args[0] === 'plugin') {
 }
 
 if (args.length === 3 && args[0] === '--profile' && args[1] === 'scientific-reading-test' && args[2] === '--dump-config') {
-  const row = '  - id: scientific-reading\\n    name: @dsh-external/dsh-scientific-reading'
+  const row = "  - id: scientific-reading\\n    name: '@dsh-external/dsh-scientific-reading'"
   if (process.env.FAKE_DSH_MODE === 'success') console.log(row)
   if (process.env.FAKE_DSH_MODE === 'zero') console.log('[]')
   if (process.env.FAKE_DSH_MODE === 'multi') console.log(row + '\\n' + row)
@@ -58,6 +60,7 @@ function run(mode) {
       FAKE_DSH_CAPTURE: capturePath,
       FEISHU_APP_ID: 'must-not-leak',
       FEISHU_APP_SECRET: 'must-not-leak',
+      npm_execpath: '',
     },
   })
   return { result, capture: JSON.parse(readFileSync(capturePath, 'utf8')) }
@@ -66,6 +69,13 @@ function run(mode) {
 function assertIsolatedCapture(capture) {
   assert.equal(capture.secretPresent, false)
   assert.equal(existsSync(capture.dshHome), false)
+}
+
+function runShellWrapper() {
+  return spawnSync(process.execPath, [join(root, 'scripts', 'verify-profile-bundle.mjs'), '--dsh-bin', fakeShellWrapper], {
+    cwd: root,
+    encoding: 'utf8',
+  })
 }
 
 try {
@@ -85,6 +95,10 @@ try {
   assert.match(multi.result.stderr, /profile_bundle_row_count_2/)
   assert.doesNotMatch(multi.result.stderr, /must-not-leak/)
   assertIsolatedCapture(multi.capture)
+
+  const shellWrapper = runShellWrapper()
+  assert.notEqual(shellWrapper.status, 0)
+  assert.match(shellWrapper.stderr, /dsh_bin_shell_wrapper_not_supported/)
 
   console.log('PASS: Profile Bundle 隔离激活验证器')
 } finally {
