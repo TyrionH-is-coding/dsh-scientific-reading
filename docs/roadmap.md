@@ -211,6 +211,11 @@ CREATE TABLE artifacts (
   Python 3.11 和 npm lockfile；Windows CI 自动执行 TypeScript/client 构建、
   DSH 兼容检查、挂载冒烟、飞书凭证边界、workflow 自检和 plugin-check。
   真实 DSH 读回与跨进程恢复继续作为本地集成门禁，不在无状态 CI 中运行。）
+- [x] Profile Bundle 打包与隔离 profile 激活
+
+  （2026-08-22：本机真实 DSH `0.1.0-rc.7` 验证返回 `profile_bundle_verified`，
+  临时 profile `scientific-reading-test` 中唯一激活；用户 `.dsh/profiles` 验证前后均为
+  156 个文件，逐文件路径、长度、mtime 与 SHA-256 差异为 0。）
 
 ---
 

@@ -35,6 +35,21 @@ npm.cmd run test:offline
 `--legacy-peer-deps` 是有意的：插件 CI 只安装编译与挂载冒烟实际加载的最小闭包，
 其余 peer 由真实 DSH 宿主提供；不会把接近 200 个宿主包复制进插件开发依赖。
 
+## Profile Bundle
+
+当前插件可作为 Profile Bundle 打包并安装到指定 DSH profile：
+
+```powershell
+npm run build:ci
+npm pack --ignore-scripts
+dsh plugin --profile web add .\dsh-external-dsh-scientific-reading-0.0.1.tgz --offline --ignore-scripts
+dsh --profile web --dump-config
+```
+
+`web` 与 `headless` 是相互独立的 profile；安装到其中一个不会激活另一个。包当前仍保持
+`private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；每次真实
+飞书写入仍须先预览，并取得用户针对该次写入的明确确认。
+
 ```powershell
 # 注入/重载（DSH dev 工具）
 dev_build_plugin / dev_inject_plugin / dev_reload_package

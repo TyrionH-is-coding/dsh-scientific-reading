@@ -105,6 +105,22 @@ GitHub Actions 只运行可独立复现的 build 与 `test:offline`。`verify-li
 restart recovery 需要相邻 Python 引擎，所以保留为本地集成验收；Python 全量 pytest
 由 `Scientific-Reading-for-Newbies/.github/workflows/ci.yml` 独立负责。
 
+Profile Bundle 有两层验收，不能互相替代：
+
+- 离线 CI 中的 `test:offline` 使用假 DSH CLI，验证安装命令、临时目录隔离、飞书凭证清除，
+  以及配置读回零命中或多命中时必须失败；它不证明本机真实 DSH 能安装该包。
+- 本机集成验收使用真实 DSH `0.1.0-rc.7`，运行：
+
+```powershell
+npm run verify:profile-bundle -- --dsh-bin "<DSH bin.js 的绝对路径>"
+```
+
+验证器在系统临时目录创建独立 `DSH_HOME`，清除子进程环境中的 `FEISHU_APP_ID` 与
+`FEISHU_APP_SECRET`，以 `--offline --ignore-scripts` 安装临时 tarball，并通过
+`--dump-config` 要求 `scientific-reading` 恰好出现一次；最后删除临时目录。它不会使用或
+改写用户 `%USERPROFILE%\.dsh\profiles`，也不会触发真实飞书写入。验收前后应对该目录做
+只读快照并确认无变化。
+
 随后在 DSH 开发环境执行 `dev_build_plugin`、`dev_inject_plugin` 或 `dev_reload_package`。
 需要重新装载 client、宿主环境变量或 package 声明时，优先完整重启 DSH，再运行：
 
@@ -166,6 +182,7 @@ client 已纳入正式源码与构建：`client/client.js` 为规范源，生成
 - 飞书凭证：仅继承宿主环境变量测试通过。
 - 插件健康门禁：构建、产物、client 声明和仓库边界通过。
 - 插件 CI：Windows + Node 22 + Python 3.11；DSH rc.7 精确依赖闭包从 lockfile 安装，离线门禁通过。
+- Profile Bundle：真实 DSH `0.1.0-rc.7` 在临时 `DSH_HOME` 中完成打包、离线安装与唯一配置读回；用户 profile 快照不变。
 - DSH 上线验证：论文列表、详情、client 包、模块注册、React 桥接、库状态全部通过。
 - 重启恢复：父进程退出后由新 CLI 观察到 `running → completed`，SQLite 状态读回为 `restart_probe_ready`；未直接重启当前 DSH。
 - Python 引擎：399 通过、1 跳过。
