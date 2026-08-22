@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const profile = 'sr-scientific-reading-verify'
+const profile = 'scientific-reading-test'
 const rowId = 'scientific-reading'
 const packageName = '@dsh-external/dsh-scientific-reading'
 

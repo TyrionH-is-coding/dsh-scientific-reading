@@ -8,9 +8,7 @@ import { spawnSync } from 'node:child_process'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const fixture = mkdtempSync(join(tmpdir(), 'sr-profile-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
-const capturePath = join(fixture, 'capture.json')
 
-writeFileSync(capturePath, '{}', 'utf8')
 writeFileSync(fakeDsh, `
 import { existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -23,7 +21,7 @@ if (args.length === 1 && args[0] === '--version') {
 }
 
 if (args[0] === 'plugin') {
-  const expected = ['plugin', '--profile', 'sr-scientific-reading-verify', 'add']
+  const expected = ['plugin', '--profile', 'scientific-reading-test', 'add']
   const expectedEnd = ['--offline', '--ignore-scripts']
   if (args.length !== 7 || !expected.every((value, index) => args[index] === value) ||
       !existsSync(args[4]) || !expectedEnd.every((value, index) => args[index + 5] === value) ||
@@ -37,7 +35,7 @@ if (args[0] === 'plugin') {
   process.exit(0)
 }
 
-if (args.length === 3 && args[0] === '--profile' && args[1] === 'sr-scientific-reading-verify' && args[2] === '--dump-config') {
+if (args.length === 3 && args[0] === '--profile' && args[1] === 'scientific-reading-test' && args[2] === '--dump-config') {
   const row = '  - id: scientific-reading\\n    name: @dsh-external/dsh-scientific-reading'
   if (process.env.FAKE_DSH_MODE === 'success') console.log(row)
   if (process.env.FAKE_DSH_MODE === 'zero') console.log('[]')
@@ -49,7 +47,9 @@ process.exit(9)
 `, 'utf8')
 
 function run(mode) {
-  return spawnSync(process.execPath, [join(root, 'scripts', 'verify-profile-bundle.mjs'), '--dsh-bin', fakeDsh], {
+  const capturePath = join(fixture, `capture-${mode}.json`)
+  writeFileSync(capturePath, '{}', 'utf8')
+  const result = spawnSync(process.execPath, [join(root, 'scripts', 'verify-profile-bundle.mjs'), '--dsh-bin', fakeDsh], {
     cwd: root,
     encoding: 'utf8',
     env: {
@@ -60,23 +60,31 @@ function run(mode) {
       FEISHU_APP_SECRET: 'must-not-leak',
     },
   })
+  return { result, capture: JSON.parse(readFileSync(capturePath, 'utf8')) }
+}
+
+function assertIsolatedCapture(capture) {
+  assert.equal(capture.secretPresent, false)
+  assert.equal(existsSync(capture.dshHome), false)
 }
 
 try {
   const success = run('success')
-  assert.equal(success.status, 0, success.stderr)
-  assert.match(success.stdout, /profile_bundle_verified/)
-  const capture = JSON.parse(readFileSync(capturePath, 'utf8'))
-  assert.equal(capture.secretPresent, false)
-  assert.equal(existsSync(capture.dshHome), false)
+  assert.equal(success.result.status, 0, success.result.stderr)
+  assert.match(success.result.stdout, /profile_bundle_verified/)
+  assertIsolatedCapture(success.capture)
 
   const zero = run('zero')
-  assert.notEqual(zero.status, 0)
-  assert.match(zero.stderr, /profile_bundle_row_count_0/)
+  assert.notEqual(zero.result.status, 0)
+  assert.match(zero.result.stderr, /profile_bundle_row_count_0/)
+  assert.doesNotMatch(zero.result.stderr, /must-not-leak/)
+  assertIsolatedCapture(zero.capture)
 
   const multi = run('multi')
-  assert.notEqual(multi.status, 0)
-  assert.match(multi.stderr, /profile_bundle_row_count_2/)
+  assert.notEqual(multi.result.status, 0)
+  assert.match(multi.result.stderr, /profile_bundle_row_count_2/)
+  assert.doesNotMatch(multi.result.stderr, /must-not-leak/)
+  assertIsolatedCapture(multi.capture)
 
   console.log('PASS: Profile Bundle 隔离激活验证器')
 } finally {
