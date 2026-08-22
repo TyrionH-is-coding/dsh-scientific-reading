@@ -8,12 +8,14 @@
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./client": { "types": "./lib/types/client/index.d.ts", "default": "./lib/client.js" },
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "types": "./lib/types/index.d.ts",
   "files": [
     "lib",
-    "scripts"
+    "scripts",
+    "cordis.patch.yml"
   ],
   "license": "BSD-3-Clause",
   "dsh": {
@@ -23,6 +25,9 @@
         "@deepseek-ai/dsh-client-ui-slots"
       ],
       "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
   "peerDependencies": {
@@ -55,6 +60,7 @@
     "build:ci": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "build:client": "node scripts/build-client.mjs",
     "check:client": "node scripts/build-client.mjs --check",
+    "test:bundle": "node tests/bundle-contract.mjs",
     "test:client": "node tests/client-build.mjs",
     "test:compat": "node tests/dsh-compat.mjs",
     "test:offline": "node tests/client-build.mjs && node tests/dsh-compat.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",

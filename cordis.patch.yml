@@ -1,0 +1,4 @@
+# Portable Profile Bundle patch
+- insert:
+    - id: scientific-reading
+      name: '@dsh-external/dsh-scientific-reading'
