@@ -26,23 +26,73 @@ assert.ok(
 const patchPath = resolve(rootDir, 'cordis.patch.yml')
 assert.ok(existsSync(patchPath), 'cordis.patch.yml 不存在')
 
-const patch = readFileSync(patchPath, 'utf8').replace(/\r\n?/g, '\n')
-assert.equal(
-  patch.match(/^\s*-\s+id\s*:/gm)?.length ?? 0,
-  1,
-  'cordis.patch.yml 必须且只能包含一个 - id:',
+function assertPortableBundlePatch(value) {
+  const normalized = value.replace(/\r\n?/g, '\n')
+  const structureLines = normalized
+    .split('\n')
+    .filter((line) => line.trim() && !line.trimStart().startsWith('#'))
+
+  assert.deepEqual(
+    structureLines,
+    [
+      '- insert:',
+      '    - id: scientific-reading',
+      "      name: '@dsh-external/dsh-scientific-reading'",
+    ],
+    'cordis.patch.yml 必须精确匹配可移植的单项 insert 结构',
+  )
+}
+
+const patch = readFileSync(patchPath, 'utf8')
+assertPortableBundlePatch(patch)
+
+const decoyNamePatch = `- insert:
+    - id: scientific-reading
+      name: /etc/passwd
+- decoy:
+    name: '@dsh-external/dsh-scientific-reading'
+`
+assert.throws(
+  () => assertPortableBundlePatch(decoyNamePatch),
+  '不得让另一 YAML 分支的伪造 name 掩盖实际 name',
 )
-assert.match(patch, /^\s*-\s+id:\s*scientific-reading\s*$/m)
-assert.match(
-  patch,
-  /^\s*name:\s*['"]@dsh-external\/dsh-scientific-reading['"]\s*$/m,
+
+function patchWithExtraPath(value) {
+  return `- insert:
+    - id: scientific-reading
+      name: '@dsh-external/dsh-scientific-reading'
+      path: ${value}
+`
+}
+
+assert.throws(
+  () => assertPortableBundlePatch(patchWithExtraPath('/etc/passwd')),
+  '不得接受 POSIX 根路径',
 )
-assert.doesNotMatch(patch, /[A-Za-z]:[\\/]/, 'patch 不得包含盘符绝对路径')
-assert.doesNotMatch(patch, /\/Users\//, 'patch 不得包含 /Users/ 路径')
-assert.doesNotMatch(patch, /\\Users\\/, 'patch 不得包含 \\Users\\ 路径')
-assert.ok(
-  !patch.includes('../') && !patch.includes('..\\'),
-  'patch 不得包含父目录遍历路径',
+assert.throws(
+  () =>
+    assertPortableBundlePatch(
+      patchWithExtraPath(String.raw`\\server\share\cordis.patch.yml`),
+    ),
+  '不得接受 UNC 路径',
+)
+assert.throws(
+  () =>
+    assertPortableBundlePatch(
+      patchWithExtraPath(String.raw`C:\Users\reader\cordis.patch.yml`),
+    ),
+  '不得接受盘符绝对路径',
+)
+assert.throws(
+  () => assertPortableBundlePatch(patchWithExtraPath('../cordis.patch.yml')),
+  '不得接受 ../ 路径',
+)
+assert.throws(
+  () =>
+    assertPortableBundlePatch(
+      patchWithExtraPath(String.raw`..\cordis.patch.yml`),
+    ),
+  '不得接受 ..\\ 路径',
 )
 
 console.log('PASS: Profile Bundle manifest 与 patch 契约通过')
