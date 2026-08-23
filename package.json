@@ -71,6 +71,7 @@
     "verify:profile-bundle": "node scripts/verify-profile-bundle.mjs",
     "verify:profile-runtime": "node scripts/verify-profile-runtime.mjs",
     "verify:restart-recovery": "python scripts/verify_restart_recovery.py",
+    "test:foundation": "node tests/foundation-integration.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

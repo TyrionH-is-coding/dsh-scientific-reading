@@ -1,5 +1,9 @@
 # @dsh-external/dsh-scientific-reading
 
+## Phase 1：两段式本地入库（已完成）
+
+已接入 SQLite 骨架优先返回、后台题录/Abstract 英中对照、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。XLSX 只读，飞书个人字段不回写；Zotero 新流程已停用，旧字段仅兼容读取。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书、不触碰持久 Profile/3080。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
+
 文献工作流插件（Phase 0：下载段已可用）。把 Scientific-Reading-for-Newbies 的
 完整文献流水线搬进 DSH：下载 → 解析 → 入库 → 笔记。
 

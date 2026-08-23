@@ -596,3 +596,14 @@ git commit -m "验收：补全两段式入库离线验证"
 
 实现 agent 在完成后追加：两个 worktree/分支、基线与完成 commit、测试数量/结果、性能分位数、
 迁移备份读回结果、以及未进入 Phase 2 的已知限制。不得写真实飞书 ID 或个人文献内容。
+
+### Task 8 离线验收记录（2026-08-23）
+
+- 插件 worktree：`D:\Vibe Coding\dsh-scientific-reading\.worktrees\two-stage-workflow`，分支 `feature/two-stage-workflow`，基线 `aa6aed953fa4452b95e2cb0153108a35e1ebc636`。
+- 引擎 worktree：`D:\Vibe Coding\Scientific-Reading-for-Newbies\.worktrees\two-stage-workflow`，分支 `feature/two-stage-workflow`，基线 `c4700538dc32dc5223dd75e551fd6b8815cbdbf9`。
+- 完成提交：以本记录后续提交的插件验收实现 commit 为准；引擎本阶段未修改产品代码，仅更新中文 README。
+- 实测结果：引擎 `523 passed, 1 skipped`，`compileall` 通过；插件 `build:ci`、`typecheck`、`test:offline`、`foundation-integration.mjs` 和 `git diff --check` 均通过。集成 verifier 顺序覆盖骨架、fake provider 题录/Abstract、Abstract 翻译、XLSX、fake Feishu 读回、文件夹/标签、撤销，并运行插件 detached 调度合同；Abstract source revision stale guard 防止竞态旧产物固化。
+- 性能数据：本 Task 未建立独立性能基准，未填写未经测量的分位数。
+- 迁移备份读回：沿用 Phase 1 迁移测试结果；本 Task 未改迁移实现，未重复制造备份。
+- Profile/3080：verifier 前后均显式 `skipped`（未提供 tarball/健康探针），不注入、不重启、不写持久 Profile/3080；SHA/健康未伪称已验证。
+- 已知限制：离线 fake Feishu 只验证 payload、调用和读回，不代表真实飞书写入；全文获取、MinerU、全文翻译、精读 HTML 和机构认证仍留待后续阶段。未写入真实飞书 ID、个人文献或凭证。
