@@ -21,10 +21,13 @@ const output = execFileSync(python, [script], {
 const lines = output.trim().split(/\r?\n/)
 assert.equal(lines.length, 1, 'verifier 必须只输出一行 JSON')
 const result = JSON.parse(lines[0])
-assert.equal(result.status, 'passed')
-for (const step of ['skeleton', 'metadata_abstract', 'race_guard', 'xlsx', 'fake_feishu', 'classification', 'undo']) {
+assert.equal(result.status, 'passed_with_limits')
+for (const step of ['plugin_dispatch', 'skeleton', 'derived_pipeline', 'metadata_abstract', 'race_guard', 'xlsx', 'fake_feishu', 'classification', 'undo']) {
   assert.equal(result.steps?.[step], 'passed', `步骤 ${step} 未通过`)
 }
 assert.equal(result.external_writes, false)
-assert.equal(result.profile_3080_unchanged, true)
-console.log('PASS: Phase 1 两段式主库离线集成验收')
+assert.equal(result.profile_3080_unchanged, false)
+assert.equal(result.profile_3080_gate, 'not_verified')
+assert.equal(result.runtime?.before?.profile?.status, 'skipped')
+assert.equal(result.runtime?.before?.['3080']?.status, 'skipped')
+console.log('PASS: Phase 1 两段式主库离线集成验收（Profile/3080 未提供探针，未伪装为 unchanged）')

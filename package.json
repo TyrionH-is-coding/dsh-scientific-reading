@@ -67,7 +67,7 @@
     "test:profile-bundle": "node tests/profile-bundle-verifier.mjs",
     "test:profile-runtime": "node tests/profile-runtime-verifier.mjs",
     "test:reading-routes": "node tests/reading-routes.mjs",
-    "test:offline": "node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/reading-routes.mjs && node tests/two-stage-ingest.mjs && node tests/library-navigation-api.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",
+    "test:offline": "node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/reading-routes.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",
     "verify:profile-bundle": "node scripts/verify-profile-bundle.mjs",
     "verify:profile-runtime": "node scripts/verify-profile-runtime.mjs",
     "verify:restart-recovery": "python scripts/verify_restart_recovery.py",

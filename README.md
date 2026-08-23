@@ -1,8 +1,8 @@
 # @dsh-external/dsh-scientific-reading
 
-## Phase 1：两段式本地入库（已完成）
+## Phase 1：两段式本地入库（本地离线实现完成）
 
-已接入 SQLite 骨架优先返回、后台题录/Abstract 英中对照、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。XLSX 只读，飞书个人字段不回写；Zotero 新流程已停用，旧字段仅兼容读取。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书、不触碰持久 Profile/3080。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
+已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。Zotero 新流程已停用，旧字段/预览确认工具仅作为 legacy 兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
 
 文献工作流插件（Phase 0：下载段已可用）。把 Scientific-Reading-for-Newbies 的
 完整文献流水线搬进 DSH：下载 → 解析 → 入库 → 笔记。
@@ -82,13 +82,9 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 2. arXiv 成功返回补 `path` 键（原返回 `file`，fetcher 读 `path` 导致 PDF 永不认领）；
 3. 强制 UTF-8 输出（中文 Windows 控制台 GBK 报错）。
 
-## Phase 2（文献页）
+## Phase 2/3（未在本阶段完成）
 
-- 宿主路由 `/sr/api/*`：论文列表（含 job 实时状态富化）/详情/新建/下载/挂PDF/解析/浅读/任务/笔记/精读HTML
-- 文献页标签：`conversation.view`（id: literature, order: 20），三栏界面（筛选/表格/详情+操作），纯 DOM 实现
-- 设置卡片：`settings.plugin.item`（key: scientific-reading），设置页【插件】tab 可编辑数据目录/学校/合法来源等
-- 库状态同步：worker 阶段完成后自动更新 SQLite（parsed_fast/quick_read_ready…）
-- client 渲染契约：`__ModuleLoader__.load` id = 包名；组件用 React 元素 + ref 桥接真实 DOM（React 拒绝裸 DOM 节点）
+Phase 2 文献页与 Phase 3 全文精读/飞书真实写入/Zotero 迁移仍是后续验收范围。当前保留的路由、旧预览/confirm 及迁移入口只用于 legacy 兼容，不代表这些阶段已完成。
 
 ## 飞书凭证
 
@@ -100,8 +96,8 @@ FEISHU_APP_ID=你的AppID
 FEISHU_APP_SECRET=你的AppSecret
 ```
 
-同步时先运行零网络的 `sr_feishu_preview`；仅在核对预览后，针对该篇论文以
-`confirm=true` 调用 `sr_feishu_sync`。
+新流程由引擎持久派生管线负责飞书同步：插件仅向 `derived-enqueue` 传递仓库外配置路径，首次入库不执行并发 resync。
+`sr_feishu_preview`/`sr_feishu_sync(confirm=true)` 仅保留为 legacy/internal 兼容入口，不属于本阶段新流程。
 
 从旧版升级时，如果曾在设置卡片填写过 `feishuAppId` 或 `feishuAppSecret`，请在
 DSH 停止后从 `scientific-reading` 设置分节删除这两个旧键。新版本不会读取它们；
@@ -124,5 +120,5 @@ Python 全量测试由引擎仓库自己的 workflow 负责。
 
 ## 路线图
 
-见 `docs/roadmap.md`：Phase 0 下载段 ✅ → Phase 1 本地文献库（SQLite，替代 Zotero）✅
-→ Phase 2 【文献】标签页（代码完成，待宿主重载验证）→ Phase 3 飞书/精读/迁移。
+见 `docs/roadmap.md`：Phase 0 下载段 ✅ → Phase 1 本地文献库与两段式派生管线（离线实现完成，Profile/3080 未验证）
+→ Phase 2 【文献】标签页（未完成）→ Phase 3 飞书真实写入/精读/迁移（未完成）。

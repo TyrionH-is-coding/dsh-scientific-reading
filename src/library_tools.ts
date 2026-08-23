@@ -20,7 +20,8 @@ import {
   engineFeishuSync,
   engineZoteroMigrate,
   engineLibraryIngest,
-  engineStartDetached,
+  engineDerivedEnqueue,
+  engineAbstractReadSubmit,
   engineLibraryList,
   engineFolderManage,
   engineClassification,
@@ -39,21 +40,9 @@ function scheduleDerived(config: Config, paperId: string, logger?: (message: str
   queueMicrotask(() => {
     void (async () => {
       const metaPath = resolveMeta(config, paperId)
-      const stages = [
-        ['metadata-enrichment', '--metadata', metaPath],
-        ['abstract-read', '--metadata', metaPath],
-        ['xlsx-refresh'],
-      ]
-      for (const args of stages) {
-        const result = await engineStartDetached(config, args)
-        if (!result.started) logger?.('sr-derived pending: ' + args[0] + ' (' + (result.detail ?? 'not_started') + ')')
-      }
-      const probe = await engineFeishuProbe(config)
-      if (probe.ok && (probe.json?.enabled === true || probe.json?.status === 'enabled')) {
-        const result = await engineStartDetached(config, ['feishu-resync', '--config', config.feishuConfig, '--paper-id', paperId])
-        if (!result.started) logger?.('sr-derived pending: feishu-resync (' + (result.detail ?? 'not_started') + ')')
-      }
-    })().catch((error) => logger?.('sr-derived pending: ' + String(error instanceof Error ? error.message : error)))
+      const result = await engineDerivedEnqueue(config, metaPath)
+      if (!result.ok) logger?.('sr-derived pending: enqueue_failed')
+    })().catch(() => logger?.('sr-derived pending: enqueue_failed'))
   })
 }
 
@@ -88,6 +77,25 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return { ok: true, local: result.json, paper_id: paperId, derived: 'pending' } as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_ingest')
+
+  // ── sr_abstract_submit：提交 agent 翻译，闭合 waiting_agent gate ───────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_abstract_submit',
+    description: '提交 agent 已完成的 Abstract 翻译 JSON；不会自动生成或伪造翻译。',
+    parameters: {
+      job_id: { type: 'string', required: true, description: '等待 agent 的 Abstract 任务 ID' },
+      abstract_translation: { type: 'object', required: true, additionalProperties: true, description: 'agent 提供的 Abstract 翻译 JSON' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args: unknown, value: unknown) => text('Abstract 提交：' + JSON.stringify(value)),
+    },
+    async execute(args: { job_id: string; abstract_translation: Record<string, unknown> }) {
+      const r = await engineAbstractReadSubmit(config, args.job_id, args.abstract_translation)
+      if (!r.ok || !r.json) return { ok: false, status: 'failed', detail: r.stderr || 'abstract_submit_failed' } as never
+      return r.json as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_abstract_submit')
 
   // ── sr_init：初始化论文工作区 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({

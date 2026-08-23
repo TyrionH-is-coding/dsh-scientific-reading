@@ -50,7 +50,7 @@ try {
 
 const tools = registrations.filter((r) => r.startsWith('tool:'))
 const routes = registrations.filter((r) => r.startsWith('route:'))
-const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_ingest','sr_init','sr_library_check','sr_library_ensure','sr_pdf_attach','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_library_search','sr_parse','sr_quick_read','sr_full_read','sr_feishu_preview','sr_feishu_sync','sr_feishu_resync','sr_zotero_migrate','sr_job_status']
+const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_ingest','sr_abstract_submit','sr_init','sr_library_check','sr_library_ensure','sr_pdf_attach','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_library_search','sr_parse','sr_quick_read','sr_full_read','sr_feishu_preview','sr_feishu_sync','sr_feishu_resync','sr_zotero_migrate','sr_job_status']
 for (const t of expectedTools) {
   if (!tools.some((x) => x === 'tool:' + t)) failures.push('缺工具: ' + t)
 }

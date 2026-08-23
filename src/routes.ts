@@ -31,8 +31,7 @@ import {
   engineLibraryList,
   engineLibraryIngest,
   engineFolderManage,
-  engineStartDetached,
-  engineFeishuProbe,
+  engineDerivedEnqueue,
   fetchPaper,
 } from './cli.js'
 
@@ -106,16 +105,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
     queueMicrotask(() => {
       void (async () => {
         const metaPath = join(paperRoot(paperId), 'metadata.json')
-        for (const args of [
-          ['metadata-enrichment', '--metadata', metaPath],
-          ['abstract-read', '--metadata', metaPath],
-          ['xlsx-refresh'],
-        ]) await engineStartDetached(config, args)
-        const probe = await engineFeishuProbe(config)
-        if (probe.ok && (probe.json?.enabled === true || probe.json?.status === 'enabled')) {
-          await engineStartDetached(config, ['feishu-resync', '--config', config.feishuConfig, '--paper-id', paperId])
-        }
-      })().catch(() => { /* 已返回本地成功，派生失败由引擎 pending 记录 */ })
+        const result = await engineDerivedEnqueue(config, metaPath)
+        if (!result.ok) ctx.logger?.('sr-derived pending: enqueue_failed')
+      })().catch(() => { ctx.logger?.('sr-derived pending: enqueue_failed') })
     })
   }
 

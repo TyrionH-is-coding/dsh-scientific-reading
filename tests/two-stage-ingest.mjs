@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { engineJson, engineStartDetached } from '../lib/cli.js'
+import { engineJson, engineStartDetached, engineDerivedEnqueue, engineAbstractReadSubmit } from '../lib/cli.js'
 import { isPaperId, paperMetadataPath } from '../lib/papers.js'
 
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' })
@@ -21,9 +21,10 @@ await writeFile(join(packageDir, '__main__.py'), [
   'import json, os, sys, time',
   'args = sys.argv[1:]',
   `log = ${JSON.stringify(logPath)}`,
-  'with open(log, "a", encoding="utf-8") as f: f.write(json.dumps(args) + "\\n")',
+  'payload = sys.stdin.read()',
+  'with open(log, "a", encoding="utf-8") as f: f.write(json.dumps({"args": args, "input": payload}) + "\\n")',
   'if "--slow" in args: time.sleep(0.8)',
-  'command = next((x for x in args if x in {"library-list-v2", "library-ingest", "metadata-enrichment"}), "")',
+  'command = next((x for x in args if x in {"library-list-v2", "library-ingest", "metadata-enrichment", "derived-enqueue", "abstract-read-submit"}), "")',
   'if command == "library-list-v2": print(json.dumps({"items": [{"paper_id": "library_demo"}], "page": 2, "page_size": 7}))',
   'elif command == "library-ingest": print(json.dumps({"status": "ingested", "paper_id": "library_demo", "dedupe": "new"}))',
   'else: print(json.dumps({"status": "queued", "command": command}))',
@@ -42,10 +43,34 @@ try {
   assert.equal(local.ok, true)
   assert.equal(local.json?.paper_id, 'library_demo')
 
+  const derived = await engineDerivedEnqueue(config, join(root, 'data', 'papers', 'library_demo', 'metadata.json'))
+  assert.equal(derived.ok, true)
+  assert.equal(derived.json?.command, 'derived-enqueue')
+  const configuredDerived = await engineDerivedEnqueue({ ...config, feishuConfig: join(root, 'feishu-config.json') }, join(root, 'data', 'papers', 'library_demo', 'metadata.json'))
+  assert.equal(configuredDerived.ok, true)
+
+  const submitted = await engineAbstractReadSubmit(config, 'job_0123456789abcdef', {
+    abstract_zh: '人工提交的翻译',
+  })
+  assert.equal(submitted.ok, true)
+  assert.equal(submitted.json?.command, 'abstract-read-submit')
+  const submittedLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('abstract-read-submit'))
+  assert.match(submittedLog ?? '', /abstract_zh/)
+  assert.match(submittedLog ?? '', /--input/)
+  assert.doesNotMatch(submittedLog ?? '', /--feishu-config/)
+  const configuredLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue') && line.includes('--feishu-config'))
+  assert.match(configuredLog ?? '', /feishu-config\.json/)
+
   const started = Date.now()
   const detached = await engineStartDetached(config, ['metadata-enrichment', '--slow'], { paper_id: 'library_demo' })
   assert.equal(detached.started, true)
   assert.ok(Date.now() - started < 500, 'detached 调用不得等待派生任务')
+
+  const nonExecutable = join(root, 'not-an-executable.txt')
+  await writeFile(nonExecutable, 'not executable', 'utf8')
+  const spawnFailure = await engineStartDetached({ ...config, enginePython: nonExecutable }, ['metadata-enrichment'])
+  assert.equal(spawnFailure.started, false)
+  assert.match(String(spawnFailure.detail), /EACCES|ENOENT|EFTYPE|spawn_failed/)
 
   assert.equal(isPaperId('library_demo'), true)
   assert.equal(isPaperId('doi_10.1000_test'), true)

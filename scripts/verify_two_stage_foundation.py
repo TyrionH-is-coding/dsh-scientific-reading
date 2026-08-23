@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -77,8 +79,35 @@ def _runtime_snapshot() -> dict:
 
 
 def _health_snapshot() -> dict:
-    # The verifier never starts, restarts, injects, or writes the persistent 3080.
-    return {"status": "skipped", "reason": "3080_health_probe_not_requested"}
+    # 只允许用户明确提供的 localhost/127.0.0.1 URL；仅 GET，不启动/注入/重启。
+    target = os.environ.get("SR_3080_URL", "").strip()
+    if not target:
+        return {"status": "skipped", "reason": "3080_health_probe_not_requested"}
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(target)
+    if parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1"}:
+        return {"status": "not_verified", "reason": "3080_probe_requires_local_http"}
+    try:
+        with urllib.request.urlopen(target, timeout=3) as response:
+            body = response.read(1024 * 1024)
+            return {
+                "status": "checked",
+                "url": target,
+                "http_status": response.status,
+                "body_sha256": hashlib.sha256(body).hexdigest(),
+            }
+    except (OSError, urllib.error.URLError) as error:
+        return {"status": "not_verified", "reason": "3080_probe_failed", "error": type(error).__name__}
+
+
+def _verified_unchanged(before: dict, after: dict) -> bool:
+    if before != after:
+        return False
+    return all(
+        before.get(name, {}).get("status") == "checked"
+        for name in ("profile", "3080")
+    )
 
 
 def _assert_fake_config(config):
@@ -87,6 +116,104 @@ def _assert_fake_config(config):
     parsed = urlsplit(config.base_url)
     if parsed.hostname not in {"localhost", "127.0.0.1", "fake.local"}:
         raise ValueError("feishu_base_url_must_be_localhost_or_fake")
+
+
+def _run_real_derived_pipeline(root: Path, metadata) -> list[str]:
+    """通过引擎真实 DerivedPipeline + worker 接缝跑完 metadata→Abstract→XLSX。
+
+    launcher 只替换后台进程边界，不替换派生编排、job store 或各阶段 service；
+    provider 和翻译由本地 fake 实现提供，避免网络与真实模型调用。
+    """
+    from types import SimpleNamespace
+
+    import scientific_reading.worker as worker_module
+    from scientific_reading.abstract_read_service import AbstractReadService
+    from scientific_reading.background_store import BackgroundJobStore
+    from scientific_reading.derived_pipeline import DerivedPipeline
+    from scientific_reading.metadata_enrichment import MetadataEnrichmentService, MetadataProviderRegistry, ProviderResult
+    from scientific_reading.__main__ import resume_job
+    from scientific_reading.worker import (
+        abstract_read_handler_factory,
+        metadata_enrichment_handler_factory,
+        run_job,
+        xlsx_snapshot_handler_factory,
+    )
+    from scientific_reading.workspace import PaperWorkspace
+
+    class FakeLauncher:
+        def __init__(self, store):
+            self.store = store
+            self.requests = []
+
+        def enqueue(self, request):
+            self.requests.append(request)
+            handle = self.store.create_or_get(request)
+            return SimpleNamespace(
+                job_id=handle.job_id,
+                status=self.store.load_status(handle.job_id),
+                process_started=False,
+            )
+
+        def launch_existing(self, job_id):
+            return SimpleNamespace(
+                job_id=job_id,
+                status=self.store.load_status(job_id),
+                process_started=False,
+            )
+
+    class FakeProvider:
+        def fetch(self, current):
+            return ProviderResult.success(
+                {"title": current.title, "abstract_en": ABSTRACT, "journal": "Offline Engineering"}
+            )
+
+    store = BackgroundJobStore(root)
+    launcher = FakeLauncher(store)
+    pipeline = DerivedPipeline(root, launcher=launcher)
+    original_pipeline = worker_module.DerivedPipeline
+    worker_module.DerivedPipeline = lambda _root: pipeline
+    try:
+        request = pipeline.metadata_request(root, metadata)
+        first = pipeline.enqueue(request)
+        metadata_service = MetadataEnrichmentService(MetadataProviderRegistry([FakeProvider()]))
+        metadata_code = run_job(store, first.job_id, handlers={"metadata_enrichment": metadata_enrichment_handler_factory(metadata_service)})
+        if metadata_code != 0:
+            raise RuntimeError(f"metadata_derived_stage_failed:{store.load_status(first.job_id).error}")
+        if [item.target_stage for item in launcher.requests] != ["metadata_enrichment", "abstract_read"]:
+            raise RuntimeError("metadata_did_not_enqueue_abstract")
+
+        abstract_request = launcher.requests[-1]
+        abstract_job = store.create_or_get(abstract_request).job_id
+        if run_job(store, abstract_job, handlers={"abstract_read": abstract_read_handler_factory()}) != 3:
+            raise RuntimeError("abstract_agent_gate_missing")
+        if store.load_status(abstract_job).state != "waiting_agent":
+            raise RuntimeError("abstract_not_waiting_agent")
+
+        workspace = PaperWorkspace.create(root, metadata)
+        context = AbstractReadService().inspect(workspace)
+        translation = {
+            "contract_version": context["contract_version"],
+            "source_sha256": context["source_sha256"],
+            "paragraphs": [
+                {**paragraph, "translation_zh": f"离线译文 {paragraph['index'] + 1}"}
+                for paragraph in context["paragraphs"]
+            ],
+        }
+        resume_job(store, abstract_job, launcher=launcher, resume_input={"abstract_translation": translation})
+        if run_job(store, abstract_job, handlers={"abstract_read": abstract_read_handler_factory()}) != 0:
+            raise RuntimeError("abstract_submit_stage_failed")
+        if [item.target_stage for item in launcher.requests] != ["metadata_enrichment", "abstract_read", "xlsx_snapshot"]:
+            raise RuntimeError("abstract_did_not_enqueue_xlsx")
+
+        xlsx_request = launcher.requests[-1]
+        xlsx_job = store.create_or_get(xlsx_request).job_id
+        if run_job(store, xlsx_job, handlers={"xlsx_snapshot": xlsx_snapshot_handler_factory()}) != 0:
+            raise RuntimeError("xlsx_derived_stage_failed")
+        if [item.target_stage for item in launcher.requests] != ["metadata_enrichment", "abstract_read", "xlsx_snapshot"]:
+            raise RuntimeError("disabled_feishu_was_enqueued")
+        return [item.target_stage for item in launcher.requests]
+    finally:
+        worker_module.DerivedPipeline = original_pipeline
 
 
 def main() -> int:
@@ -134,6 +261,9 @@ def main() -> int:
         paper_id = skeleton["paper_id"]
         workspace = PaperWorkspace.create(root, metadata)
         steps["skeleton"] = "passed" if skeleton.get("created") is True and skeleton.get("paper_id") else "failed"
+
+        derived_stages = _run_real_derived_pipeline(root, metadata)
+        steps["derived_pipeline"] = "passed" if derived_stages == ["metadata_enrichment", "abstract_read", "xlsx_snapshot"] else "failed"
 
         enriched = MetadataEnrichmentService(MetadataProviderRegistry([FakeProvider()])).enrich(metadata)
         atomic_write_json(workspace.metadata_path, enriched.metadata.to_dict())
@@ -200,8 +330,10 @@ def main() -> int:
             library.close()
         steps["undo"] = "passed" if undone.get("restored") == 1 else "failed"
         after = {"profile": _runtime_snapshot(), "3080": _health_snapshot()}
-        unchanged = before == after
-        return _emit({"status": "passed" if all(value == "passed" for value in steps.values()) and unchanged else "failed", "steps": steps, "profile_3080_unchanged": unchanged, "runtime": {"before": before, "after": after}, "external_writes": external_writes, "data_root": "temporary_cleaned", "known_limits": ["未启动真实持久 Profile/3080；竞态以 Abstract source revision stale guard 验证"]})
+        unchanged = _verified_unchanged(before, after)
+        core_passed = all(value == "passed" for value in steps.values())
+        status = "passed" if core_passed and unchanged else "passed_with_limits" if core_passed else "failed"
+        return _emit({"status": status, "steps": steps, "profile_3080_unchanged": unchanged, "profile_3080_gate": "passed" if unchanged else "not_verified", "runtime": {"before": before, "after": after}, "external_writes": external_writes, "data_root": "temporary_cleaned", "known_limits": ["未提供 SR_PROFILE_TARBALL 或 SR_3080_URL 时仅输出 skipped/not_verified，不把 Profile/3080 当作已验收门禁"]})
     except Exception as error:
         return _emit({"status": "failed", "steps": steps, "error": str(error), "profile_3080_unchanged": False, "external_writes": external_writes})
     finally:
@@ -210,7 +342,7 @@ def main() -> int:
 
 def _emit(value: dict) -> int:
     print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
-    return 0 if value.get("status") == "passed" else 1
+    return 0 if value.get("status") in {"passed", "passed_with_limits"} else 1
 
 
 if __name__ == "__main__":

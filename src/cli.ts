@@ -51,6 +51,7 @@ export function runCommand(
       },
     )
     if (opts.input !== undefined) child.stdin?.end(opts.input)
+    else child.stdin?.end()
     // 超时由 execFile 的 timeout 处理（SIGTERM）；这里兜底清理
     child.on('error', () => { /* 已由回调处理 */ })
   })
@@ -356,6 +357,7 @@ export async function runEngine(
   const dataRoot = resolveDataRoot(config)
   const r = await runCommand(python, ['-m', 'scientific_reading', '--data-root', dataRoot, ...args], {
     timeoutMs: opts.timeoutMs ?? 60_000,
+    ...(opts.input !== undefined ? { input: opts.input } : {}),
     ...(opts.env ? { env: opts.env } : {}),
   })
   const parsed = extractJson(r.stdout)
@@ -383,29 +385,62 @@ export async function engineStartDetached(
   const python = await resolveEnginePython(config)
   if (!python) return { started: false, detail: 'engine_not_found' }
   const dataRoot = resolveDataRoot(config)
-  const child = spawn(
-    python,
-    ['-m', 'scientific_reading', '--data-root', dataRoot, ...args],
-    {
-      detached: true,
-      windowsHide: true,
-      stdio: ['pipe', 'ignore', 'ignore'],
-      env: {
-        ...process.env,
-        TERM: 'dumb',
-        NO_COLOR: '1',
-        PYTHONIOENCODING: 'utf-8',
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn(
+      python,
+      ['-m', 'scientific_reading', '--data-root', dataRoot, ...args],
+      {
+        detached: true,
+        windowsHide: true,
+        stdio: ['pipe', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          TERM: 'dumb',
+          NO_COLOR: '1',
+          PYTHONIOENCODING: 'utf-8',
+        },
       },
-    },
-  )
-  child.on('error', () => { /* 派生失败写入引擎 job/pending，由引擎负责 */ })
-  if (input !== undefined) child.stdin?.end(JSON.stringify(input))
-  else child.stdin?.end()
-  child.unref()
-  return { started: true }
+    )
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return { started: false, detail: typeof code === 'string' ? code : 'spawn_failed' }
+  }
+  return await new Promise((resolve) => {
+    let settled = false
+    const finish = (result: { started: boolean; detail?: string }): void => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+    child.once('spawn', () => {
+      if (input !== undefined) child.stdin?.end(JSON.stringify(input))
+      else child.stdin?.end()
+      child.unref()
+      finish({ started: true })
+    })
+    child.once('error', (error: NodeJS.ErrnoException) => {
+      finish({ started: false, detail: typeof error.code === 'string' ? error.code : 'spawn_failed' })
+    })
+  })
 }
 
-/** 两阶段入库：先执行本地事务，派生阶段由调用方用 engineStartDetached 排队。 */
+/** 持久派生编排：引擎负责记录 pending/failed 状态，插件只提交一次。 */
+export async function engineDerivedEnqueue(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const args = ['derived-enqueue', '--metadata', metadataPath]
+  const cfg = config.feishuConfig.trim()
+  if (cfg) args.push('--feishu-config', cfg)
+  const r = await engineJson(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** Abstract agent gate：只提交 agent 提供的翻译，不自动生成或伪造翻译。 */
+export async function engineAbstractReadSubmit(config: Config, jobId: string, abstractTranslation: unknown): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await engineJson(config, ['abstract-read-submit', '--job-id', jobId, '--input', '-'], abstractTranslation)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** 两阶段入库：先执行本地事务，派生阶段由调用方提交一次持久 derived-enqueue。 */
 export async function engineLibraryIngest(config: Config, input: unknown): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await engineJson(config, ['library-ingest'], input)
   return { ok: r.ok, json: r.json, stderr: r.stderr }
