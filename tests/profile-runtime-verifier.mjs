@@ -30,7 +30,7 @@ if (args.length === 1 && args[0] === '--version') {
 }
 
 if (args[0] === 'plugin') {
-  const expected = ['plugin', '--profile', 'scientific-reading-runtime-test', 'add']
+  const expected = ['plugin', '--profile', 'web', 'add']
   const expectedEnd = ['--offline', '--ignore-scripts']
   if (args.length !== 7 || !expected.every((value, index) => args[index] === value) ||
       !existsSync(args[4]) || !expectedEnd.every((value, index) => args[index + 5] === value) ||
@@ -45,7 +45,7 @@ if (args[0] === 'plugin') {
   process.exit(0)
 }
 
-const expectedStart = ['--profile', 'scientific-reading-runtime-test', '--host', '127.0.0.1', '--port', '0']
+const expectedStart = ['--profile', 'web', '--host', '127.0.0.1', '--port', '0']
 if (args.length === expectedStart.length && expectedStart.every((value, index) => args[index] === value)) {
   capture({ secretPresentAtStart: Boolean(process.env.FEISHU_APP_ID || process.env.FEISHU_APP_SECRET) })
   if (process.env.FAKE_DSH_MODE === 'failure') {

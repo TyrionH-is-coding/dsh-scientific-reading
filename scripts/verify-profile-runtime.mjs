@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const profile = 'scientific-reading-runtime-test'
+const profile = 'web'
 const paperId = 'doi_10.48550_arxiv.1706.03762'
 
 function tail(value) {
