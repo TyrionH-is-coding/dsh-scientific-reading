@@ -4,6 +4,8 @@
 
 已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。插件只把 canonical `paper_id` 与可选配置路径交给引擎，由引擎从 SQLite 主库刷新 `metadata.json`；不会用调用方 payload 覆盖题录。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。Zotero 新流程已停用，旧字段/预览确认工具仅作为 legacy 兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
 
+`sr_ingest` 与 `POST /sr/api/library` 在本地事务完成后先返回 `paper_id` 和 `derived: pending`。派生编排产生的 `active_job_id` 及失败状态由引擎持久写入 SQLite 主库，可用 `sr_job_status` 或 `GET /sr/api/job/<job_id>` 查询；插件不等待派生完成，也不自行覆盖主库题录。
+
 文献工作流插件（Phase 0：下载段已可用）。把 Scientific-Reading-for-Newbies 的
 完整文献流水线搬进 DSH：下载 → 解析 → 入库 → 笔记。
 

@@ -8,6 +8,8 @@ const cli = await readFile(new URL('../src/cli.ts', import.meta.url), 'utf8')
 
 assert.equal((routes.match(/engineDerivedEnqueue\(config/g) ?? []).length, 1)
 assert.equal((tools.match(/engineDerivedEnqueue\(config/g) ?? []).length, 1)
+assert.match(routes, /scheduleDerived\(paperId\)/)
+assert.match(tools, /scheduleDerived\(config, paperId/)
 assert.equal(routes.includes('engineStartDetached'), false)
 assert.equal(routes.includes('engineFeishuProbe'), false)
 assert.equal(tools.includes('engineStartDetached'), false)

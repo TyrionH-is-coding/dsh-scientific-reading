@@ -104,8 +104,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
   const scheduleDerived = (paperId: string): void => {
     queueMicrotask(() => {
       void (async () => {
-        const metaPath = join(paperRoot(paperId), 'metadata.json')
-        const result = await engineDerivedEnqueue(config, metaPath)
+        const result = await engineDerivedEnqueue(config, paperId)
         if (!result.ok) ctx.logger?.('sr-derived pending: enqueue_failed')
       })().catch(() => { ctx.logger?.('sr-derived pending: enqueue_failed') })
     })
