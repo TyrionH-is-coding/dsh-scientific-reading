@@ -242,7 +242,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
 
   // ── 浅读笔记（HTML 呈现）───────────────────────────────────────────
   prefix('/sr/reading', async (_req, res) => {
-    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reading'.length)).split('/')[0]
+    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reading'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!isPaperId(id)) return sendText(res, 404, 'not found')
     const text = await readOrNull(join(paperRoot(id), 'reading', 'quick_read.md'))
     if (text === null) return sendText(res, 404, 'no quick read yet')
@@ -252,7 +252,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
 
   // ── 精读 HTML（Phase 3 产物，存在即服务）──────────────────────────
   prefix('/sr/reader', async (_req, res) => {
-    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reader'.length)).split('/')[0]
+    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reader'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!isPaperId(id)) return sendText(res, 404, 'not found')
     const p = join(paperRoot(id), 'reading', 'full', 'output', 'reader_full.html')
     try {

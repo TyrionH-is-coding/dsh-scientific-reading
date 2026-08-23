@@ -30,6 +30,10 @@ const detail = await get('/sr/api/paper/doi_10.48550_arxiv.1706.03762')
 if (detail.status !== 200) failures.push('/sr/api/paper/<id> 状态 ' + detail.status)
 else console.log('OK  /sr/api/paper/<id>  详情可用')
 
+const reading = await get('/sr/reading/doi_10.48550_arxiv.1706.03762')
+if (reading.status !== 200 || reading.text.trim() === '') failures.push('/sr/reading/<id> 状态 ' + reading.status + ' 或正文为空')
+else console.log('OK  /sr/reading/<id>  浅读页面可用')
+
 // 2) 文献页 client 包（client-modules 服务路径）
 const clientUrl = '/plugins/@dsh-external/dsh-scientific-reading/client.js'
 const client = await get(clientUrl)
