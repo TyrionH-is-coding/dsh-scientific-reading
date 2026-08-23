@@ -124,8 +124,9 @@ npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
 
 两个真实验证器都在系统临时目录创建独立 `DSH_HOME`，清除子进程环境中的 `FEISHU_APP_ID` 与
 `FEISHU_APP_SECRET`，以 `--offline --ignore-scripts` 安装临时 tarball，并通过
-运行时验证器启动临时 Profile，实际检查根页、client、浅读和精读路由；最后删除临时目录。
-它们不会使用或改写用户 `%USERPROFILE%\.dsh\profiles`，也不会触发真实飞书写入。
+运行时验证器复用已安装的 scientific-reading Python 引擎，启动临时 Profile，实际检查根页、
+client、论文列表/详情、浅读和精读路由；最后删除临时目录。它们不会使用或改写用户
+`%USERPROFILE%\.dsh\profiles`，也不会触发真实飞书写入。
 
 随后在 DSH 开发环境执行 `dev_build_plugin`、`dev_inject_plugin` 或 `dev_reload_package`。
 需要重新装载 client、宿主环境变量或 package 声明时，优先完整重启 DSH，再运行：

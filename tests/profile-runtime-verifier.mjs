@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const verifierSource = readFileSync(join(root, 'scripts', 'verify-profile-runtime.mjs'), 'utf8')
+assert.match(verifierSource, /timeout: COMMAND_TIMEOUT_MS/, '前置同步命令必须设置超时')
+assert.match(verifierSource, /dsh_shutdown_failed/, '验证器必须拒绝无法确认退出的 DSH 子进程')
 const fixture = mkdtempSync(join(tmpdir(), 'sr-runtime-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
 
@@ -53,10 +56,15 @@ if (args.length === expectedStart.length && expectedStart.every((value, index) =
     process.exit(23)
   }
   const paperId = 'doi_10.48550_arxiv.1706.03762'
+  const requests = []
   const server = createServer((req, res) => {
+    requests.push(req.url)
+    capture({ requests })
     const bodies = {
       '/': '<!doctype html><p>fake dsh root</p>',
       '/plugins/@dsh-external/dsh-scientific-reading/client.js': 'window.__ModuleLoader__.load({})',
+      '/sr/api/papers': JSON.stringify({ papers: [{ paper_id: paperId, title: 'Attention Is All You Need' }] }),
+      ['/sr/api/paper/' + paperId]: JSON.stringify({ paper_id: paperId, item: { title: 'Attention Is All You Need' } }),
       ['/sr/reading/' + paperId]: '<!doctype html><p>fixture quick read</p>',
       ['/sr/reader/' + paperId]: '<!doctype html><p>fixture full reader</p>',
     }
@@ -88,6 +96,7 @@ function run(mode) {
       ...process.env,
       FAKE_DSH_MODE: mode,
       FAKE_DSH_CAPTURE: capturePath,
+      SR_PROFILE_RUNTIME_FAKE_ENGINE: '1',
       FEISHU_APP_ID: 'must-not-leak',
       FEISHU_APP_SECRET: 'must-not-leak',
       npm_execpath: '',
@@ -108,6 +117,14 @@ try {
   assert.equal(success.result.status, 0, success.result.stderr)
   assert.match(success.result.stdout, /profile_runtime_verified/)
   assertIsolatedCapture(success.capture)
+  assert.deepEqual(success.capture.requests, [
+    '/',
+    '/plugins/@dsh-external/dsh-scientific-reading/client.js',
+    '/sr/api/papers',
+    '/sr/api/paper/doi_10.48550_arxiv.1706.03762',
+    '/sr/reading/doi_10.48550_arxiv.1706.03762',
+    '/sr/reader/doi_10.48550_arxiv.1706.03762',
+  ])
 
   const failure = run('failure')
   assert.notEqual(failure.result.status, 0)

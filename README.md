@@ -53,8 +53,9 @@ npm run verify:profile-bundle -- --dsh-bin "<DSH bin.js 的绝对路径>"
 npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
 ```
 
-前者验证 tarball 安装与配置唯一性，后者会启动一个临时 Profile，并实际请求根页、client、
-浅读与精读页面。两项都只使用系统临时目录，不修改用户 Profile，也不会触发飞书写入。
+前者验证 tarball 安装与配置唯一性，后者会复用已安装的 scientific-reading Python 引擎，
+启动一个临时 Profile，并实际请求根页、client、论文列表/详情、浅读与精读页面。两项都只
+使用系统临时目录，不修改用户 Profile，也不会触发飞书写入。
 
 `web` 与 `headless` 是相互独立的 profile；安装到其中一个不会激活另一个。包当前仍保持
 `private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；每次真实

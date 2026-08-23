@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const profile = 'web'
 const paperId = 'doi_10.48550_arxiv.1706.03762'
+const COMMAND_TIMEOUT_MS = 60_000
 
 function tail(value) {
   return String(value ?? '').slice(-2000)
@@ -17,6 +18,7 @@ function run(label, command, args, env) {
     cwd: root,
     encoding: 'utf8',
     env,
+    timeout: COMMAND_TIMEOUT_MS,
   })
   if (result.error) throw new Error(`${label}_failed error=${tail(result.error.message)}`)
   if (result.status !== 0) {
@@ -51,6 +53,22 @@ function dshCommand(dshBin) {
     : { command: dshBin, prefix: [] }
 }
 
+function resolveEnginePython() {
+  const candidates = process.platform === 'win32'
+    ? [
+        process.env.SCIENTIFIC_READING_PYTHON,
+        process.env.USERPROFILE ? join(process.env.USERPROFILE, 'scientific-reading-data', '.venv', 'Scripts', 'python.exe') : '',
+      ]
+    : [
+        process.env.SCIENTIFIC_READING_PYTHON,
+        process.env.HOME ? join(process.env.HOME, 'scientific-reading-data', '.venv', 'bin', 'python') : '',
+      ]
+  for (const candidate of candidates) {
+    if (candidate && isAbsolute(candidate) && existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  throw new Error('scientific_reading_python_required')
+}
+
 function waitForReady(child) {
   return new Promise((resolveReady, rejectReady) => {
     let stdout = ''
@@ -83,7 +101,7 @@ function waitForReady(child) {
 }
 
 async function stopChild(child) {
-  if (!child || child.exitCode !== null) return
+  if (!child || child.exitCode !== null || child.signalCode !== null) return
   await new Promise((resolveStop) => {
     let done = false
     const finish = () => {
@@ -100,6 +118,7 @@ async function stopChild(child) {
     child.once('exit', finish)
     child.kill('SIGTERM')
   })
+  if (child.exitCode === null && child.signalCode === null) throw new Error('dsh_shutdown_failed')
 }
 
 async function assertPage(baseUrl, path, marker) {
@@ -114,6 +133,8 @@ async function main() {
   const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   const testedHost = manifest.dshCompatibility?.testedHost
   if (typeof testedHost !== 'string') throw new Error('tested_host_required')
+  const skipEngineFixture = process.env.SR_PROFILE_RUNTIME_FAKE_ENGINE === '1'
+  const enginePython = skipEngineFixture ? null : resolveEnginePython()
 
   const temporary = mkdtempSync(join(tmpdir(), 'sr-profile-runtime-'))
   let child = null
@@ -121,10 +142,22 @@ async function main() {
     const packDir = join(temporary, 'pack')
     const dshHome = join(temporary, 'dsh-home')
     const userProfile = join(temporary, 'user-profile')
-    const readingDir = join(userProfile, 'scientific-reading-data', 'papers', paperId, 'reading')
+    const dataRoot = join(userProfile, 'scientific-reading-data')
+    const paperRoot = join(dataRoot, 'papers', paperId)
+    const readingDir = join(paperRoot, 'reading')
     const fullOutputDir = join(readingDir, 'full', 'output')
     mkdirSync(packDir)
     mkdirSync(fullOutputDir, { recursive: true })
+    const metadataPath = join(paperRoot, 'metadata.json')
+    writeFileSync(metadataPath, JSON.stringify({
+      title: 'Attention Is All You Need',
+      authors: ['Ashish Vaswani', 'Noam Shazeer'],
+      doi: '10.48550/arxiv.1706.03762',
+      pmid: null,
+      year: 2017,
+      journal: 'arXiv',
+      zotero_key: null,
+    }, null, 2), 'utf8')
     writeFileSync(join(readingDir, 'quick_read.md'), '# fixture quick read', 'utf8')
     writeFileSync(join(fullOutputDir, 'reader_full.html'), '<!doctype html><p>fixture full reader</p>', 'utf8')
 
@@ -134,9 +167,19 @@ async function main() {
       DSH_TELEMETRY_DISABLED: '1',
       USERPROFILE: userProfile,
       HOME: userProfile,
+      ...(enginePython ? { SCIENTIFIC_READING_PYTHON: enginePython } : {}),
+      PYTHONUTF8: '1',
+      PYTHONIOENCODING: 'utf-8',
     }
     delete env.FEISHU_APP_ID
     delete env.FEISHU_APP_SECRET
+
+    if (enginePython) {
+      run('engine_library_ensure', enginePython, [
+        '-m', 'scientific_reading', '--data-root', dataRoot,
+        'library-ensure', '--metadata', metadataPath,
+      ], env)
+    }
 
     const dsh = dshCommand(dshBin)
     const hostVersion = run('dsh_version', dsh.command, [...dsh.prefix, '--version'], env).trim()
@@ -174,6 +217,8 @@ async function main() {
     const baseUrl = await waitForReady(child)
     await assertPage(baseUrl, '/', '')
     await assertPage(baseUrl, '/plugins/@dsh-external/dsh-scientific-reading/client.js', '__ModuleLoader__')
+    await assertPage(baseUrl, '/sr/api/papers', paperId)
+    await assertPage(baseUrl, `/sr/api/paper/${paperId}`, 'Attention Is All You Need')
     await assertPage(baseUrl, `/sr/reading/${paperId}`, 'fixture quick read')
     await assertPage(baseUrl, `/sr/reader/${paperId}`, 'fixture full reader')
 
