@@ -28,6 +28,11 @@ import {
   engineCheckItem,
   engineInit,
   engineFullRead,
+  engineLibraryList,
+  engineLibraryIngest,
+  engineFolderManage,
+  engineStartDetached,
+  engineFeishuProbe,
   fetchPaper,
 } from './cli.js'
 
@@ -43,13 +48,13 @@ function sendText(res: ServerResponse, status: number, text: string, contentType
   res.end(text)
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes = 64 * 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
     req.on('data', (c: Buffer) => {
       size += c.length
-      if (size > 64 * 1024 * 1024) { reject(new Error('body_too_large')); req.destroy() }
+      if (size > maxBytes) { reject(new Error('body_too_large')); req.destroy?.() }
       else chunks.push(c)
     })
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
@@ -57,8 +62,8 @@ function readBody(req: IncomingMessage): Promise<string> {
   })
 }
 
-function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  return readBody(req).then((text) => {
+function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024 * 1024): Promise<Record<string, unknown>> {
+  return readBody(req, maxBytes).then((text) => {
     try { return text ? (JSON.parse(text) as Record<string, unknown>) : {} }
     catch { throw new Error('invalid_json') }
   })
@@ -96,6 +101,104 @@ export function registerRoutes(ctx: Context, config: Config): void {
   const prefix = (path: string, handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>) => {
     ctx.effect(() => registerSafe({ kind: 'prefix', path, handler }), 'sr-route:' + path)
   }
+
+  const scheduleDerived = (paperId: string): void => {
+    queueMicrotask(() => {
+      void (async () => {
+        const metaPath = join(paperRoot(paperId), 'metadata.json')
+        for (const args of [
+          ['metadata-enrichment', '--metadata', metaPath],
+          ['abstract-read', '--metadata', metaPath],
+          ['xlsx-refresh'],
+        ]) await engineStartDetached(config, args)
+        const probe = await engineFeishuProbe(config)
+        if (probe.ok && (probe.json?.enabled === true || probe.json?.status === 'enabled')) {
+          await engineStartDetached(config, ['feishu-resync', '--config', config.feishuConfig, '--paper-id', paperId])
+        }
+      })().catch(() => { /* 已返回本地成功，派生失败由引擎 pending 记录 */ })
+    })
+  }
+
+  // ── 轻量主库 API：只校验/转发，不在插件内实现筛选或批处理 ─────────────
+  exact('/sr/api/library', async (req, res) => {
+    try {
+      if (req.method === 'GET') {
+        const url = new URL(req.url ?? '/sr/api/library', 'http://localhost')
+        const page = Number(url.searchParams.get('page') ?? 1)
+        const pageSize = Number(url.searchParams.get('page_size') ?? 50)
+        if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+          return sendJson(res, 400, { error: 'invalid_pagination' })
+        }
+        const tags = [...url.searchParams.getAll('tags'), ...url.searchParams.getAll('tag')]
+          .flatMap((value) => value.split(',').map((tag) => tag.trim()).filter(Boolean))
+        const r = await engineLibraryList(config, {
+          page,
+          pageSize,
+          query: url.searchParams.get('query') ?? undefined,
+          folder: url.searchParams.get('folder') ?? url.searchParams.get('folder_id') ?? undefined,
+          tags,
+          status: url.searchParams.get('status') ?? undefined,
+        })
+        if (!r.ok) return sendJson(res, 502, { error: 'library_unavailable', detail: 'library_list_failed' })
+        return sendJson(res, 200, r.json ?? { items: [] })
+      }
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+      const body = await readJsonBody(req, 1 * 1024 * 1024)
+      const r = await engineLibraryIngest(config, body.metadata && typeof body.metadata === 'object' ? body.metadata : body)
+      if (!r.ok || !r.json) return sendJson(res, 502, { error: 'library_ingest_failed', detail: 'engine_rejected_request' })
+      const paperId = String(r.json.paper_id ?? '')
+      if (paperId && isPaperId(paperId)) {
+        const root = paperRoot(paperId)
+        await mkdir(root, { recursive: true })
+        await writeFile(join(root, 'metadata.json'), JSON.stringify(body.metadata && typeof body.metadata === 'object' ? body.metadata : body, null, 2) + '\n', 'utf8')
+        sendJson(res, 200, { local: r.json, paper_id: paperId, derived: 'pending' })
+        scheduleDerived(paperId)
+        return
+      }
+      sendJson(res, 200, { local: r.json, derived: 'pending' })
+    } catch (error) {
+      const detail = error instanceof Error && error.message === 'body_too_large' ? 'body_too_large' : 'invalid_request'
+      sendJson(res, detail === 'body_too_large' ? 413 : 400, { error: detail })
+    }
+  })
+
+  exact('/sr/api/folders', async (req, res) => {
+    try {
+      if (req.method === 'GET') {
+        const r = await engineFolderManage(config, ['folder-list'])
+        if (!r.ok) return sendJson(res, 502, { error: 'folders_unavailable', detail: 'folder_list_failed' })
+        return sendJson(res, 200, r.json ?? [])
+      }
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+      const body = await readJsonBody(req, 1 * 1024 * 1024)
+      const action = String(body.action ?? '')
+      const args = action === 'create' && typeof body.name === 'string'
+        ? ['folder-create', '--name', body.name]
+        : action === 'rename' && typeof body.folder_id === 'string' && typeof body.name === 'string'
+          ? ['folder-rename', '--folder-id', body.folder_id, '--name', body.name]
+          : []
+      if (!args.length) return sendJson(res, 400, { error: 'invalid_folder_request' })
+      const r = await engineFolderManage(config, args)
+      if (!r.ok) return sendJson(res, 502, { error: 'folder_operation_failed', detail: 'engine_rejected_request' })
+      sendJson(res, 200, r.json ?? {})
+    } catch (error) {
+      sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: error instanceof Error && error.message === 'body_too_large' ? 'body_too_large' : 'invalid_request' })
+    }
+  })
+
+  prefix('/sr/api/abstract', async (req, res) => {
+    const id = decodeURIComponent((req.url ?? '').slice('/sr/api/abstract'.length)).split('/').filter(Boolean)[0] ?? ''
+    if (!isPaperId(id)) return sendJson(res, 404, { error: 'bad_paper_id' })
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+    try {
+      const raw = await readOrNull(join(paperRoot(id), 'metadata.json'))
+      if (!raw) return sendJson(res, 404, { error: 'not_found' })
+      const item = JSON.parse(raw) as Record<string, unknown>
+      sendJson(res, 200, { paper_id: id, abstract_en: item.abstract_en ?? null, abstract_zh: item.abstract_zh ?? null, status: item.abstract_status ?? 'pending' })
+    } catch {
+      sendJson(res, 500, { error: 'abstract_unavailable' })
+    }
+  })
 
   // ── 文献库列表（富化：每篇并入 job.json 实时状态）────────────────────
   exact('/sr/api/papers', async (_req, res) => {

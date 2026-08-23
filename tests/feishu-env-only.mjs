@@ -1,4 +1,4 @@
-// 回归测试：飞书凭证只能来自 DSH 宿主环境，不能来自插件设置。
+// 回归测试：离线插件测试显式清理飞书环境，不从设置或测试夹具注入凭证。
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -32,15 +32,11 @@ await writeFile(
   'utf8',
 )
 
-const previous = {
-  appId: process.env.FEISHU_APP_ID,
-  appSecret: process.env.FEISHU_APP_SECRET,
-  pythonPath: process.env.PYTHONPATH,
-}
+const previous = { pythonPath: process.env.PYTHONPATH }
 
 try {
-  process.env.FEISHU_APP_ID = 'host-app-id'
-  process.env.FEISHU_APP_SECRET = 'host-secret'
+  delete process.env.FEISHU_APP_ID
+  delete process.env.FEISHU_APP_SECRET
   process.env.PYTHONPATH = previous.pythonPath
     ? root + delimiter + previous.pythonPath
     : root
@@ -63,8 +59,8 @@ try {
 
   const result = await engineFeishuSync(config, join(root, 'metadata.json'))
   assert.equal(result.ok, true)
-  assert.equal(result.json?.app_id, 'host-app-id')
-  assert.equal(result.json?.app_secret, 'host-secret')
+  assert.equal(result.json?.app_id, null)
+  assert.equal(result.json?.app_secret, null)
 
   const schema = JSON.stringify(Config.toJSON())
   assert.equal(schema.includes('feishuAppId'), false, 'schema 不得暴露飞书 App ID 设置')
@@ -74,13 +70,11 @@ try {
   assert.equal(client.includes('feishuAppId'), false, '设置卡片不得出现飞书 App ID')
   assert.equal(client.includes('feishuAppSecret'), false, '设置卡片不得出现飞书 App Secret')
 } finally {
-  if (previous.appId === undefined) delete process.env.FEISHU_APP_ID
-  else process.env.FEISHU_APP_ID = previous.appId
-  if (previous.appSecret === undefined) delete process.env.FEISHU_APP_SECRET
-  else process.env.FEISHU_APP_SECRET = previous.appSecret
+  delete process.env.FEISHU_APP_ID
+  delete process.env.FEISHU_APP_SECRET
   if (previous.pythonPath === undefined) delete process.env.PYTHONPATH
   else process.env.PYTHONPATH = previous.pythonPath
   await rm(root, { recursive: true, force: true })
 }
 
-console.log('PASS: 飞书凭证只继承宿主环境变量，且不暴露为插件设置')
+console.log('PASS: 离线测试不注入飞书凭证，且不暴露为插件设置')

@@ -10,7 +10,6 @@ import {
   engineEnsureItem,
   engineCheckItem,
   engineAttachPdf,
-  engineList,
   engineSearch,
   engineInit,
   engineParse,
@@ -20,6 +19,13 @@ import {
   engineFeishuPreview,
   engineFeishuSync,
   engineZoteroMigrate,
+  engineLibraryIngest,
+  engineStartDetached,
+  engineLibraryList,
+  engineFolderManage,
+  engineClassification,
+  engineFeishuProbe,
+  engineFeishuResync,
 } from './cli.js'
 
 type Block = { type: 'text'; text: string }
@@ -29,6 +35,28 @@ function resolveMeta(config: Config, paperId: string): string {
   return paperMetadataPath(resolveDataRoot(config), paperId)
 }
 
+function scheduleDerived(config: Config, paperId: string, logger?: (message: string) => void): void {
+  queueMicrotask(() => {
+    void (async () => {
+      const metaPath = resolveMeta(config, paperId)
+      const stages = [
+        ['metadata-enrichment', '--metadata', metaPath],
+        ['abstract-read', '--metadata', metaPath],
+        ['xlsx-refresh'],
+      ]
+      for (const args of stages) {
+        const result = await engineStartDetached(config, args)
+        if (!result.started) logger?.('sr-derived pending: ' + args[0] + ' (' + (result.detail ?? 'not_started') + ')')
+      }
+      const probe = await engineFeishuProbe(config)
+      if (probe.ok && (probe.json?.enabled === true || probe.json?.status === 'enabled')) {
+        const result = await engineStartDetached(config, ['feishu-resync', '--config', config.feishuConfig, '--paper-id', paperId])
+        if (!result.started) logger?.('sr-derived pending: feishu-resync (' + (result.detail ?? 'not_started') + ')')
+      }
+    })().catch((error) => logger?.('sr-derived pending: ' + String(error instanceof Error ? error.message : error)))
+  })
+}
+
 /**
  * Phase 1 工具集：本地文献库（替代 Zotero）闭环。
  * sr_init → sr_library_check → sr_library_ensure(confirm) → sr_pdf_attach
@@ -36,10 +64,35 @@ function resolveMeta(config: Config, paperId: string): string {
  */
 export function registerLibraryTools(ctx: Context, config: Config): void {
 
+  // ── sr_ingest：本地快速入库 + 脱离派生 ────────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_ingest',
+    description: '快速写入本地文献库 skeleton；本地结果返回后再排队题录、Abstract、XLSX 和可选飞书派生。',
+    parameters: {
+      metadata: { type: 'object', required: true, additionalProperties: true, description: '论文元数据 JSON' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args: unknown, value: unknown) => text('入库：' + JSON.stringify(value)),
+    },
+    async execute(args: { metadata?: Record<string, unknown> } & Record<string, unknown>) {
+      const metadata = (args.metadata && typeof args.metadata === 'object' ? args.metadata : args) as Record<string, unknown>
+      const result = await engineLibraryIngest(config, metadata)
+      if (!result.ok || !result.json) return { ok: false, status: 'failed', detail: result.stderr || 'library_ingest_failed' } as never
+      const paperId = String(result.json.paper_id ?? '')
+      if (!paperId) return { ok: true, local: result.json, derived: 'pending' } as never
+      const metaPath = resolveMeta(config, paperId)
+      await mkdir(join(resolveDataRoot(config), 'papers', paperId), { recursive: true })
+      await writeFile(metaPath, JSON.stringify(metadata, null, 2) + '\n', 'utf8')
+      scheduleDerived(config, paperId, ctx.logger?.bind(ctx))
+      return { ok: true, local: result.json, paper_id: paperId, derived: 'pending' } as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_ingest')
+
   // ── sr_init：初始化论文工作区 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_init',
-    description: '新建一篇论文的工作区（元数据入参，返回 paper_id）。后续用 paper_id 调用入库/挂PDF/解析。',
+    description: '[legacy/internal] 新建一篇论文的工作区（旧分步流程）。',
     parameters: {
       title: { type: 'string', required: true, description: '论文题名' },
       authors: { type: 'array', items: { type: 'string' }, description: '作者列表（可选）' },
@@ -92,7 +145,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_check：只读查重 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_check',
-    description: '本地文献库只读查重（不写入）：dedupe = exact（已存在）| none（可新建）| ambiguous（冲突，需用户选择）。',
+    description: '[legacy/internal] 本地文献库只读查重。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID（sr_init 返回）' },
     },
@@ -138,7 +191,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_ensure：写入文献库（需 confirm）──────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_ensure',
-    description: '把论文写入本地文献库（替代 Zotero 入库）。新建条目需要 confirm=true（agent 先取得用户确认）；已存在时无需确认。歧义时返回 ambiguous 由用户选择。',
+    description: '[legacy/internal] 分步写入本地文献库；新流程请用 sr_ingest。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       confirm: { type: 'boolean', required: true, description: '是否已获得用户对“新建条目”的确认' },
@@ -193,7 +246,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_pdf_attach：本地 PDF 登记到文献库附件 ────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_pdf_attach',
-    description: '把本地 PDF 登记到文献库附件（校验 + 复制到工作区 + 读回验证）。pdf 必须是绝对路径。',
+    description: '[legacy/internal] 把本地 PDF 登记到文献库附件。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       pdf: { type: 'string', required: true, description: '本地 PDF 绝对路径' },
@@ -235,28 +288,88 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_list：列出文献库 ─────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_list',
-    description: '列出本地文献库全部条目（论文 ID/题名/状态/年份）。文献页数据源。',
-    parameters: {},
+    description: '分页列出本地文献库（支持 page/page_size/query/folder/tags/status）。文献页数据源。',
+    parameters: {
+      page: { type: 'integer' },
+      page_size: { type: 'integer' },
+      query: { type: 'string' },
+      folder: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+      status: { type: 'string' },
+    },
     output: {
       schema: { type: 'json' },
       render: (_args: unknown, value: unknown) => {
-        const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
+        const raw = value as { items?: unknown }
+        const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : (Array.isArray(raw?.items) ? raw.items as Array<Record<string, unknown>> : [])
         if (items.length === 0) return text('文献库为空')
         const lines = items.map((it) => '· ' + String(it.paper_id) + ' | ' + String(it.title) + ' | ' + String(it.status))
         return text(lines.join('\n'))
       },
     },
-    async execute() {
-      const r = await engineList(config)
+    async execute(args: { page?: number; page_size?: number; query?: string; folder?: string; tags?: string[]; status?: string } = {}) {
+      const r = await engineLibraryList(config, { page: args.page, pageSize: args.page_size, query: args.query, folder: args.folder, tags: args.tags, status: args.status })
       if (!r.ok) throw new Error(r.stderr || 'library-list 失败')
       return (r.json ?? []) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_library_list')
 
+  // ── sr_folder_manage：主库文件夹管理 ─────────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_folder_manage',
+    description: '列出、创建或重命名主库文件夹。',
+    parameters: {
+      action: { type: 'string', required: true, description: 'list | create | rename' },
+      folder_id: { type: 'string' },
+      name: { type: 'string' },
+    },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { action: string; folder_id?: string; name?: string }) {
+      if (args.action === 'list') {
+        const r = await engineFolderManage(config, ['folder-list'])
+        if (!r.ok) return { error: r.stderr || 'folder_list_failed' }
+        return r.json as never
+      }
+      if (args.action === 'create' && args.name) {
+        const r = await engineFolderManage(config, ['folder-create', '--name', args.name])
+        return (r.json ?? { error: r.stderr || 'folder_create_failed' }) as never
+      }
+      if (args.action === 'rename' && args.folder_id && args.name) {
+        const r = await engineFolderManage(config, ['folder-rename', '--folder-id', args.folder_id, '--name', args.name])
+        return (r.json ?? { error: r.stderr || 'folder_rename_failed' }) as never
+      }
+      return { error: 'invalid_folder_request' }
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_folder_manage')
+
+  // ── sr_classification_apply/undo：批量归类 ────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_classification_apply',
+    description: '验证并应用批量归类提案（JSON）。',
+    parameters: { proposals: { type: 'json', required: true }, minimum_confidence: { type: 'number' }, allow_new_folders: { type: 'boolean' } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { proposals: unknown; minimum_confidence?: number; allow_new_folders?: boolean }) {
+      const proposals = Array.isArray(args.proposals) ? args.proposals : { proposals: args.proposals }
+      const r = await engineClassification(config, 'classification-apply', proposals)
+      return (r.json ?? { error: r.stderr || 'classification_apply_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_classification_apply')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_classification_undo',
+    description: '撤销一次批量归类操作。',
+    parameters: { operation_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { operation_id: string }) {
+      const r = await engineClassification(config, 'classification-undo', undefined, args.operation_id)
+      return (r.json ?? { error: r.stderr || 'classification_undo_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_classification_undo')
+
   // ── sr_library_search：全文搜索 ─────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_search',
-    description: '全文搜索本地文献库（FTS5：标题/作者/DOI/期刊）。返回匹配条目。',
+    description: '[legacy/internal] 全文搜索本地文献库。',
     parameters: {
       query: { type: 'string', required: true, description: '搜索词' },
     },
@@ -279,7 +392,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_parse：后台快速解析 ─────────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_parse',
-    description: '把已挂 PDF 的论文排入后台解析（parsed_fast）。返回 job_id，用 sr_job_status 轮询。',
+    description: '[legacy/internal] 把已挂 PDF 的论文排入后台解析。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -310,7 +423,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_quick_read：后台准备默认中文浅读 ─────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_quick_read',
-    description: '把已解析的论文排入后台浅读任务。到达 produce_quick_read gate 时，agent 需读取 gate 列出的本地文件并提交 quick-read-v1 提案。',
+    description: '[legacy/internal] 把已解析的论文排入后台浅读任务。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       project_context: { type: 'string', description: '可选的用户课题背景短文本' },
@@ -342,7 +455,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_full_read：后台准备按需全文精读 ─────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_full_read',
-    description: '把已解析的论文排入后台全文精读任务。到达 produce_full_read gate 时，agent 需读取 gate 列出的本地文件并提交 full-read-v1 提案（含翻译与复核）。',
+    description: '[legacy/internal] 把已解析的论文排入后台全文精读任务。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -373,7 +486,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_feishu_preview：零网络生成飞书同步预览 ───────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_feishu_preview',
-    description: '零网络生成飞书多维表格同步预览（需设置页配置 feishuConfig JSON 路径）。返回预览文件路径与去重键，写库前先预览确认。',
+    description: '[legacy/internal] 零网络生成飞书多维表格同步预览；不进入快速入库流程。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -414,7 +527,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_feishu_sync：显式授权后同步飞书多维表格 ──────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_feishu_sync',
-    description: '显式授权后后台同步飞书多维表格（设置页只配 feishuConfig；FEISHU_APP_ID/SECRET 须在启动 DSH 前设为宿主环境变量）。写库前必须先用 sr_feishu_preview 预览并取得用户确认（confirm=true）。',
+    description: '[legacy/internal] 逐篇确认后同步飞书；不进入快速入库流程。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       confirm: { type: 'boolean', required: true, description: '是否已获得用户对本次飞书写入的确认（必须先预览）' },
@@ -449,7 +562,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_zotero_migrate：Zotero 旧数据一次性迁移 ─────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_zotero_migrate',
-    description: 'Zotero 旧数据一次性迁移：读 Zotero Desktop（须本机运行）条目列表 → 批量写入本地文献库，保留 zotero_key。dry_run=true 只列出将迁移的条目（不写入）。',
+    description: '[legacy/internal] Zotero 旧数据一次性迁移。',
     parameters: {
       dry_run: { type: 'boolean', description: '为 true 时只列出将迁移的条目，不写入本地库' },
     },
@@ -482,6 +595,20 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return (r.json ?? { status: 'failed', error: '无输出' }) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_zotero_migrate')
+
+  // ── sr_feishu_resync：仅在本地 probe enabled 后重排 ──────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_feishu_resync',
+    description: '检查飞书自动同步配置，仅 enabled 时重排待同步条目。',
+    parameters: { paper_ids: { type: 'array', items: { type: 'string' } } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { paper_ids?: string[] }) {
+      const probe = await engineFeishuProbe(config)
+      if (!probe.ok || !(probe.json?.enabled === true || probe.json?.status === 'enabled')) return { status: 'disabled', detail: probe.stderr || 'feishu_not_enabled' }
+      const r = await engineFeishuResync(config, args.paper_ids ?? [])
+      return (r.json ?? { status: 'failed', error: r.stderr || 'feishu_resync_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_feishu_resync')
 
   // ── sr_job_status：查询后台任务状态 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({

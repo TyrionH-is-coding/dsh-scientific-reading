@@ -8,6 +8,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(__dirname, '..')
 const libIndex = new URL('../lib/index.js', import.meta.url).href
 
+delete process.env.FEISHU_APP_ID
+delete process.env.FEISHU_APP_SECRET
+
 const mod = await import(libIndex)
 
 const registrations = []
@@ -47,11 +50,11 @@ try {
 
 const tools = registrations.filter((r) => r.startsWith('tool:'))
 const routes = registrations.filter((r) => r.startsWith('route:'))
-const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_init','sr_library_check','sr_library_ensure','sr_pdf_attach','sr_library_list','sr_library_search','sr_parse','sr_quick_read','sr_full_read','sr_feishu_preview','sr_feishu_sync','sr_zotero_migrate','sr_job_status']
+const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_ingest','sr_init','sr_library_check','sr_library_ensure','sr_pdf_attach','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_library_search','sr_parse','sr_quick_read','sr_full_read','sr_feishu_preview','sr_feishu_sync','sr_feishu_resync','sr_zotero_migrate','sr_job_status']
 for (const t of expectedTools) {
   if (!tools.some((x) => x === 'tool:' + t)) failures.push('缺工具: ' + t)
 }
-const expectedRoutes = ['route:exact:/sr/api/papers','route:exact:/sr/api/paper','route:prefix:/sr/api/paper','route:exact:/sr/api/job','route:prefix:/sr/api/job','route:prefix:/sr/reading','route:prefix:/sr/reader','route:exact:/sr']
+const expectedRoutes = ['route:exact:/sr/api/library','route:exact:/sr/api/folders','route:prefix:/sr/api/abstract','route:exact:/sr/api/papers','route:exact:/sr/api/paper','route:prefix:/sr/api/paper','route:exact:/sr/api/job','route:prefix:/sr/api/job','route:prefix:/sr/reading','route:prefix:/sr/reader','route:exact:/sr']
 for (const r of expectedRoutes) {
   if (!routes.includes(r)) failures.push('缺路由: ' + r)
 }

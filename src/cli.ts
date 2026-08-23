@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -24,7 +24,7 @@ const MAX_BUFFER = 64 * 1024 * 1024
 export function runCommand(
   exe: string,
   args: string[],
-  opts: { timeoutMs?: number; env?: Record<string, string> } = {},
+  opts: { timeoutMs?: number; env?: Record<string, string>; input?: string } = {},
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = execFile(
@@ -50,6 +50,7 @@ export function runCommand(
         resolve({ exitCode, stdout: stdout ?? '', stderr: stderr ?? '' })
       },
     )
+    if (opts.input !== undefined) child.stdin?.end(opts.input)
     // 超时由 execFile 的 timeout 处理（SIGTERM）；这里兜底清理
     child.on('error', () => { /* 已由回调处理 */ })
   })
@@ -340,7 +341,7 @@ export async function resolveEnginePython(config: Config): Promise<string | null
 export async function runEngine(
   config: Config,
   args: string[],
-  opts: { timeoutMs?: number; env?: Record<string, string> } = {},
+  opts: { timeoutMs?: number; env?: Record<string, string>; input?: string } = {},
 ): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
   const python = await resolveEnginePython(config)
   if (!python) {
@@ -361,6 +362,95 @@ export async function runEngine(
   // 0=成功；2=user gate；3=agent gate（协议合法状态，job-status 对 gate 返回非零退出）
   const gateOk = r.exitCode === 0 || r.exitCode === 2 || r.exitCode === 3
   return { ok: gateOk, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, json: parsed }
+}
+
+/** 运行引擎并解析 JSON；input 通过 UTF-8 stdin 传入，避免把元数据拼进命令行。 */
+export async function engineJson(
+  config: Config,
+  args: string[],
+  input?: unknown,
+): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
+  const encoded = input === undefined ? undefined : JSON.stringify(input)
+  return runEngine(config, args, encoded === undefined ? {} : { input: encoded })
+}
+
+/** 启动不等待结果的引擎子进程。子进程只继承宿主环境，不把环境值写入日志。 */
+export async function engineStartDetached(
+  config: Config,
+  args: string[],
+  input?: unknown,
+): Promise<{ started: boolean; detail?: string }> {
+  const python = await resolveEnginePython(config)
+  if (!python) return { started: false, detail: 'engine_not_found' }
+  const dataRoot = resolveDataRoot(config)
+  const child = spawn(
+    python,
+    ['-m', 'scientific_reading', '--data-root', dataRoot, ...args],
+    {
+      detached: true,
+      windowsHide: true,
+      stdio: ['pipe', 'ignore', 'ignore'],
+      env: {
+        ...process.env,
+        TERM: 'dumb',
+        NO_COLOR: '1',
+        PYTHONIOENCODING: 'utf-8',
+      },
+    },
+  )
+  child.on('error', () => { /* 派生失败写入引擎 job/pending，由引擎负责 */ })
+  if (input !== undefined) child.stdin?.end(JSON.stringify(input))
+  else child.stdin?.end()
+  child.unref()
+  return { started: true }
+}
+
+/** 两阶段入库：先执行本地事务，派生阶段由调用方用 engineStartDetached 排队。 */
+export async function engineLibraryIngest(config: Config, input: unknown): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await engineJson(config, ['library-ingest'], input)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+/** library-list-v2：分页、查询、文件夹、标签和状态筛选。 */
+export async function engineLibraryList(config: Config, options: {
+  page?: number; pageSize?: number; query?: string; folder?: string; tags?: string[]; status?: string
+} = {}): Promise<{ ok: boolean; json: unknown; stderr: string }> {
+  const args = ['library-list-v2', '--page', String(options.page ?? 1), '--page-size', String(options.pageSize ?? 50)]
+  if (options.query) args.push('--query', options.query)
+  if (options.folder) args.push('--folder-id', options.folder)
+  for (const tag of options.tags ?? []) args.push('--tag', tag)
+  if (options.status) args.push('--status', options.status)
+  const r = await engineJson(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineFolderManage(config: Config, args: string[]): Promise<{ ok: boolean; json: unknown; stderr: string }> {
+  const r = await engineJson(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineClassification(config: Config, command: 'classification-apply' | 'classification-undo', input?: unknown, operationId?: string): Promise<{ ok: boolean; json: unknown; stderr: string }> {
+  const args: string[] = [command]
+  if (command === 'classification-apply') args.push('--input', '-')
+  else args.push('--operation-id', operationId ?? '')
+  const r = await engineJson(config, args, input)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineFeishuProbe(config: Config): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const cfg = config.feishuConfig.trim()
+  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
+  const r = await engineJson(config, ['feishu-probe', '--config', cfg])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineFeishuResync(config: Config, paperIds: string[] = []): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const cfg = config.feishuConfig.trim()
+  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
+  const args = ['feishu-resync', '--config', cfg]
+  for (const id of paperIds) args.push('--paper-id', id)
+  const r = await engineJson(config, args)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
 /** library-ensure：写入本地文献库条目（查重+读回） */
