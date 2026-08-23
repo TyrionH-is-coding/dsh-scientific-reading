@@ -61,6 +61,10 @@ npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
 `private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；每次真实
 飞书写入仍须先预览，并取得用户针对该次写入的明确确认。
 
+如果同名插件此前通过 `dev_inject_plugin` 注册，开发注入会在宿主启动时覆盖 tarball。
+转为持久安装前必须先从 super-injector 注销该开发目录，再执行一次 `plugin remove` 后重新
+`plugin add <tarball>`；启动后应确认 profile 下的包目录不是指向仓库的 junction。
+
 ```powershell
 # 注入/重载（DSH dev 工具）
 dev_build_plugin / dev_inject_plugin / dev_reload_package

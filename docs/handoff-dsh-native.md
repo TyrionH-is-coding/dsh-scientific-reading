@@ -128,6 +128,11 @@ npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
 client、论文列表/详情、浅读和精读路由；最后删除临时目录。它们不会使用或改写用户
 `%USERPROFILE%\.dsh\profiles`，也不会触发真实飞书写入。
 
+从开发注入切换到持久 Profile Bundle 时，super-injector 的同名登记优先级更高：若不先注销，
+每次宿主启动都会把 tarball 安装目录重新替换成仓库 junction。切换时先备份 Profile 配置与
+`super-injector/registry.json`，注销同名开发目录，再执行 `plugin remove` 和离线
+`plugin add <tarball>`；重启后同时核对已安装 `lib/client.js` 内容和目录 `LinkType`。
+
 随后在 DSH 开发环境执行 `dev_build_plugin`、`dev_inject_plugin` 或 `dev_reload_package`。
 需要重新装载 client、宿主环境变量或 package 声明时，优先完整重启 DSH，再运行：
 
