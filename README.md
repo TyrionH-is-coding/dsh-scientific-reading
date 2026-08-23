@@ -46,6 +46,16 @@ dsh plugin --profile web add .\dsh-external-dsh-scientific-reading-0.0.1.tgz --o
 dsh --profile web --dump-config
 ```
 
+交付前还要用同一个真实 DSH 入口完成两项隔离验收：
+
+```powershell
+npm run verify:profile-bundle -- --dsh-bin "<DSH bin.js 的绝对路径>"
+npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
+```
+
+前者验证 tarball 安装与配置唯一性，后者会启动一个临时 Profile，并实际请求根页、client、
+浅读与精读页面。两项都只使用系统临时目录，不修改用户 Profile，也不会触发飞书写入。
+
 `web` 与 `headless` 是相互独立的 profile；安装到其中一个不会激活另一个。包当前仍保持
 `private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；每次真实
 飞书写入仍须先预览，并取得用户针对该次写入的明确确认。
