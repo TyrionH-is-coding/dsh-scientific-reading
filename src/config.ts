@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import z from 'schemastery'
+import z from '@deepseek-ai/schemastery'
 
 /**
  * 插件配置。Phase 0 由 cordis.yml / 默认值提供；

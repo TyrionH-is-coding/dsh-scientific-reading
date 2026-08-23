@@ -6,10 +6,16 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const configSource = readFileSync(join(root, 'src', 'config.ts'), 'utf8')
 
 assert.equal(manifest.dshCompatibility?.testedHost, '0.1.0-rc.7')
 assert.equal(manifest.dshCompatibility?.node, '22')
 assert.equal(manifest.dshCompatibility?.python, '3.11')
+assert.match(configSource, /from ['"]@deepseek-ai\/schemastery['"]/, '配置源码必须导入 DSH scoped schemastery')
+assert.doesNotMatch(configSource, /from ['"]schemastery['"]/, '配置源码不得导入历史 schemastery 别名')
+assert.equal(manifest.peerDependencies?.['@deepseek-ai/schemastery'], '^3.18.0')
+assert.equal(Object.hasOwn(manifest.peerDependencies ?? {}, 'schemastery'), false)
+assert.equal(Object.hasOwn(manifest.devDependencies ?? {}, 'schemastery'), false)
 
 const expectedDependencies = {
   '@deepseek-ai/dsh-tools': '0.1.0-rc.7',
@@ -21,7 +27,6 @@ const expectedDependencies = {
   '@deepseek-ai/cordis': '4.0.1',
   '@deepseek-ai/schemastery': '3.18.1',
   cordis: 'npm:@deepseek-ai/cordis@4.0.1',
-  schemastery: 'npm:@deepseek-ai/schemastery@3.18.1',
   '@types/node': '24.13.3',
   typescript: '5.9.3',
 }
@@ -55,7 +60,6 @@ for (const [name, expectedName, version] of [
   ['@deepseek-ai/cordis', '@deepseek-ai/cordis', '4.0.1'],
   ['@deepseek-ai/schemastery', '@deepseek-ai/schemastery', '3.18.1'],
   ['cordis', '@deepseek-ai/cordis', '4.0.1'],
-  ['schemastery', '@deepseek-ai/schemastery', '3.18.1'],
 ]) {
   assert.equal(readInstalledPackage(name, expectedName).version, version, `${name} 安装版本必须为 ${version}`)
 }
