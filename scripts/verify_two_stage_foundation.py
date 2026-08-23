@@ -1,6 +1,7 @@
 """Phase 1 主库与轻量入库的完全离线集成验收。"""
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
 import os
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -108,6 +110,22 @@ def _verified_unchanged(before: dict, after: dict) -> bool:
         before.get(name, {}).get("status") == "checked"
         for name in ("profile", "3080")
     )
+
+
+def _cleanup_temp_root(root: Path) -> dict:
+    """删除本 verifier 自己创建的临时根目录，并读回删除结果。"""
+    last_error = None
+    gc.collect()
+    for attempt in range(5):
+        try:
+            shutil.rmtree(root)
+            exists = root.exists()
+            return {"status": "passed" if not exists else "failed", "exists": exists}
+        except OSError as error:
+            last_error = error
+            if attempt < 4:
+                time.sleep(0.1)
+    return {"status": "failed", "exists": root.exists(), "error": type(last_error).__name__}
 
 
 def _assert_fake_config(config):
@@ -221,6 +239,7 @@ def main() -> int:
     root = Path(tempfile.mkdtemp(prefix="sr-foundation-"))
     steps = {}
     external_writes = False
+    result = None
     try:
         engine = Path(os.environ.get("SR_ENGINE_ROOT", "")).resolve()
         if not (engine / "src" / "scientific_reading").is_dir():
@@ -333,11 +352,20 @@ def main() -> int:
         unchanged = _verified_unchanged(before, after)
         core_passed = all(value == "passed" for value in steps.values())
         status = "passed" if core_passed and unchanged else "passed_with_limits" if core_passed else "failed"
-        return _emit({"status": status, "steps": steps, "profile_3080_unchanged": unchanged, "profile_3080_gate": "passed" if unchanged else "not_verified", "runtime": {"before": before, "after": after}, "external_writes": external_writes, "data_root": "temporary_cleaned", "known_limits": ["未提供 SR_PROFILE_TARBALL 或 SR_3080_URL 时仅输出 skipped/not_verified，不把 Profile/3080 当作已验收门禁"]})
+        result = {"status": status, "steps": steps, "profile_3080_unchanged": unchanged, "profile_3080_gate": "passed" if unchanged else "not_verified", "runtime": {"before": before, "after": after}, "external_writes": external_writes, "known_limits": ["未提供 SR_PROFILE_TARBALL 或 SR_3080_URL 时仅输出 skipped/not_verified，不把 Profile/3080 当作已验收门禁"]}
     except Exception as error:
-        return _emit({"status": "failed", "steps": steps, "error": str(error), "profile_3080_unchanged": False, "external_writes": external_writes})
+        result = {"status": "failed", "steps": steps, "error": str(error), "profile_3080_unchanged": False, "external_writes": external_writes}
     finally:
-        shutil.rmtree(root, ignore_errors=True)
+        cleanup = _cleanup_temp_root(root)
+        if result is None:
+            result = {"status": "failed", "steps": steps, "error": "verifier_result_missing", "external_writes": external_writes}
+        result["cleanup"] = cleanup
+        if cleanup["status"] != "passed":
+            result["status"] = "cleanup_failed"
+            result["error"] = "temporary_cleanup_failed"
+        else:
+            result["data_root"] = "temporary_cleaned"
+    return _emit(result)
 
 
 def _emit(value: dict) -> int:

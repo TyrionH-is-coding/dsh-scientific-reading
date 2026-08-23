@@ -2,7 +2,7 @@
 
 ## Phase 1：两段式本地入库（本地离线实现完成）
 
-已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。Zotero 新流程已停用，旧字段/预览确认工具仅作为 legacy 兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
+已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。插件只把 canonical `paper_id` 与可选配置路径交给引擎，由引擎从 SQLite 主库刷新 `metadata.json`；不会用调用方 payload 覆盖题录。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。Zotero 新流程已停用，旧字段/预览确认工具仅作为 legacy 兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
 
 文献工作流插件（Phase 0：下载段已可用）。把 Scientific-Reading-for-Newbies 的
 完整文献流水线搬进 DSH：下载 → 解析 → 入库 → 笔记。
@@ -62,8 +62,8 @@ npm run verify:profile-runtime -- --dsh-bin "<DSH bin.js 的绝对路径>"
 使用系统临时目录，不修改用户 Profile，也不会触发飞书写入。
 
 `web` 与 `headless` 是相互独立的 profile；安装到其中一个不会激活另一个。包当前仍保持
-`private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；每次真实
-飞书写入仍须先预览，并取得用户针对该次写入的明确确认。
+`private: true`，用于本地打包交付而非发布到 npm。Profile 激活不授权业务写入；Phase 1
+canonical 入库由引擎持久派生管线处理飞书，不走旧 preview/confirm 入口。
 
 如果同名插件此前通过 `dev_inject_plugin` 注册，开发注入会在宿主启动时覆盖 tarball。
 转为持久安装前必须先从 super-injector 注销该开发目录，再执行一次 `plugin remove` 后重新
@@ -85,6 +85,14 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 ## Phase 2/3（未在本阶段完成）
 
 Phase 2 文献页与 Phase 3 全文精读/飞书真实写入/Zotero 迁移仍是后续验收范围。当前保留的路由、旧预览/confirm 及迁移入口只用于 legacy 兼容，不代表这些阶段已完成。
+
+## Legacy/internal 兼容入口
+
+以下能力保留用于旧数据、迁移或后续阶段兼容，不属于 Phase 1 canonical 默认流程：
+`sr_init`、`sr_library_check`、`sr_library_ensure`、`sr_parse`、`sr_quick_read`、
+`sr_full_read`、`sr_feishu_preview`、`sr_feishu_sync(confirm=true)`、
+`sr_feishu_resync` 与 `sr_zotero_migrate`。其中 quick-read、全文精读、旧飞书
+preview/confirm 和 Zotero 迁移均不代表 Phase 2/3 已完成。
 
 ## 飞书凭证
 

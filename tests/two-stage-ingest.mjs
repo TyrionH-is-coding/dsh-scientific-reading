@@ -43,11 +43,14 @@ try {
   assert.equal(local.ok, true)
   assert.equal(local.json?.paper_id, 'library_demo')
 
-  const derived = await engineDerivedEnqueue(config, join(root, 'data', 'papers', 'library_demo', 'metadata.json'))
+  const derived = await engineDerivedEnqueue(config, 'library_demo')
   assert.equal(derived.ok, true)
   assert.equal(derived.json?.command, 'derived-enqueue')
-  const configuredDerived = await engineDerivedEnqueue({ ...config, feishuConfig: join(root, 'feishu-config.json') }, join(root, 'data', 'papers', 'library_demo', 'metadata.json'))
+  const configuredDerived = await engineDerivedEnqueue({ ...config, feishuConfig: join(root, 'feishu-config.json') }, 'library_demo')
   assert.equal(configuredDerived.ok, true)
+  const derivedLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue') && !line.includes('--feishu-config'))
+  assert.match(derivedLog ?? '', /--paper-id.*library_demo/)
+  assert.doesNotMatch(derivedLog ?? '', /--metadata/)
 
   const submitted = await engineAbstractReadSubmit(config, 'job_0123456789abcdef', {
     abstract_zh: '人工提交的翻译',
@@ -60,6 +63,7 @@ try {
   assert.doesNotMatch(submittedLog ?? '', /--feishu-config/)
   const configuredLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue') && line.includes('--feishu-config'))
   assert.match(configuredLog ?? '', /feishu-config\.json/)
+  assert.match(configuredLog ?? '', /--paper-id.*library_demo/)
 
   const started = Date.now()
   const detached = await engineStartDetached(config, ['metadata-enrichment', '--slow'], { paper_id: 'library_demo' })

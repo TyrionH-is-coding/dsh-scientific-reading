@@ -39,8 +39,7 @@ function resolveMeta(config: Config, paperId: string): string {
 function scheduleDerived(config: Config, paperId: string, logger?: (message: string) => void): void {
   queueMicrotask(() => {
     void (async () => {
-      const metaPath = resolveMeta(config, paperId)
-      const result = await engineDerivedEnqueue(config, metaPath)
+      const result = await engineDerivedEnqueue(config, paperId)
       if (!result.ok) logger?.('sr-derived pending: enqueue_failed')
     })().catch(() => logger?.('sr-derived pending: enqueue_failed'))
   })
@@ -70,9 +69,6 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       if (!result.ok || !result.json) return { ok: false, status: 'failed', detail: result.stderr || 'library_ingest_failed' } as never
       const paperId = String(result.json.paper_id ?? '')
       if (!paperId) return { ok: true, local: result.json, derived: 'pending' } as never
-      const metaPath = resolveMeta(config, paperId)
-      await mkdir(join(resolveDataRoot(config), 'papers', paperId), { recursive: true })
-      await writeFile(metaPath, JSON.stringify(metadata, null, 2) + '\n', 'utf8')
       scheduleDerived(config, paperId, ctx.logger?.bind(ctx))
       return { ok: true, local: result.json, paper_id: paperId, derived: 'pending' } as never
     },

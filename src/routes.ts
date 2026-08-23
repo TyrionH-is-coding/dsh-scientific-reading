@@ -140,9 +140,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
       if (!r.ok || !r.json) return sendJson(res, 502, { error: 'library_ingest_failed', detail: 'engine_rejected_request' })
       const paperId = String(r.json.paper_id ?? '')
       if (paperId && isPaperId(paperId)) {
-        const root = paperRoot(paperId)
-        await mkdir(root, { recursive: true })
-        await writeFile(join(root, 'metadata.json'), JSON.stringify(body.metadata && typeof body.metadata === 'object' ? body.metadata : body, null, 2) + '\n', 'utf8')
         sendJson(res, 200, { local: r.json, paper_id: paperId, derived: 'pending' })
         scheduleDerived(paperId)
         return

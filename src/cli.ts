@@ -426,8 +426,8 @@ export async function engineStartDetached(
 }
 
 /** 持久派生编排：引擎负责记录 pending/failed 状态，插件只提交一次。 */
-export async function engineDerivedEnqueue(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const args = ['derived-enqueue', '--metadata', metadataPath]
+export async function engineDerivedEnqueue(config: Config, paperId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const args = ['derived-enqueue', '--paper-id', paperId]
   const cfg = config.feishuConfig.trim()
   if (cfg) args.push('--feishu-config', cfg)
   const r = await engineJson(config, args)

@@ -1,6 +1,7 @@
 // tests/harness.mjs — 插件挂载冒烟（borrowed-ideas §4.2：plugin-template 的 harness 测试）
 // 真实验证：apply 不抛错 + 工具/路由注册符合预期。本机直接 node tests/harness.mjs 运行。
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -58,6 +59,11 @@ const expectedRoutes = ['route:exact:/sr/api/library','route:exact:/sr/api/folde
 for (const r of expectedRoutes) {
   if (!routes.includes(r)) failures.push('缺路由: ' + r)
 }
+
+const routeSource = readFileSync(join(pluginDir, 'src', 'routes.ts'), 'utf8')
+const toolSource = readFileSync(join(pluginDir, 'src', 'library_tools.ts'), 'utf8')
+if (routeSource.includes("writeFile(join(root, 'metadata.json')")) failures.push('POST 主库路由不得覆盖 canonical metadata.json')
+if (toolSource.includes("writeFile(metaPath, JSON.stringify(metadata")) failures.push('sr_ingest 不得覆盖 canonical metadata.json')
 
 // 重复注册应被 registerSafe 容忍（不抛错）
 try {
