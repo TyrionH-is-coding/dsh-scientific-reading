@@ -222,13 +222,13 @@ git commit -m "精读：按来源块恢复全文翻译与重点"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_full_read_renderer.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_workspace.py`
 
-- [ ] **Step 1: 写 reader 合同失败测试**
+- [x] **Step 1: 写 reader 合同失败测试**
 
 断言：完整正文块顺序、段落英中对照、图表位置、图注双语、参考文献英语、可收起左目录、sticky
 重点控件、只看/隐藏重点、目录黄色/亮蓝标记、短句合并、HTML 离线无外链资源、manifest PDF SHA、
 新旧路径回退和 stale 标记。
 
-- [ ] **Step 2: 固定工作区路径而不移动旧资产**
+- [x] **Step 2: 固定工作区路径而不移动旧资产**
 
 `PaperWorkspace` 新增：
 
@@ -243,7 +243,7 @@ def existing_reader_html(self) -> Path | None:
 
 不得自动重命名或删除 `reader_full.html`。
 
-- [ ] **Step 3: 最小修改现有 renderer**
+- [x] **Step 3: 最小修改现有 renderer**
 
 复用已确认的 v2 阅读 CSS/JS，不另造主题。重点颜色：primary 黄色、secondary 亮蓝；目录点使用高
 饱和度同色。把连续短句/列表项合并为一个有序列表或一个翻译块，避免每句都插独立“英文原文”。
@@ -253,7 +253,7 @@ def existing_reader_html(self) -> Path | None:
 translation manifest SHA、reader SHA、generated_at、source blocks、assets。渲染后读回 HTML 和
 manifest，再更新 SQLite 完成状态。
 
-- [ ] **Step 4: 测试并提交**
+- [x] **Step 4: 测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_reader_v2.py tests/test_full_read_renderer.py tests/test_workspace.py -q
@@ -444,3 +444,17 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
 - 已完成显式 `paper_id`、按 source SHA 分代及 `active_workspace` 指针、v2 逐块翻译合同、参考文献仅保留英文且禁止高亮、严格 CLI resume 白名单、翻译批 checkpoint 幂等与 gap 防护，以及 mutable metadata 兼容。
 - 验证期间未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile 或当前 3080。
 - `render_reader` 仍保持明确 gate，留待 Task 4 接入。
+
+### Task 4 执行记录
+
+- 引擎提交链：`07dc44e`、`58df064`、`71416d2`、`b0b88aa`、`a78d3d1`。
+- 聚焦测试：`70 passed`；fresh 引擎全量测试：`689 passed, 1 skipped`。
+- 规格审查与质量审查：`APPROVED`。
+- 已完成首次 base workspace 与 source-SHA generation 两种 reader 发布路径；图表按来源顺序渲染，
+  同一逻辑 Table 优先可读 HTML companion 且不重复展示，manifest 仍保留全部来源资产。
+- primary/secondary 图注重点会标记父 Figure/Table，`focus-only` 保留完整相邻图表；参考文献只显示
+  一份英文，reader 保持离线、自包含、可追溯。
+- publication 会读回并核对 PDF、parser manifest、translation manifest、reader 和逐项 asset 的实际
+  SHA、路径 containment、active workspace 与 SQLite artifact/status；失败不把旧 artifact 错标为 ready。
+- 本任务未引入 v2.1，未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile/3080；旧
+  PDF、MinerU、HTML、quick_read 与 stale 资产均未移动或删除。
