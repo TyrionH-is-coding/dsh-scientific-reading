@@ -9,7 +9,13 @@
    → 给返回补上 "path" 键。
 """
 
+import contextlib
+import io
+import json
+import shutil
 import sys
+import tempfile
+from pathlib import Path
 
 # 强制 UTF-8 输出：中文 Windows 控制台默认 GBK，打印 JSON 会 UnicodeEncodeError
 if hasattr(sys.stdout, "reconfigure"):
@@ -54,4 +60,59 @@ arxiv_mod.download_arxiv_pdf = _patched_download
 
 from scansci_pdf.main import app
 
-app()
+
+def _extract_json(text: str):
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char not in "{[":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _provider_mode() -> int:
+    try:
+        payload = json.load(sys.stdin)
+        if set(payload) != {"identifier", "destination", "legal_only"}:
+            raise ValueError("provider_request_invalid")
+        identifier = payload["identifier"]
+        destination = Path(payload["destination"])
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError("provider_identifier_invalid")
+        if payload["legal_only"] is not True:
+            raise ValueError("legal_only_required")
+        if not destination.is_absolute() or destination.suffix.lower() != ".pdf":
+            raise ValueError("provider_destination_invalid")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".scansci-", dir=destination.parent) as temporary:
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture):
+                app(
+                    args=["fetch", identifier, "--output", temporary, "--format", "json"],
+                    standalone_mode=False,
+                )
+            noise = capture.getvalue()
+            result = _extract_json(noise)
+            paper = result.get("paper") if isinstance(result, dict) else None
+            source = Path(str(paper.get("pdf_path", ""))) if isinstance(paper, dict) else None
+            if result is None or result.get("status") != "success" or source is None or not source.is_file() or not source.resolve().is_relative_to(Path(temporary).resolve()):
+                raise ValueError("scansci_fetch_failed")
+            shutil.copyfile(source, destination)
+            if noise.strip():
+                print(noise, file=sys.stderr, end="" if noise.endswith("\n") else "\n")
+        print(json.dumps({"status": "success", "path": str(destination.resolve())}, ensure_ascii=False))
+        return 0
+    except Exception as error:
+        print(json.dumps({"status": "failed", "error": str(error)}, ensure_ascii=False))
+        return 4
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        raise SystemExit(_provider_mode())
+    app()

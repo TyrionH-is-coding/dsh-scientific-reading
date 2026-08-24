@@ -27,7 +27,12 @@ import {
   engineClassification,
   engineFeishuProbe,
   engineFeishuResync,
+  engineStartFullRead,
+  engineContinueFullRead,
+  engineAttachFullReadPdf,
+  engineExportAssets,
 } from './cli.js'
+import { isPaperId } from './papers.js'
 
 type Block = { type: 'text'; text: string }
 const text = (t: string): Block[] => [{ type: 'text', text: t }]
@@ -51,6 +56,63 @@ function scheduleDerived(config: Config, paperId: string, logger?: (message: str
  * → sr_parse → sr_quick_read → sr_job_status
  */
 export function registerLibraryTools(ctx: Context, config: Config): void {
+
+  const requirePaperId = (value: string): void => {
+    if (!isPaperId(value)) throw new Error('paper_id_invalid')
+  }
+  const requireJobId = (value: string): void => {
+    if (!/^job_[0-9a-f]{16}$/.test(value)) throw new Error('job_id_invalid')
+  }
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_start_full_read',
+    description: '启动或复用单篇持久精读父任务。',
+    parameters: { paper_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('精读任务：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string }) {
+      requirePaperId(args.paper_id)
+      const r = await engineStartFullRead(config, args.paper_id)
+      if (!r.ok || !r.json) return { ok: false, detail: r.stderr || 'full_read_start_failed' } as never
+      return { parent_job_id: String(r.json.parent_job_id ?? '') } as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_start_full_read')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_continue_full_read',
+    description: '仅按当前 needs_user/waiting_agent gate 合同继续精读父任务。',
+    parameters: { job_id: { type: 'string', required: true }, input: { type: 'object', required: true, additionalProperties: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('精读继续：' + JSON.stringify(value)) },
+    async execute(args: { job_id: string; input: Record<string, unknown> }) {
+      requireJobId(args.job_id)
+      const r = await engineContinueFullRead(config, args.job_id, args.input)
+      return (r.json ?? { ok: false, detail: r.stderr || 'full_read_continue_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_continue_full_read')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_attach_pdf',
+    description: '为当前精读 gate 挂接本地绝对路径 PDF。',
+    parameters: { paper_id: { type: 'string', required: true }, pdf: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('PDF 挂接：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string; pdf: string }) {
+      requirePaperId(args.paper_id)
+      if (!/^(?:[A-Za-z]:[\\/]|\/).+\.pdf$/i.test(args.pdf)) throw new Error('absolute_pdf_required')
+      const r = await engineAttachFullReadPdf(config, args.paper_id, args.pdf)
+      return (r.json ?? { ok: false, detail: r.stderr || 'pdf_attach_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_attach_pdf')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_export_assets',
+    description: '导出当前精读代的正文 Figure/Table 资产包。',
+    parameters: { paper_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('图表导出：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string }) {
+      requirePaperId(args.paper_id)
+      const r = await engineExportAssets(config, args.paper_id)
+      return (r.json ?? { ok: false, detail: r.stderr || 'asset_export_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_export_assets')
 
   // ── sr_ingest：本地快速入库 + 脱离派生 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
@@ -631,6 +693,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       },
     },
     async execute(args: { job_id: string }) {
+      requireJobId(args.job_id)
       const r = await engineJobStatus(config, args.job_id)
       if (!r.ok || !r.json) throw new Error(r.stderr || 'job-status 失败')
       return r.json as never

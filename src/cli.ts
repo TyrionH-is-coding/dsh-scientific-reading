@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import type { Config } from './config.js'
 import { resolveOutputDir, resolveDataRoot, scansciDataDir } from './config.js'
 
@@ -104,8 +105,7 @@ export function extractJsonValue(stdout: string): unknown {
 // ── scansci-pdf 运行入口（fetch 走垫片；其余命令走 exe）────────────
 
 export function wrapScriptPath(): string {
-  return new URL(WRAP_REL, import.meta.url).pathname
-    .replace(/^\/([A-Za-z]:\/)/, '$1') // Windows file URL → 路径
+  return fileURLToPath(new URL(WRAP_REL, import.meta.url))
 }
 
 /** 解析装有 scansci-pdf 的 Python：显式配置 → uv tool 环境 → PATH python */
@@ -371,9 +371,13 @@ export async function engineJson(
   config: Config,
   args: string[],
   input?: unknown,
+  env?: Record<string, string>,
 ): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
   const encoded = input === undefined ? undefined : JSON.stringify(input)
-  return runEngine(config, args, encoded === undefined ? {} : { input: encoded })
+  return runEngine(config, args, {
+    ...(encoded === undefined ? {} : { input: encoded }),
+    ...(env ? { env } : {}),
+  })
 }
 
 /** 启动不等待结果的引擎子进程。子进程只继承宿主环境，不把环境值写入日志。 */
@@ -572,6 +576,46 @@ export async function engineZoteroMigrate(config: Config, dryRun: boolean): Prom
 /** job-status：查询后台任务状态 */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+async function trustedProviderEnv(config: Config): Promise<Record<string, string> | null> {
+  const python = await resolveScansciPython(config)
+  if (!python) return null
+  const wrapper = wrapScriptPath()
+  try { await access(wrapper) } catch { return null }
+  return { SR_SCANSCI_PROVIDER_PYTHON: python, SR_SCANSCI_PROVIDER_WRAPPER: wrapper }
+}
+
+export async function engineStartFullRead(config: Config, paperId: string) {
+  const env = await trustedProviderEnv(config)
+  const r = await engineJson(
+    config,
+    ['full-read-pipeline-start', '--paper-id', paperId, '--provider-profile', env ? 'scansci' : 'none'],
+    undefined,
+    env ?? undefined,
+  )
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineContinueFullRead(config: Config, jobId: string, suppliedInput: Record<string, unknown>) {
+  const env = await trustedProviderEnv(config)
+  const r = await engineJson(config, ['full-read-pipeline-resume', '--job-id', jobId, '--input', '-'], suppliedInput, env ?? undefined)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineAttachFullReadPdf(config: Config, paperId: string, pdfPath: string) {
+  const r = await engineJson(config, ['pdf-attach', '--paper-id', paperId, '--pdf', pdfPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineExportAssets(config: Config, paperId: string) {
+  const r = await engineJson(config, ['export-assets', '--paper-id', paperId])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineResolveArtifact(config: Config, paperId: string, kind: 'reader' | 'exports') {
+  const r = await engineJson(config, ['artifact-resolve', '--paper-id', paperId, '--kind', kind])
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 /** library-ensure --check：只读查重 */

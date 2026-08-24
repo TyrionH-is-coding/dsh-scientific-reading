@@ -15,7 +15,7 @@ declare module 'cordis' {
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, writeFile, readFile, access, rename } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from './config.js'
 import { resolveDataRoot, resolveOutputDir } from './config.js'
 import { isPaperId } from './papers.js'
@@ -34,6 +34,11 @@ import {
   engineFolderManage,
   engineDerivedEnqueue,
   fetchPaper,
+  engineStartFullRead,
+  engineContinueFullRead,
+  engineAttachFullReadPdf,
+  engineExportAssets,
+  engineResolveArtifact,
 } from './cli.js'
 
 const JOB_ID_RE = /^job_[0-9a-f]{16}$/
@@ -75,6 +80,19 @@ async function readOrNull(path: string): Promise<string | null> {
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function artifactPath(root: string, rel: string, kind: 'reader' | 'exports'): string | null {
+  const normalized = rel.replace(/\\/g, '/')
+  const allowed = kind === 'reader'
+    ? /^generations\/[0-9a-f]{16}\/(?:reading\/reader\.html|output\/reader_full\.html)$/.test(normalized)
+    : /^generations\/[0-9a-f]{16}\/exports$/.test(normalized)
+  if (!allowed || normalized !== rel) return null
+  return join(root, ...normalized.split('/'))
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 /**
@@ -264,14 +282,17 @@ export function registerRoutes(ctx: Context, config: Config): void {
     try {
       if (req.method === 'GET' && !action) {
         const itemRaw = await readOrNull(metaPath)
-        const item = itemRaw ? JSON.parse(itemRaw) : null
-        const job = await readOrNull(join(root, 'job.json'))
+        const metadata = itemRaw ? JSON.parse(itemRaw) : null
+        const libraryItem = await engineLibraryItem(config, id)
+        const item = libraryItem.ok && libraryItem.json ? { ...metadata, ...libraryItem.json } : metadata
+        const activeJobId = typeof item?.active_job_id === 'string' && JOB_ID_RE.test(item.active_job_id) ? item.active_job_id : ''
+        const activeJob = activeJobId ? await engineJobStatus(config, activeJobId) : null
         const reading = await readOrNull(join(root, 'reading', 'quick_read.md'))
         const outputs: string[] = []
-        for (const p of ['reading/quick_read.md', 'reading/full/output/reader_full.html']) {
+        for (const p of ['reading/quick_read.md']) {
           try { await access(join(root, p)); outputs.push(p) } catch { /* 不存在 */ }
         }
-        sendJson(res, 200, { paper_id: id, item, job: job ? JSON.parse(job) : null, reading, outputs })
+        sendJson(res, 200, { paper_id: id, item, job: activeJob?.json ?? null, reading, outputs })
         return
       }
 
@@ -296,10 +317,59 @@ export function registerRoutes(ctx: Context, config: Config): void {
         if (bytes.length < 1000) return sendJson(res, 400, { error: 'not_a_pdf' })
         const uploads = join(dataRoot(), '.uploads')
         await mkdir(uploads, { recursive: true })
-        const file = join(uploads, id + '.pdf')
+        const file = join(uploads, id + '-' + randomUUID() + '.pdf')
         await writeFile(file, bytes)
-        const r = await engineAttachPdf(config, metaPath, file)
-        sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'attach_failed' })
+        try {
+          const r = await engineAttachFullReadPdf(config, id, file)
+          sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'attach_failed' })
+        } finally {
+          await import('node:fs/promises').then(({ unlink }) => unlink(file).catch(() => {}))
+        }
+        return
+      }
+
+      if (req.method === 'POST' && action === 'start') {
+        const r = await engineStartFullRead(config, id)
+        if (!r.ok || !r.json) return sendJson(res, 502, { error: 'full_read_start_failed' })
+        return sendJson(res, 200, { parent_job_id: String(r.json.parent_job_id ?? '') })
+      }
+
+      if (req.method === 'POST' && action === 'export') {
+        const r = await engineExportAssets(config, id)
+        return sendJson(res, r.ok ? 200 : 502, r.json ?? { error: 'asset_export_failed' })
+      }
+
+      if (req.method === 'GET' && action === 'reader') {
+        const r = await engineResolveArtifact(config, id, 'reader')
+        const rel = typeof r.json?.rel_path === 'string' ? r.json.rel_path : ''
+        const resolved = artifactPath(root, rel, 'reader')
+        if (!r.ok || !resolved) return sendJson(res, 404, { error: 'reader_not_ready' })
+        const bytes = await readFile(resolved).catch(() => null)
+        const artifactJson = r.json ?? {}
+        const manifest = artifactJson.manifest as Record<string, unknown> | undefined
+        const expectedSha = typeof artifactJson.sha256 === 'string' ? artifactJson.sha256 : typeof manifest?.reader_sha256 === 'string' ? manifest.reader_sha256 : ''
+        if (!bytes || !/^[0-9a-f]{64}$/.test(expectedSha) || sha256(bytes) !== expectedSha) return sendJson(res, 409, { error: 'reader_sha_mismatch' })
+        return sendText(res, 200, bytes.toString('utf8'), 'text/html; charset=utf-8')
+      }
+
+      if (req.method === 'GET' && (action === 'assets' || action === 'exports')) {
+        const r = await engineResolveArtifact(config, id, 'exports')
+        const rel = typeof r.json?.rel_path === 'string' ? r.json.rel_path : ''
+        const exportsRoot = artifactPath(root, rel, 'exports')
+        const manifest = r.json?.manifest
+        if (!r.ok || !exportsRoot || !manifest || typeof manifest !== 'object') return sendJson(res, 404, { error: 'assets_not_ready' })
+        const requested = parts.slice(2).join('/')
+        if (!requested) return sendJson(res, 200, manifest)
+        const rows = Array.isArray((manifest as Record<string, unknown>).assets) ? (manifest as { assets: Array<Record<string, unknown>> }).assets : []
+        const match = rows.flatMap((row) => [
+          { path: row.export_path, sha: row.export_sha256 },
+          { path: row.csv_path, sha: row.csv_sha256 },
+        ]).find((entry) => entry.path === requested)
+        if (!match || typeof match.path !== 'string' || typeof match.sha !== 'string' || !/^[0-9a-f]{64}$/.test(match.sha) || !/^(?:figures|tables)\/[A-Za-z0-9_.-]+$/.test(match.path)) return sendJson(res, 404, { error: 'asset_not_found' })
+        const bytes = await readFile(join(exportsRoot, ...match.path.split('/')))
+        if (sha256(bytes) !== match.sha) return sendJson(res, 409, { error: 'asset_sha_mismatch' })
+        res.writeHead(200, { 'Content-Type': match.path.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'image/png' })
+        res.end(bytes)
         return
       }
 
@@ -335,8 +405,19 @@ export function registerRoutes(ctx: Context, config: Config): void {
     sendJson(res, 404, { error: 'bad_job_id' })
   })
   prefix('/sr/api/job', async (req, res) => {
-    const id = decodeURIComponent((req.url ?? '').slice('/sr/api/job'.length)).split('/').filter(Boolean)[0] ?? ''
+    const parts = decodeURIComponent((req.url ?? '').slice('/sr/api/job'.length)).split('/').filter(Boolean)
+    const id = parts[0] ?? ''
     if (!JOB_ID_RE.test(id)) return sendJson(res, 404, { error: 'bad_job_id' })
+    if (req.method === 'POST' && parts[1] === 'continue') {
+      try {
+        const body = await readJsonBody(req, 8 * 1024 * 1024)
+        const r = await engineContinueFullRead(config, id, body)
+        return sendJson(res, r.ok ? 200 : 409, r.json ?? { error: 'full_read_continue_failed' })
+      } catch {
+        return sendJson(res, 400, { error: 'invalid_request' })
+      }
+    }
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const r = await engineJobStatus(config, id)
     sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'job_failed' })
   })
@@ -355,9 +436,17 @@ export function registerRoutes(ctx: Context, config: Config): void {
   prefix('/sr/reader', async (_req, res) => {
     const id = decodeURIComponent((_req.url ?? '').slice('/sr/reader'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!isPaperId(id)) return sendText(res, 404, 'not found')
-    const p = join(paperRoot(id), 'reading', 'full', 'output', 'reader_full.html')
     try {
-      const html = await readFile(p, 'utf8')
+      const artifact = await engineResolveArtifact(config, id, 'reader')
+      const rel = typeof artifact.json?.rel_path === 'string' ? artifact.json.rel_path : ''
+      const resolved = artifactPath(paperRoot(id), rel, 'reader')
+      if (!artifact.ok || !resolved) throw new Error('reader_not_ready')
+      const bytes = await readFile(resolved)
+      const artifactJson = artifact.json ?? {}
+      const manifest = artifactJson.manifest as Record<string, unknown> | undefined
+      const expectedSha = typeof artifactJson.sha256 === 'string' ? artifactJson.sha256 : typeof manifest?.reader_sha256 === 'string' ? manifest.reader_sha256 : ''
+      if (!/^[0-9a-f]{64}$/.test(expectedSha) || sha256(bytes) !== expectedSha) throw new Error('reader_sha_mismatch')
+      const html = bytes.toString('utf8')
       sendText(res, 200, html, 'text/html; charset=utf-8')
     } catch {
       sendText(res, 404, 'no full read yet')

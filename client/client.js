@@ -104,17 +104,13 @@ window.__ModuleLoader__.load({
       // 操作区
       var actions = el('div', 'sr-actions');
       var id = data.paper_id;
-      actions.appendChild(btn('解析', function () {
-        api('/sr/api/paper/' + encodeURIComponent(id) + '/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (r) { alert('解析已排队: ' + (r.job_id || '')); selectPaper(id); }).catch(function (e) { alert(e.message); });
+      actions.appendChild(btn('开始精读', function () {
+        api('/sr/api/paper/' + encodeURIComponent(id) + '/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (r) { alert('精读父任务: ' + (r.parent_job_id || '')); selectPaper(id); }).catch(function (e) { alert(e.message); });
       }));
-      actions.appendChild(btn('浅读', function () {
-        api('/sr/api/paper/' + encodeURIComponent(id) + '/quick-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (r) { alert('浅读已排队: ' + (r.job_id || '')); selectPaper(id); }).catch(function (e) { alert(e.message); });
-      }));
-      actions.appendChild(btn('精读', function () {
-        api('/sr/api/paper/' + encodeURIComponent(id) + '/full-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (r) { alert('精读已排队: ' + (r.job_id || '')); selectPaper(id); }).catch(function (e) { alert(e.message); });
-      }));
-      if (item.doi) {
-        actions.appendChild(btn('下载PDF', function () {
+      var gateReason = job && (job.reason_code || (job.detail && job.detail.reason_code));
+      var needsPdf = job && (job.status === 'needs_user' || job.status === 'waiting_user') && gateReason === 'pdf_required';
+      if (needsPdf && item.doi) {
+        actions.appendChild(btn('机构浏览器获取PDF', function () {
           api('/sr/api/paper/' + encodeURIComponent(id) + '/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: item.doi }) }).then(function (r) {
             var d = r.download || {};
             alert('下载: ' + d.status + ' ' + (d.paper ? d.paper.pdf_path : ''));
@@ -136,8 +132,10 @@ window.__ModuleLoader__.load({
         };
         reader.readAsDataURL(file);
       });
-      var attachBtn = btn('挂接本地PDF', function () { fileInput.click(); });
-      actions.appendChild(attachBtn);
+      if (needsPdf) actions.appendChild(btn('挂接本地PDF', function () { fileInput.click(); }));
+      actions.appendChild(btn('导出图表', function () {
+        api('/sr/api/paper/' + encodeURIComponent(id) + '/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function () { alert('图表已导出'); }).catch(function (e) { alert(e.message); });
+      }));
       box.appendChild(fileInput);
       // 笔记链接
       if (data.outputs && data.outputs.indexOf('reading/quick_read.md') !== -1) {
@@ -146,7 +144,7 @@ window.__ModuleLoader__.load({
         link.target = '_blank';
         box.appendChild(link);
       }
-      if (data.outputs && data.outputs.indexOf('reading/full/output/reader_full.html') !== -1) {
+      if (item.full_read_status === '精读完成') {
         var link2 = el('a', 'sr-link', '打开精读HTML');
         link2.href = '/sr/reader/' + encodeURIComponent(id);
         link2.target = '_blank';
