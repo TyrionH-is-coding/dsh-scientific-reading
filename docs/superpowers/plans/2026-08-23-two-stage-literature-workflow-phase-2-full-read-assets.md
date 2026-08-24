@@ -375,21 +375,21 @@ git commit -m "插件：收敛为单一精读与图表导出入口"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\README.md`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\README.md`
 
-- [ ] **Step 1: 构造离线工程论文 fixture**
+- [x] **Step 1: 构造离线工程论文 fixture**
 
 用本地 3–5 页测试 PDF，包含正文段落、两图、一表、参考文献。fake MinerU 输出带 page/block/bbox，
 fake agent 分两批翻译并打黄/蓝重点；不联网、不使用医学内容。
 
-- [ ] **Step 2: 在每个边界注入一次中断**
+- [x] **Step 2: 在每个边界注入一次中断**
 
 分别在 PDF 发布后、MinerU 后、翻译第一批后、reader staging 后终止 worker，再重启。断言已完成
 阶段不重复、最终仅一个 active reader、PDF SHA/reader manifest 对齐、导出包完整。
 
-- [ ] **Step 3: 验证不提前注入当前 Profile**
+- [x] **Step 3: 验证不提前注入当前 Profile**
 
 全程使用隔离 data root 与 Profile，当前 3080 不重启。记录现有安装包 SHA 前后相同。
 
-- [ ] **Step 4: 全量测试**
+- [x] **Step 4: 全量测试**
 
 ```powershell
 # 引擎 worktree
@@ -405,7 +405,7 @@ npm run verify:restart-recovery
 git diff --check
 ```
 
-- [ ] **Step 5: 更新中文 README 并提交**
+- [x] **Step 5: 更新中文 README 并提交**
 
 只声明经过测试的自动阶段、AI gate、fallback、reader 与导出包；明确机构浏览器仍是用户逐篇动作。
 
@@ -479,3 +479,17 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
   `75 passed`。
 - 插件 `build:ci`、`typecheck`、离线测试、动态路由测试与 wrapper 编译均为 `PASS`。
 - 本任务未涉及 HTML v2.1，未触碰当前 3080，也未推送远端。
+
+### Task 7 执行记录
+
+- 插件提交链：`efef562`、`61bf277`、`e42e978`；引擎提交链：`2689d0d`、`38db198`、
+  `5dfd18e`、`77f5202`。
+- 正式 CLI、`BackgroundLauncher`、worker、`ReadingPipeline` 四个中断边界均恢复到同一 parent；
+  八类阶段计数各为 `1`。最终发布 generation reader，fixture 含两图一表，六类篡改均被拒绝。
+- Windows 无窗口修复仅限 `CREATE_NO_WINDOW`、Python hidden helper 与 Node `windowsHide`；实际监控
+  `OpenConsole`/`WindowsTerminal` 新增均为 `0`。
+- 最近一次引擎全量测试：`743 passed, 1 skipped`；launcher 聚焦测试：`19 passed`。插件
+  `typecheck`、离线测试、integration 与 restart recovery 均为 `PASS`。
+- 规范审查与质量审查最终均为 `APPROVED`。
+- persistent 安装包 SHA（`FA00…65B15`）及 inventory 前后不变。
+- 验证期间未联网、未写飞书、未触发机构认证，未触碰当前 3080，也未进入 reader v2.1。
