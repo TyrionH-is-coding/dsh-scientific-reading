@@ -2,7 +2,7 @@
 
 ## Phase 1：两段式本地入库（本地离线实现完成）
 
-已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。插件只把 canonical `paper_id` 与可选配置路径交给引擎，由引擎从 SQLite 主库刷新 `metadata.json`；不会用调用方 payload 覆盖题录。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。Zotero 新流程已停用，旧字段/预览确认工具仅作为 legacy 兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
+已接入 SQLite 骨架优先返回、持久 `derived-enqueue`（题录 → Abstract agent gate → XLSX → 可选飞书）、只读 XLSX 快照、fake/配置飞书系统字段、文件夹标签和可撤销批量归类。插件只把 canonical `paper_id` 与可选配置路径交给引擎，由引擎从 SQLite 主库刷新 `metadata.json`；不会用调用方 payload 覆盖题录。Abstract 只接受 `sr_abstract_submit` 提交的 agent 翻译，不自动伪造；XLSX 只读，飞书个人字段不回写。旧标识只在只读迁移审计中兼容。运行 `npm.cmd run test:foundation` 可在临时 data root 完成离线验收；不联网、不写真实飞书。未提供本阶段 Profile/3080 只读探针时，验收明确输出 `not_verified`，不把它们算作门禁通过。全文获取、MinerU、全文翻译和精读页面仍不属于 Phase 1 完成范围。
 
 `sr_ingest` 与 `POST /sr/api/library` 在本地事务完成后先返回 `paper_id` 和 `derived: pending`。派生编排产生的 `active_job_id` 及失败状态由引擎持久写入 SQLite 主库，可用 `sr_job_status` 或 `GET /sr/api/job/<job_id>` 查询；插件不等待派生完成，也不自行覆盖主库题录。
 
@@ -88,17 +88,17 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 
 `sr_start_full_read` 为单篇论文创建或复用唯一 parent job；PDF 校验、快速解析、MinerU、reader 发布及派生调度按持久阶段推进。全文翻译仍是 AI gate：agent 按来源块分批提交后继续同一任务，不伪造翻译。自动 PDF 获取失败只影响当前论文，并返回“机构浏览器”或“本地 PDF”两种处理选项；机构浏览器始终需要用户逐篇操作，不读取或保存账号、Cookie、验证码、MFA 或浏览器 Profile。
 
-正式 reader 只发布到 `papers/<paper_id>/generations/<source_sha16>/reading/reader.html`；兼容读取仅回退同一 generation 的 `output/reader_full.html`，不接受论文根级 `reading/reader.html` 或 `reading/full/output`。`sr_export_assets` 只整理 active MinerU 明确标记的正文 Figure/Table，输出 `exports/figures`、`exports/tables`、`captions.md` 与 `manifest.json`；CSV 仅复制可靠结构化源。
+正式 reader 只发布到 `papers/<paper_id>/generations/<source_sha16>/reading/reader.html`，优先读取该路径，再回退同一 generation 的 `output/reader_full.html`；其后仅允许读取已由 `legacy-audit` 登记且 SHA 匹配的论文根级 `reader_full.html`，其他旧猜测路径一律拒绝。`sr_export_assets` 只整理 active MinerU 明确标记的正文 Figure/Table，输出 `exports/figures`、`exports/tables`、`captions.md` 与 `manifest.json`；CSV 仅复制可靠结构化源。
 
-离线验收使用四页虚构工程论文、fake MinerU 和两批 fake agent 翻译，在 PDF 发布后、MinerU 后、第一批翻译后及 reader staging 后分别终止子进程并重启。运行 `npm run test:full-read-integration`；`npm run verify:restart-recovery` 同时覆盖原后台 worker 恢复与上述四个产物边界。测试使用临时 data root，不联网、不写飞书、不调用机构认证，也不启动或修改当前 Profile/3080。HTML v2.1、真实 Profile 注入、飞书真实写入与 Zotero 迁移不在本阶段；验收仅在未来 manifest 已存在可选字段时兼容核验，不在本分支新增 review、guide 或 highlights 必填 SHA 合同。
+离线验收使用四页虚构工程论文、fake MinerU 和两批 fake agent 翻译，在 PDF 发布后、MinerU 后、第一批翻译后及 reader staging 后分别终止子进程并重启。运行 `npm run test:full-read-integration`；`npm run verify:restart-recovery` 同时覆盖原后台 worker 恢复与上述四个产物边界。测试使用临时 data root，不联网、不写飞书、不调用机构认证，也不启动或修改当前 Profile/3080。HTML v2.1、真实 Profile 注入和飞书真实写入不在本阶段；验收仅在未来 manifest 已存在可选字段时兼容核验，不在本分支新增 review、guide 或 highlights 必填 SHA 合同。
 
 ## Legacy/internal 兼容入口
 
 以下能力保留用于旧数据、迁移或后续阶段兼容，不属于 Phase 1 canonical 默认流程：
 `sr_init`、`sr_library_check`、`sr_library_ensure`、`sr_parse`、`sr_quick_read`、
 `sr_full_read`、`sr_feishu_preview`、`sr_feishu_sync(confirm=true)`、
-`sr_feishu_resync` 与 `sr_zotero_migrate`。其中旧 `sr_full_read` 不等同于 Phase 2 的
-`sr_start_full_read` parent pipeline；旧飞书 preview/confirm 和 Zotero 迁移仍未进入新流程。
+`sr_feishu_resync`。其中旧 `sr_full_read` 不等同于 Phase 2 的
+`sr_start_full_read` parent pipeline；旧飞书 preview/confirm 仍未进入新流程。
 
 ## 飞书凭证
 

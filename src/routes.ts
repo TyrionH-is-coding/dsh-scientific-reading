@@ -80,10 +80,10 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function artifactPath(root: string, rel: string, kind: 'reader' | 'exports' | 'pdf'): string | null {
+function artifactPath(root: string, rel: string, kind: 'reader' | 'exports' | 'pdf', legacyAudited = false): string | null {
   const normalized = rel.replace(/\\/g, '/')
   const allowed = kind === 'reader'
-    ? /^generations\/[0-9a-f]{16}\/(?:reading\/reader\.html|output\/reader_full\.html)$/.test(normalized)
+    ? (legacyAudited && normalized === 'reader_full.html') || /^generations\/[0-9a-f]{16}\/(?:reading\/reader\.html|output\/reader_full\.html)$/.test(normalized)
     : kind === 'pdf'
       ? /^generations\/[0-9a-f]{16}\/source\.pdf$/.test(normalized)
       : /^generations\/[0-9a-f]{16}\/exports$/.test(normalized)
@@ -533,7 +533,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
       if (req.method === 'GET' && action === 'reader') {
         const r = await engineResolveArtifact(config, id, 'reader')
         const rel = typeof r.json?.rel_path === 'string' ? r.json.rel_path : ''
-        const resolved = artifactPath(root, rel, 'reader')
+        const resolved = artifactPath(root, rel, 'reader', r.json?.legacy_audited === true)
         if (!r.ok || !resolved) return sendJson(res, 404, { error: 'reader_not_ready' })
         if (await hasSymlink(root, resolved)) return sendJson(res, 409, { error: 'reader_invalid' })
         const bytes = await readFile(resolved).catch(() => null)
@@ -638,7 +638,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
     try {
       const artifact = await engineResolveArtifact(config, id, 'reader')
       const rel = typeof artifact.json?.rel_path === 'string' ? artifact.json.rel_path : ''
-      const resolved = artifactPath(paperRoot(id), rel, 'reader')
+      const resolved = artifactPath(paperRoot(id), rel, 'reader', artifact.json?.legacy_audited === true)
       if (!artifact.ok || !resolved) throw new Error('reader_not_ready')
       if (await hasSymlink(paperRoot(id), resolved)) throw new Error('reader_invalid')
       const bytes = await readFile(resolved)

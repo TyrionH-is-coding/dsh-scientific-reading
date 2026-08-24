@@ -18,7 +18,6 @@ import {
   engineFullRead,
   engineFeishuPreview,
   engineFeishuSync,
-  engineZoteroMigrate,
   engineLibraryIngest,
   engineDerivedEnqueue,
   engineAbstractReadSubmit,
@@ -80,7 +79,7 @@ function scheduleDerived(config: Config, paperId: string, logger?: (message: str
 }
 
 /**
- * Phase 1 工具集：本地文献库（替代 Zotero）闭环。
+ * Phase 1 工具集：本地文献库闭环。
  * sr_init → sr_library_check → sr_library_ensure(confirm) → sr_pdf_attach
  * → sr_parse → sr_quick_read → sr_job_status
  */
@@ -654,43 +653,6 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return { ok: true, job_id: String(r.json.job_id ?? ''), detail: String(r.json.status ?? '') }
     },
   })), '@dsh-external/dsh-scientific-reading: sr_feishu_sync')
-
-  // ── sr_zotero_migrate：Zotero 旧数据一次性迁移 ─────────────────────
-  ctx.effect(() => ctx.tools.register(defineTool({
-    name: 'sr_zotero_migrate',
-    description: '[legacy/internal] Zotero 旧数据一次性迁移。',
-    parameters: {
-      dry_run: { type: 'boolean', description: '为 true 时只列出将迁移的条目，不写入本地库' },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          status: { type: 'string', required: true },
-          total: { type: 'integer' },
-          migrated: { type: 'integer' },
-          ambiguous: { type: 'integer' },
-          entries: { type: 'array' },
-          ambiguous_entries: { type: 'array' },
-          error: { type: 'string' },
-        },
-      },
-      render: (_args: unknown, value: unknown) => {
-        const v = value as Record<string, unknown>
-        if (v.error) return text('迁移失败：' + String(v.error))
-        return text('Zotero 迁移：status=' + String(v.status) + ' total=' + String(v.total) + ' migrated=' + String(v.migrated ?? 0) + ' ambiguous=' + String(v.ambiguous ?? 0))
-      },
-    },
-    async execute(args: { dry_run?: boolean }) {
-      const r = await engineZoteroMigrate(config, args.dry_run === true)
-      if (!r.ok) {
-        // 连接失败（Zotero 未运行）等：exit 4 但 json 含 error
-        return (r.json ?? { status: 'failed', error: r.stderr || '迁移失败' }) as never
-      }
-      return (r.json ?? { status: 'failed', error: '无输出' }) as never
-    },
-  })), '@dsh-external/dsh-scientific-reading: sr_zotero_migrate')
 
   // ── sr_feishu_resync：仅在本地 probe enabled 后重排 ──────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
