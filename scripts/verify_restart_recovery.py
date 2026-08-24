@@ -381,8 +381,32 @@ def main() -> None:
         "--python",
         help="引擎 Python 的绝对路径；默认依次读取环境变量、用户 venv 和当前 Python",
     )
+    parser.add_argument(
+        "--full-read",
+        action="store_true",
+        help="同时运行四个精读产物边界的子进程中断恢复验收",
+    )
     args = parser.parse_args()
-    print(json.dumps(verify(resolve_python(args.python)), ensure_ascii=False))
+    python = resolve_python(args.python)
+    result = verify(python)
+    if args.full_read:
+        full_read_env = os.environ.copy()
+        full_read_env.pop("FEISHU_APP_ID", None)
+        full_read_env.pop("FEISHU_APP_SECRET", None)
+        full_read = subprocess.run(
+            [str(python), str(Path(__file__).with_name("verify_full_read_pipeline.py"))],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=full_read_env,
+            timeout=60,
+            check=False,
+        )
+        if full_read.returncode:
+            raise RuntimeError(f"full_read_recovery_failed: {full_read.stderr.strip()}")
+        result["full_read"] = json.loads(full_read.stdout)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

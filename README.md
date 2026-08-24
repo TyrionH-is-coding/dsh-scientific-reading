@@ -84,17 +84,21 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 2. arXiv 成功返回补 `path` 键（原返回 `file`，fetcher 读 `path` 导致 PDF 永不认领）；
 3. 强制 UTF-8 输出（中文 Windows 控制台 GBK 报错）。
 
-## Phase 2/3（未在本阶段完成）
+## Phase 2：单一精读入口（离线链路已验收）
 
-Phase 2 文献页与 Phase 3 全文精读/飞书真实写入/Zotero 迁移仍是后续验收范围。当前保留的路由、旧预览/confirm 及迁移入口只用于 legacy 兼容，不代表这些阶段已完成。
+`sr_start_full_read` 为单篇论文创建或复用唯一 parent job；PDF 校验、快速解析、MinerU、reader 发布及派生调度按持久阶段推进。全文翻译仍是 AI gate：agent 按来源块分批提交后继续同一任务，不伪造翻译。自动 PDF 获取失败只影响当前论文，并返回“机构浏览器”或“本地 PDF”两种处理选项；机构浏览器始终需要用户逐篇操作，不读取或保存账号、Cookie、验证码、MFA 或浏览器 Profile。
+
+正式 reader 只发布到 `papers/<paper_id>/generations/<source_sha16>/reading/reader.html`；兼容读取仅回退同一 generation 的 `output/reader_full.html`，不接受论文根级 `reading/reader.html` 或 `reading/full/output`。`sr_export_assets` 只整理 active MinerU 明确标记的正文 Figure/Table，输出 `exports/figures`、`exports/tables`、`captions.md` 与 `manifest.json`；CSV 仅复制可靠结构化源。
+
+离线验收使用四页虚构工程论文、fake MinerU 和两批 fake agent 翻译，在 PDF 发布后、MinerU 后、第一批翻译后及 reader staging 后分别终止子进程并重启。运行 `npm run test:full-read-integration`；`npm run verify:restart-recovery` 同时覆盖原后台 worker 恢复与上述四个产物边界。测试使用临时 data root，不联网、不写飞书、不调用机构认证，也不启动或修改当前 Profile/3080。HTML v2.1、真实 Profile 注入、飞书真实写入与 Zotero 迁移不在本阶段。
 
 ## Legacy/internal 兼容入口
 
 以下能力保留用于旧数据、迁移或后续阶段兼容，不属于 Phase 1 canonical 默认流程：
 `sr_init`、`sr_library_check`、`sr_library_ensure`、`sr_parse`、`sr_quick_read`、
 `sr_full_read`、`sr_feishu_preview`、`sr_feishu_sync(confirm=true)`、
-`sr_feishu_resync` 与 `sr_zotero_migrate`。其中 quick-read、全文精读、旧飞书
-preview/confirm 和 Zotero 迁移均不代表 Phase 2/3 已完成。
+`sr_feishu_resync` 与 `sr_zotero_migrate`。其中旧 `sr_full_read` 不等同于 Phase 2 的
+`sr_start_full_read` parent pipeline；旧飞书 preview/confirm 和 Zotero 迁移仍未进入新流程。
 
 ## 飞书凭证
 

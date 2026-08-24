@@ -69,11 +69,12 @@
     "test:reading-routes": "node tests/reading-routes.mjs",
     "test:full-read-pipeline": "node tests/full-read-pipeline.mjs",
     "test:full-read-routes": "node tests/full-read-routes.mjs",
+    "test:full-read-integration": "node tests/full-read-integration.mjs",
     "test:asset-export-routes": "node tests/asset-export-routes.mjs",
     "test:offline": "node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/reading-routes.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs",
     "verify:profile-bundle": "node scripts/verify-profile-bundle.mjs",
     "verify:profile-runtime": "node scripts/verify-profile-runtime.mjs",
-    "verify:restart-recovery": "python scripts/verify_restart_recovery.py",
+    "verify:restart-recovery": "python scripts/verify_restart_recovery.py --full-read",
     "test:foundation": "node tests/foundation-integration.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
