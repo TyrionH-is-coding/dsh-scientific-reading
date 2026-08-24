@@ -6,6 +6,54 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const source = readFileSync(join(root, 'client', 'client.js'), 'utf8')
 
+function loadNamedFunction(name) {
+  const marker = `function ${name}(`
+  const start = source.indexOf(marker)
+  assert.notEqual(start, -1, `缺少可测试函数：${name}`)
+  const bodyStart = source.indexOf('{', start)
+  let depth = 0
+  for (let i = bodyStart; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    if (source[i] === '}') depth -= 1
+    if (depth === 0) return Function(`return (${source.slice(start, i + 1)})`)()
+  }
+  throw new Error(`函数未闭合：${name}`)
+}
+
+const createMountController = loadNamedFunction('createMountController')
+let created = 0
+let disposed = 0
+const roots = []
+function hostFixture() {
+  return {
+    dataset: {},
+    children: [],
+    appendChild(node) { node.parentNode = this; this.children.push(node) },
+    removeChild(node) { this.children.splice(this.children.indexOf(node), 1); node.parentNode = null },
+  }
+}
+const controller = createMountController(() => {
+  const rootNode = { parentNode: null, id: ++created }
+  roots.push(rootNode)
+  return { root: rootNode, dispose() { disposed += 1 } }
+})
+const host = hostFixture()
+controller.ref(host)
+assert.equal(created, 1, '初次挂载必须创建一次页面')
+assert.equal(host.children.length, 1, '初次挂载必须只插入一个 root')
+controller.ref(host)
+assert.equal(created, 1, '同一稳定 ref 重渲染不得重复创建页面')
+assert.equal(disposed, 0, '同一稳定 ref 重渲染不得销毁页面')
+controller.ref(null)
+assert.equal(disposed, 1, 'null cleanup 必须且只能销毁一次')
+assert.equal(host.children.length, 0, 'null cleanup 必须移除本次挂入的 root')
+assert.equal(host.dataset.srMounted, undefined, 'null cleanup 必须清除 dataset 标志')
+controller.ref(null)
+assert.equal(disposed, 1, '重复 null cleanup 不得重复销毁')
+controller.ref(host)
+assert.equal(created, 2, 'null 后同一节点必须可以重新挂载')
+assert.equal(host.children.length, 1, '重新挂载后仍只能有一个 root')
+
 assert.match(source, /'sr-sidebar'/, '根布局必须包含 sidebar')
 assert.match(source, /'sr-main'/, '根布局必须包含 main list')
 assert.match(source, /'sr-drawer'/, '详情必须是 overlay drawer 占位')
@@ -44,7 +92,7 @@ assert.match(source, /var disposed = false/, '每次 mount 必须有私有 dispo
 assert.match(source, /var requestSequence = 0/, '每次 mount 必须有私有请求序列')
 assert.match(source, /sequence !== requestSequence/, '过时响应不得覆盖新请求')
 assert.match(source, /clearTimeout\(searchTimer\)[^]*clearTimeout\(tagTimer\)[^]*request\.abort\(\)[^]*disposed = true/, '卸载必须清理两个 timer、请求并标记 disposed')
-assert.match(source, /else if \(mount\) \{ mount\.dispose\(\); mount = null; \}/, 'React ref 的 null 分支必须明确 cleanup')
+assert.match(source, /var mountController = createMountController\(renderLiterature\)[^]*var literatureRef = mountController\.ref[^]*ref: literatureRef/, 'slot provider 必须复用稳定 callback ref')
 assert.match(source, /state\.status !== 'ready' \|\| query\.page <= 1/, '非 ready 状态必须禁用上一页')
 assert.match(source, /state\.status !== 'ready' \|\| query\.page \* query\.page_size >= state\.total/, '非 ready 状态必须禁用下一页')
 assert.match(source, /tagInput\.addEventListener\('input'/, '标签必须是可输入筛选控件')
