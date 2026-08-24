@@ -31,11 +31,40 @@ import {
   engineContinueFullRead,
   engineExportAssets,
   engineAttachAndResumeFullReadPdf,
+  engineJson,
 } from './cli.js'
 import { isPaperId } from './papers.js'
 
 type Block = { type: 'text'; text: string }
 const text = (t: string): Block[] => [{ type: 'text', text: t }]
+
+export const BATCH_ACTIONS = new Set([
+  'move_folder', 'add_tags', 'remove_tags',
+  'queue_full_read', 'retry_failed', 'feishu_resync',
+])
+
+export async function submitBatch(config: Config, request: Record<string, unknown>) {
+  const result = await engineJson(config, ['batch-submit'], request)
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
+
+export async function listNavigation(config: Config, options: {
+  page: number; pageSize: number; query?: string; folder?: string; tags: string[]; status?: string; recentDays?: number
+}) {
+  const args = ['library-list-v2', '--page', String(options.page), '--page-size', String(options.pageSize)]
+  if (options.query) args.push('--query', options.query)
+  if (options.folder) args.push('--folder-id', options.folder)
+  for (const tag of options.tags) args.push('--tag', tag)
+  if (options.status) args.push('--status', options.status)
+  if (options.recentDays !== undefined) args.push('--recent-days', String(options.recentDays))
+  const result = await engineJson(config, args)
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
+
+export async function resolveNavigationArtifact(config: Config, paperId: string, kind: 'pdf') {
+  const result = await engineJson(config, ['artifact-resolve', '--paper-id', paperId, '--kind', kind])
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
 
 function resolveMeta(config: Config, paperId: string): string {
   return paperMetadataPath(resolveDataRoot(config), paperId)

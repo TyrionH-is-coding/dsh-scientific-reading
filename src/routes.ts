@@ -14,11 +14,12 @@ declare module 'cordis' {
 }
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, writeFile, readFile, access, rename, lstat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from './config.js'
 import { resolveDataRoot, resolveOutputDir } from './config.js'
-import { isPaperId } from './papers.js'
+import { isPaperId, parsePaperRoute } from './papers.js'
+import { BATCH_ACTIONS, listNavigation, resolveNavigationArtifact, submitBatch } from './library_tools.js'
 import {
   engineList,
   engineJobStatus,
@@ -27,7 +28,6 @@ import {
   engineCheckItem,
   engineInit,
   engineFullRead,
-  engineLibraryList,
   engineLibraryItem,
   engineLibraryIngest,
   engineFolderManage,
@@ -81,11 +81,13 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function artifactPath(root: string, rel: string, kind: 'reader' | 'exports'): string | null {
+function artifactPath(root: string, rel: string, kind: 'reader' | 'exports' | 'pdf'): string | null {
   const normalized = rel.replace(/\\/g, '/')
   const allowed = kind === 'reader'
     ? /^generations\/[0-9a-f]{16}\/(?:reading\/reader\.html|output\/reader_full\.html)$/.test(normalized)
-    : /^generations\/[0-9a-f]{16}\/exports$/.test(normalized)
+    : kind === 'pdf'
+      ? /^generations\/[0-9a-f]{16}\/source\.pdf$/.test(normalized)
+      : /^generations\/[0-9a-f]{16}\/exports$/.test(normalized)
   if (!allowed || normalized !== rel) return null
   return join(root, ...normalized.split('/'))
 }
@@ -102,6 +104,51 @@ async function hasSymlink(root: string, target: string): Promise<boolean> {
     if ((await lstat(current).catch(() => null))?.isSymbolicLink()) return true
   }
   return false
+}
+
+const LIST_FIELDS = [
+  'paper_id', 'title', 'authors_short', 'year', 'folder', 'tags', 'abstract_status',
+  'full_read_status', 'feishu_sync_state', 'has_pdf', 'has_reader', 'feishu_record_url', 'last_error',
+] as const
+const LIST_DEFAULTS: Record<(typeof LIST_FIELDS)[number], unknown> = {
+  paper_id: '', title: '', authors_short: '', year: null, folder: null, tags: [],
+  abstract_status: '', full_read_status: '', feishu_sync_state: '',
+  has_pdf: false, has_reader: false, feishu_record_url: '', last_error: '',
+}
+
+function navigationList(value: unknown, page: number, pageSize: number): Record<string, unknown> {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const rawItems = Array.isArray(source.items) ? source.items : []
+  const items = rawItems.map((raw) => {
+    const sourceItem = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    return Object.fromEntries(LIST_FIELDS.map((key) => [key, sourceItem[key] ?? LIST_DEFAULTS[key]]))
+  })
+  const jobs = source.jobs && typeof source.jobs === 'object' ? source.jobs as Record<string, unknown> : {}
+  return {
+    items,
+    page: Number.isInteger(source.page) ? source.page : page,
+    page_size: Number.isInteger(source.page_size) ? source.page_size : pageSize,
+    total: Number.isInteger(source.total) ? source.total : items.length,
+    jobs: {
+      running: Number.isInteger(jobs.running) ? jobs.running : 0,
+      queued: Number.isInteger(jobs.queued) ? jobs.queued : 0,
+    },
+  }
+}
+
+function hasClientFeishuUrl(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.some(hasClientFeishuUrl)
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => key === 'feishu_record_url' || hasClientFeishuUrl(child))
+}
+
+function withoutSensitiveFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutSensitiveFields)
+  if (typeof value === 'string' && /(?:traceback|secret|token|password)/i.test(value)) return 'redacted'
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !/(?:stack|secret|token|password)/i.test(key))
+    .map(([key, child]) => [key, withoutSensitiveFields(child)]))
 }
 
 /**
@@ -163,21 +210,24 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const url = new URL(req.url ?? '/sr/api/library', 'http://localhost')
         const page = Number(url.searchParams.get('page') ?? 1)
         const pageSize = Number(url.searchParams.get('page_size') ?? 50)
-        if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+        const recentRaw = url.searchParams.get('recent_days')
+        const recentDays = recentRaw === null || recentRaw === '' ? undefined : Number(recentRaw)
+        if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 || (recentDays !== undefined && (!Number.isInteger(recentDays) || recentDays < 0))) {
           return sendJson(res, 400, { error: 'invalid_pagination' })
         }
         const tags = [...url.searchParams.getAll('tags'), ...url.searchParams.getAll('tag')]
           .flatMap((value) => value.split(',').map((tag) => tag.trim()).filter(Boolean))
-        const r = await engineLibraryList(config, {
+        const r = await listNavigation(config, {
           page,
           pageSize,
-          query: url.searchParams.get('query') ?? undefined,
+          query: url.searchParams.get('q') ?? url.searchParams.get('query') ?? undefined,
           folder: url.searchParams.get('folder') ?? url.searchParams.get('folder_id') ?? undefined,
           tags,
           status: url.searchParams.get('status') ?? undefined,
+          recentDays,
         })
         if (!r.ok) return sendJson(res, 502, { error: 'library_unavailable', detail: 'library_list_failed' })
-        return sendJson(res, 200, r.json ?? { items: [] })
+        return sendJson(res, 200, navigationList(r.json, page, pageSize))
       }
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
       const body = await readJsonBody(req, 1 * 1024 * 1024)
@@ -217,6 +267,31 @@ export function registerRoutes(ctx: Context, config: Config): void {
       sendJson(res, 200, r.json ?? {})
     } catch (error) {
       sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: error instanceof Error && error.message === 'body_too_large' ? 'body_too_large' : 'invalid_request' })
+    }
+  })
+
+  exact('/sr/api/batch', async (req, res) => {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+    try {
+      const body = await readJsonBody(req, 1 * 1024 * 1024)
+      const action = typeof body.action === 'string' ? body.action : ''
+      const selection = Array.isArray(body.selection) ? body.selection : []
+      if (!BATCH_ACTIONS.has(action)) return sendJson(res, 400, { error: 'invalid_batch_action' })
+      if (!selection.length || selection.some((id) => typeof id !== 'string' || !isPaperId(id))) {
+        return sendJson(res, 400, { error: 'invalid_selection' })
+      }
+      if (hasClientFeishuUrl(body.payload)) return sendJson(res, 400, { error: 'client_feishu_url_forbidden' })
+      const request = {
+        action,
+        selection,
+        payload: body.payload && typeof body.payload === 'object' ? body.payload : {},
+      }
+      const result = await submitBatch(config, request)
+      if (!result.ok || !result.json) return sendJson(res, 502, { error: 'batch_unavailable', detail: 'engine_rejected_request' })
+      return sendJson(res, 200, withoutSensitiveFields(result.json))
+    } catch (error) {
+      const tooLarge = error instanceof Error && error.message === 'body_too_large'
+      return sendJson(res, tooLarge ? 413 : 400, { error: tooLarge ? 'body_too_large' : 'invalid_request' })
     }
   })
 
@@ -299,10 +374,12 @@ export function registerRoutes(ctx: Context, config: Config): void {
 
   // ── 论文详情与动作 ──────────────────────────────────────────────────
   prefix('/sr/api/paper', async (req, res) => {
-    const parts = decodeURIComponent((req.url ?? '').slice('/sr/api/paper'.length)).split('/').filter(Boolean)
+    const parts = parsePaperRoute(req.url ?? '', '/sr/api/paper')
+    if (!parts) return sendJson(res, 404, { error: 'not_found' })
     const id = parts[0] ?? ''
     const action = parts[1] ?? ''
     if (!isPaperId(id)) return sendJson(res, 404, { error: 'bad_paper_id' })
+    if (parts.length > 2 && action !== 'assets' && action !== 'exports') return sendJson(res, 404, { error: 'not_found' })
     const metaPath = join(paperRoot(id), 'metadata.json')
     const root = paperRoot(id)
 
@@ -336,6 +413,36 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
+      if (req.method === 'GET' && action === 'abstract') {
+        const result = await engineLibraryItem(config, id)
+        const item = result.json
+        if (!result.ok || !item || typeof item.abstract_status !== 'string') {
+          return sendJson(res, 502, { error: 'abstract_unavailable', detail: 'library_item_failed' })
+        }
+        return sendJson(res, 200, {
+          paper_id: id,
+          abstract_en: item.abstract_en ?? null,
+          abstract_zh: item.abstract_zh ?? null,
+          status: item.abstract_status,
+          active_job_id: item.active_job_id ?? null,
+          last_error: item.last_error ?? null,
+        })
+      }
+
+      if (req.method === 'GET' && action === 'pdf') {
+        const result = await resolveNavigationArtifact(config, id, 'pdf')
+        const rel = typeof result.json?.rel_path === 'string' ? result.json.rel_path : ''
+        const resolved = artifactPath(root, rel, 'pdf')
+        if (!result.ok || !resolved) return sendJson(res, 404, { error: 'pdf_not_ready' })
+        if (await hasSymlink(root, resolved)) return sendJson(res, 409, { error: 'pdf_invalid' })
+        const bytes = await readFile(resolved).catch(() => null)
+        const expectedSha = typeof result.json?.sha256 === 'string' ? result.json.sha256 : ''
+        if (!bytes || !/^[0-9a-f]{64}$/.test(expectedSha) || sha256(bytes) !== expectedSha) return sendJson(res, 409, { error: 'pdf_sha_mismatch' })
+        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': String(bytes.length) })
+        res.end(bytes)
+        return
+      }
+
       if (req.method === 'POST' && action === 'attach') {
         const body = await readJsonBody(req)
         const jobId = String(body.job_id ?? '')
@@ -364,7 +471,29 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return sendJson(res, 200, { parent_job_id: String(r.json.parent_job_id ?? '') })
       }
 
+      if (req.method === 'POST' && action === 'full-read') {
+        const r = await engineStartFullRead(config, id)
+        if (!r.ok || !r.json) return sendJson(res, 502, { error: 'full_read_start_failed' })
+        return sendJson(res, 200, { parent_job_id: String(r.json.parent_job_id ?? '') })
+      }
+
+      if (req.method === 'POST' && action === 'attach-pdf') {
+        const body = await readJsonBody(req, 8 * 1024 * 1024)
+        const jobId = String(body.job_id ?? '')
+        const pdfPath = typeof body.pdf === 'string' ? body.pdf : ''
+        if (!isAbsolute(pdfPath) || !/\.pdf$/i.test(pdfPath)) return sendJson(res, 400, { error: 'absolute_pdf_required' })
+        if (!await requirePdfGate(id, jobId)) return sendJson(res, 409, { error: 'pdf_gate_required' })
+        const r = await engineAttachAndResumeFullReadPdf(config, id, jobId, pdfPath)
+        if (!r.ok || !r.json) return sendJson(res, 502, { error: 'pdf_attach_failed' })
+        return sendJson(res, 200, safePdfResult(id, jobId, r.json, r.json))
+      }
+
       if (req.method === 'POST' && action === 'export') {
+        const r = await engineExportAssets(config, id)
+        return sendJson(res, r.ok ? 200 : 502, r.json ?? { error: 'asset_export_failed' })
+      }
+
+      if (req.method === 'POST' && action === 'export-assets') {
         const r = await engineExportAssets(config, id)
         return sendJson(res, r.ok ? 200 : 502, r.json ?? { error: 'asset_export_failed' })
       }
@@ -426,9 +555,10 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
-      sendJson(res, 404, { error: 'not_found' })
-    } catch (e) {
-      sendJson(res, 500, { error: (e as Error).message })
+      const knownActions = new Set(['abstract', 'pdf', 'assets', 'exports', 'reader', 'full-read', 'attach-pdf', 'export-assets', 'download', 'attach', 'start', 'export', 'parse', 'quick-read'])
+      sendJson(res, knownActions.has(action) ? 405 : 404, { error: knownActions.has(action) ? 'method_not_allowed' : 'not_found' })
+    } catch {
+      sendJson(res, 500, { error: 'internal_error' })
     }
   })
 
@@ -438,7 +568,8 @@ export function registerRoutes(ctx: Context, config: Config): void {
     sendJson(res, 404, { error: 'bad_job_id' })
   })
   prefix('/sr/api/job', async (req, res) => {
-    const parts = decodeURIComponent((req.url ?? '').slice('/sr/api/job'.length)).split('/').filter(Boolean)
+    const parts = parsePaperRoute(req.url ?? '', '/sr/api/job')
+    if (!parts || parts.length > 2 || (parts.length === 2 && parts[1] !== 'continue')) return sendJson(res, 404, { error: 'bad_job_id' })
     const id = parts[0] ?? ''
     if (!JOB_ID_RE.test(id)) return sendJson(res, 404, { error: 'bad_job_id' })
     if (req.method === 'POST' && parts[1] === 'continue') {
@@ -452,7 +583,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
     }
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const r = await engineJobStatus(config, id)
-    sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'job_failed' })
+    sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? r.json : { error: 'job_unavailable', detail: 'engine_rejected_request' })
   })
 
   // ── 浅读笔记（HTML 呈现）───────────────────────────────────────────
@@ -468,7 +599,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
   // ── 精读 HTML（Phase 3 产物，存在即服务）──────────────────────────
   prefix('/sr/reader', async (_req, res) => {
     if (_req.method !== 'GET' && _req.method !== 'HEAD') return sendText(res, 405, 'method not allowed')
-    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reader'.length)).split('/').filter(Boolean)[0] ?? ''
+    const routeParts = parsePaperRoute(_req.url ?? '', '/sr/reader')
+    if (!routeParts || routeParts.length !== 1) return sendText(res, 404, 'not found')
+    const id = routeParts[0]
     if (!isPaperId(id)) return sendText(res, 404, 'not found')
     try {
       const artifact = await engineResolveArtifact(config, id, 'reader')

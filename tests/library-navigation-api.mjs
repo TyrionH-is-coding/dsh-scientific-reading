@@ -63,7 +63,14 @@ try {
   const list = response()
   await route('exact', '/sr/api/library').handler({ method: 'GET', url: '/sr/api/library?page=2&page_size=7&query=cell&folder=f1&tags=a,b&status=ready' }, list)
   assert.equal(list.statusCode, 200)
-  assert.deepEqual(JSON.parse(list.body), { items: [{ paper_id: 'library_demo' }], page: 2, page_size: 7 })
+  assert.deepEqual(JSON.parse(list.body), {
+    items: [{
+      paper_id: 'library_demo', title: '', authors_short: '', year: null, folder: null, tags: [],
+      abstract_status: '', full_read_status: '', feishu_sync_state: '', has_pdf: false, has_reader: false,
+      feishu_record_url: '', last_error: '',
+    }],
+    page: 2, page_size: 7, total: 1, jobs: { running: 0, queued: 0 },
+  })
 
   const folders = response()
   await route('exact', '/sr/api/folders').handler({ method: 'GET', url: '/sr/api/folders' }, folders)
