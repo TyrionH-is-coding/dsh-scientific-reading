@@ -19,7 +19,7 @@ function readSource(sourcePath) {
 export function checkClient({ sourcePath = defaultSourcePath, outputPath = defaultOutputPath } = {}) {
   const source = readSource(sourcePath)
   try {
-    return readFileSync(outputPath, 'utf8') === source
+    return readSource(outputPath) === source
   } catch (error) {
     if (error && error.code === 'ENOENT') return false
     throw error

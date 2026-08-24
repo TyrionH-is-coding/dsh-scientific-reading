@@ -74,6 +74,9 @@ try {
   assert.equal(readFileSync(outputPath, 'utf8'), normalized, '首次构建应写入规范化内容')
   assert.equal(checkClient({ sourcePath, outputPath }), true, '首次构建后应保持最新')
 
+  writeFileSync(outputPath, normalized.replace(/\n/g, '\r\n'), 'utf8')
+  assert.equal(checkClient({ sourcePath, outputPath }), true, 'Windows checkout 的 CRLF 不应误报产物过期')
+
   writeFileSync(outputPath, 'stale\n', 'utf8')
   assert.equal(checkClient({ sourcePath, outputPath }), false, '篡改产物应被识别为过期')
 
