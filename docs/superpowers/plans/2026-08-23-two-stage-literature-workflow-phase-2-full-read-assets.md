@@ -488,7 +488,7 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
   八类阶段计数各为 `1`。最终发布 generation reader，fixture 含两图一表，六类篡改均被拒绝。
 - Windows 无窗口修复仅限 `CREATE_NO_WINDOW`、Python hidden helper 与 Node `windowsHide`；实际监控
   `OpenConsole`/`WindowsTerminal` 新增均为 `0`。
-- 最近一次引擎全量测试：`743 passed, 1 skipped`；launcher 聚焦测试：`19 passed`。插件
+- 最终引擎全量测试：`745 passed, 1 skipped`；launcher 聚焦测试：`19 passed`。插件
   `typecheck`、离线测试、integration 与 restart recovery 均为 `PASS`。
 - 规范审查与质量审查最终均为 `APPROVED`。
 - persistent 安装包 SHA（`FA00…65B15`）及 inventory 前后不变。
