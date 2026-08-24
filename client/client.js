@@ -212,7 +212,7 @@ window.__ModuleLoader__.load({
       mid.appendChild(table);
       body.appendChild(mid);
       // 右栏：详情
-      var right = el('div', 'sr-right');
+      var right = el('div', 'sr-legacy-detail');
       right.style.cssText = 'width:clamp(340px,38%,500px);flex-shrink:0;border-left:1px solid #ddd;padding-left:8px;overflow:auto';
       state.detail = right;
       right.appendChild(el('p', 'sr-dim', '选择左侧论文查看详情'));
@@ -220,6 +220,171 @@ window.__ModuleLoader__.load({
       root.appendChild(body);
       // 初始加载
       refreshList();
+      return root;
+    }
+
+    // ── Phase 3 两栏文献导航 ──────────────────────────────────
+    function createQueryStore(onChange) {
+      var query = { page: 1, page_size: 50, q: '', folder: '', tags: '', status: '', recent_days: '' };
+      return {
+        get: function () { return Object.assign({}, query); },
+        set: function (patch, resetPage) {
+          query = Object.assign({}, query, patch);
+          query.page_size = Math.min(100, Math.max(1, Number(query.page_size) || 50));
+          if (resetPage) query.page = 1;
+          onChange(this.get());
+        },
+      };
+    }
+
+    var navState = { items: [], total: 0, folders: [], request: null, status: 'idle' };
+    var queryStore = createQueryStore(function () { loadLibrary(); });
+
+    function libraryUrl(query) {
+      var params = new URLSearchParams();
+      Object.keys(query).forEach(function (key) {
+        if (query[key] !== '') params.set(key, String(query[key]));
+      });
+      return '/sr/api/library?' + params.toString();
+    }
+
+    function loadLibrary() {
+      if (!navState.tableBody) return Promise.resolve();
+      if (navState.request) navState.request.abort();
+      navState.request = new AbortController();
+      navState.status = 'loading';
+      renderNavigationTable();
+      return api(libraryUrl(queryStore.get()), { signal: navState.request.signal }).then(function (data) {
+        navState.items = data.items || [];
+        navState.total = Number(data.total) || 0;
+        navState.status = 'ready';
+        renderNavigationTable();
+      }).catch(function (error) {
+        if (error.name === 'AbortError') return;
+        navState.status = 'error';
+        navState.error = error.message;
+        renderNavigationTable();
+      });
+    }
+
+    function tableMessage(text, cls) {
+      var tr = el('tr');
+      var td = el('td', cls || 'sr-empty', text);
+      td.colSpan = 5;
+      tr.appendChild(td);
+      return tr;
+    }
+
+    function quickLink(label, href) {
+      var link = el('a', 'sr-quick', label);
+      link.href = href;
+      link.target = '_blank';
+      link.addEventListener('click', function (event) { event.stopPropagation(); });
+      return link;
+    }
+
+    function renderNavigationTable() {
+      var tbody = navState.tableBody;
+      if (!tbody) return;
+      tbody.textContent = '';
+      if (navState.status === 'loading') { tbody.appendChild(tableMessage('正在加载文献…')); return; }
+      if (navState.status === 'error') { tbody.appendChild(tableMessage('加载失败：' + navState.error, 'sr-error')); return; }
+      if (!navState.items.length) { tbody.appendChild(tableMessage('没有符合条件的文献')); return; }
+      navState.items.forEach(function (paper) {
+        var tr = el('tr', 'sr-paper-row');
+        var title = el('td', 'sr-paper-title', paper.title || '（无题名）');
+        title.title = paper.title || '（无题名）';
+        var authorYear = el('td', 'sr-muted', (paper.authors_short || '—') + (paper.year ? ' · ' + paper.year : ''));
+        var folder = el('td', 'sr-muted', paper.folder || '待归类');
+        var status = el('td');
+        status.appendChild(el('span', 'sr-status', paper.full_read_status || paper.abstract_status || '未开始'));
+        var entries = el('td', 'sr-entries');
+        entries.appendChild(quickLink('摘要', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/abstract'));
+        if (paper.has_pdf) entries.appendChild(quickLink('PDF', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/pdf'));
+        if (paper.has_reader) entries.appendChild(quickLink('精读', '/sr/reader/' + encodeURIComponent(paper.paper_id)));
+        if (paper.feishu_record_url) entries.appendChild(quickLink('飞书', paper.feishu_record_url));
+        entries.appendChild(quickLink('资产', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/assets'));
+        tr.appendChild(title); tr.appendChild(authorYear); tr.appendChild(folder); tr.appendChild(status); tr.appendChild(entries);
+        tr.addEventListener('click', function () { openDrawer(paper); });
+        tbody.appendChild(tr);
+      });
+      var query = queryStore.get();
+      navState.pageLabel.textContent = '第 ' + query.page + ' 页 · 共 ' + navState.total + ' 篇';
+      navState.prev.disabled = query.page <= 1;
+      navState.next.disabled = query.page * query.page_size >= navState.total;
+    }
+
+    function openDrawer(paper) {
+      navState.drawer.hidden = false;
+      navState.drawerTitle.textContent = paper.title || '（无题名）';
+      navState.drawerBody.textContent = '详情操作将在下一阶段接入。';
+    }
+
+    function filterSelect(label, values, key) {
+      var wrap = el('label', 'sr-filter');
+      wrap.appendChild(el('span', '', label));
+      var select = document.createElement('select');
+      values.forEach(function (entry) {
+        var option = el('option', '', entry[0]); option.value = entry[1]; select.appendChild(option);
+      });
+      select.addEventListener('change', function () { var patch = {}; patch[key] = select.value; queryStore.set(patch, true); });
+      wrap.appendChild(select);
+      return wrap;
+    }
+
+    function renderLiterature() {
+      var root = el('div', 'sr-root');
+      root.style.cssText = '--sr-bg:#f6f3ec;--sr-surface:#fffdf8;--sr-text:#20332f;--sr-muted:#6e7974;--sr-line:#d9ddd6;--sr-accent:#315f70;--sr-highlight-yellow:#ffd84d;--sr-highlight-blue:#3aa7ff;--sr-sidebar-width:240px;--sr-sidebar-width-collapsed:56px';
+      var style = document.createElement('style');
+      style.textContent = '.sr-root{position:relative;display:grid;grid-template-columns:var(--sr-sidebar-width) minmax(0,1fr);height:100%;min-width:0;min-height:720px;background:var(--sr-bg);color:var(--sr-text);font:13px/1.45 Georgia,"Noto Serif SC",serif;overflow:hidden}.sr-root.sr-collapsed{grid-template-columns:var(--sr-sidebar-width-collapsed) minmax(0,1fr)}.sr-sidebar{border-right:1px solid var(--sr-line);padding:18px 12px;background:#f1eee6;overflow:hidden}.sr-sidebar-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.sr-brand{font-weight:700;letter-spacing:.08em}.sr-collapsed .sr-brand,.sr-collapsed .sr-nav-label,.sr-collapsed .sr-folder-list{display:none}.sr-toggle,.sr-btn,.sr-nav-item,.sr-quick{border:1px solid var(--sr-line);background:var(--sr-surface);color:var(--sr-text);border-radius:4px;cursor:pointer}.sr-toggle{width:32px;height:32px}.sr-nav-item{display:flex;width:100%;gap:9px;padding:8px;margin:4px 0;text-align:left}.sr-nav-item[aria-current=true]{border-color:var(--sr-accent);box-shadow:inset 3px 0 var(--sr-highlight-yellow)}.sr-folder-title{margin:20px 8px 8px;color:var(--sr-muted);font-size:11px;letter-spacing:.12em}.sr-folder-list{display:flex;flex-direction:column}.sr-main{display:flex;flex-direction:column;min-width:0;padding:22px 24px}.sr-toolbar{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--sr-line)}.sr-search{flex:1 1 300px;min-width:240px}.sr-search input,.sr-filter select{box-sizing:border-box;width:100%;height:34px;border:1px solid var(--sr-line);border-radius:4px;background:var(--sr-surface);color:var(--sr-text);padding:0 10px}.sr-filter{display:flex;flex-direction:column;gap:3px;color:var(--sr-muted);font-size:11px}.sr-btn{height:34px;padding:0 12px}.sr-btn-primary{background:var(--sr-text);color:var(--sr-surface);border-color:var(--sr-text)}.sr-btn-mark{box-shadow:inset 0 -3px var(--sr-highlight-blue)}.sr-table-wrap{flex:1;min-height:0;overflow:auto;background:var(--sr-surface)}.sr-table{width:100%;min-width:860px;border-collapse:collapse;table-layout:fixed}.sr-table th{text-align:left;padding:11px 12px;position:sticky;top:0;background:var(--sr-surface);border-bottom:1px solid var(--sr-text);font-weight:600}.sr-table td{padding:12px;border-bottom:1px solid var(--sr-line);vertical-align:top}.sr-paper-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sr-muted{color:var(--sr-muted)}.sr-status{white-space:nowrap;border-left:3px solid var(--sr-highlight-blue);padding-left:7px}.sr-entries{display:flex;gap:5px;flex-wrap:wrap}.sr-quick{padding:2px 6px;text-decoration:none}.sr-empty,.sr-error{text-align:center;padding:48px!important;color:var(--sr-muted)}.sr-error{color:#9b3f35}.sr-pagination{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding-top:12px}.sr-drawer{position:absolute;z-index:4;inset:0 0 0 auto;width:min(440px,92%);box-sizing:border-box;padding:24px;background:var(--sr-surface);border-left:1px solid var(--sr-line);box-shadow:-14px 0 30px rgba(32,51,47,.12)}.sr-drawer[hidden]{display:none}.sr-drawer-close{float:right}.sr-drawer h2{margin:42px 0 12px;font-size:21px}';
+      root.appendChild(style);
+
+      var sidebar = el('aside', 'sr-sidebar');
+      var sideHead = el('div', 'sr-sidebar-head');
+      sideHead.appendChild(el('span', 'sr-brand', '文献'));
+      var toggle = btn('☰', function () {
+        var expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        root.classList.toggle('sr-collapsed', expanded);
+      }, 'sr-toggle');
+      toggle.setAttribute('aria-label', '收起或展开文献导航'); toggle.setAttribute('aria-expanded', 'true');
+      sideHead.appendChild(toggle); sidebar.appendChild(sideHead);
+      [['▦', '全部文献', ''], ['◇', '待归类', '__unfiled__']].forEach(function (entry, index) {
+        var item = btn('', function () { queryStore.set({ folder: entry[2] }, true); }, 'sr-nav-item');
+        item.setAttribute('aria-current', index === 0 ? 'true' : 'false'); item.appendChild(el('span', '', entry[0])); item.appendChild(el('span', 'sr-nav-label', entry[1])); sidebar.appendChild(item);
+      });
+      sidebar.appendChild(el('div', 'sr-folder-title', '文件夹'));
+      var folderList = el('div', 'sr-folder-list'); sidebar.appendChild(folderList); root.appendChild(sidebar);
+
+      var main = el('main', 'sr-main');
+      var toolbar = el('div', 'sr-toolbar');
+      var search = el('label', 'sr-search');
+      var searchInput = document.createElement('input'); searchInput.placeholder = '搜索题名、作者或 DOI';
+      var searchTimer = null;
+      searchInput.addEventListener('input', function () { clearTimeout(searchTimer); searchTimer = setTimeout(function () { queryStore.set({ q: searchInput.value.trim() }, true); }, 250); });
+      search.appendChild(searchInput); toolbar.appendChild(search);
+      toolbar.appendChild(btn('添加文献', function () {}, 'sr-btn sr-btn-primary'));
+      toolbar.appendChild(btn('批量粘贴', function () {}, 'sr-btn sr-btn-mark'));
+      toolbar.appendChild(filterSelect('状态', [['全部', ''], ['精读完成', 'full_read_ready'], ['失败', 'failed']], 'status'));
+      toolbar.appendChild(filterSelect('标签', [['全部标签', '']], 'tags'));
+      toolbar.appendChild(filterSelect('最近入库', [['不限', ''], ['7 天', '7'], ['30 天', '30']], 'recent_days'));
+      main.appendChild(toolbar);
+      var tableWrap = el('div', 'sr-table-wrap');
+      var table = el('table', 'sr-table');
+      var head = el('thead'); var headRow = el('tr');
+      ['题名', '作者 / 年份', '归类', '状态', '快捷入口'].forEach(function (label) { headRow.appendChild(el('th', '', label)); });
+      head.appendChild(headRow); table.appendChild(head); navState.tableBody = el('tbody'); table.appendChild(navState.tableBody); tableWrap.appendChild(table); main.appendChild(tableWrap);
+      var pager = el('div', 'sr-pagination');
+      navState.prev = btn('上一页', function () { var q = queryStore.get(); queryStore.set({ page: Math.max(1, q.page - 1) }); });
+      navState.pageLabel = el('span', 'sr-muted', '第 1 页');
+      navState.next = btn('下一页', function () { var q = queryStore.get(); queryStore.set({ page: q.page + 1 }); });
+      pager.appendChild(navState.prev); pager.appendChild(navState.pageLabel); pager.appendChild(navState.next); main.appendChild(pager); root.appendChild(main);
+
+      navState.drawer = el('aside', 'sr-drawer'); navState.drawer.hidden = true;
+      navState.drawer.appendChild(btn('关闭', function () { navState.drawer.hidden = true; }, 'sr-btn sr-drawer-close'));
+      navState.drawerTitle = el('h2', '', '文献详情'); navState.drawerBody = el('p', 'sr-muted', '详情操作将在下一阶段接入。'); navState.drawer.appendChild(navState.drawerTitle); navState.drawer.appendChild(navState.drawerBody); root.appendChild(navState.drawer);
+      api('/sr/api/folders').then(function (data) { navState.folders = data.folders || []; navState.folders.forEach(function (folder) { folderList.appendChild(btn(folder.name || folder, function () { queryStore.set({ folder: folder.id || folder.name || folder }, true); }, 'sr-nav-item')); }); }).catch(function () {});
+      loadLibrary();
       return root;
     }
 
