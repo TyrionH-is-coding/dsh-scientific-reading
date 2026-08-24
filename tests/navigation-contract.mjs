@@ -36,7 +36,7 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   `pdf_sha=${JSON.stringify(createHash('sha256').update(pdf).digest('hex'))}`,
   'if cmd=="library-list-v2": print(json.dumps({"items":[{"paper_id":pid,"title":"Navigation","authors_short":"A et al.","year":2024,"folder":None,"tags":["NLP",7],"abstract_status":"ready","full_read_status":"not_started","feishu_sync_state":"synced","has_pdf":True,"has_reader":True,"feishu_record_url":"https://example.invalid/record","last_error":{"children":[{"stack":"Traceback","api_secret":"TOKEN"}]},"abstract_en":"SECRET ABSTRACT","required_input":{"secret":"TOKEN"},"unexpected":"drop"},{"paper_id":7,"title":{},"authors_short":[],"year":2024.5,"folder":9,"tags":"bad","abstract_status":{},"full_read_status":False,"feishu_sync_state":[],"has_pdf":"yes","has_reader":1,"feishu_record_url":{},"last_error":7}],"page":-4,"page_size":"bad","total":-1,"jobs":{"running":-2,"queued":"bad"},"required_input":{"secret":"TOKEN"}}))',
   'elif cmd=="folder-list": print(json.dumps([]))',
-  'elif cmd=="library-item-v2": print(json.dumps({"paper_id":pid,"title":"Navigation","abstract_en":7,"abstract_zh":{},"abstract_status":False,"active_job_id":"invalid","last_error":"Traceback SECRET token","feishu_record_url":"https://example.invalid/record"}))',
+  'elif cmd=="library-item-v2": print(json.dumps({"paper_id":pid,"title":"Tokenization study","abstract_en":7,"abstract_zh":{},"abstract_status":False,"active_job_id":"job_0123456789abcdef","last_error":"Traceback SECRET token","message":"password leaked","nested":{"safe":"citation","stack":"Traceback","api_secret":"TOKEN"},"feishu_record_url":"https://example.invalid/record"}))',
   'elif cmd=="artifact-resolve":',
   '  kind=a[a.index("--kind")+1]',
   '  if kind=="reader": print(json.dumps({"rel_path":f"generations/{gen}/reading/reader.html","sha256":reader_sha}))',
@@ -85,9 +85,15 @@ try {
 
   const detail = await call('/sr/api/paper', 'GET', `/sr/api/paper/${paperId}`)
   assert.equal(detail.statusCode, 200)
-  assert.equal(JSON.parse(detail.body).item.feishu_record_url, 'https://example.invalid/record')
+  const detailBody = JSON.parse(detail.body)
+  assert.equal(detailBody.item.title, 'Tokenization study')
+  assert.equal(detailBody.item.feishu_record_url, 'https://example.invalid/record')
+  assert.equal(detailBody.item.nested.safe, 'citation')
+  assert.equal(detailBody.job.required_input.kind, 'gate')
+  assert.equal(detailBody.job.required_input.nested.safe, 'ok')
+  assert.doesNotMatch(String(detail.body), /traceback|secret|token(?!ization)|password/i)
   const abstract = await call('/sr/api/paper', 'GET', `/sr/api/paper/${paperId}/abstract`)
-  assert.deepEqual(JSON.parse(abstract.body), { paper_id: paperId, abstract_en: null, abstract_zh: null, status: '', active_job_id: null, last_error: 'redacted' })
+  assert.deepEqual(JSON.parse(abstract.body), { paper_id: paperId, abstract_en: null, abstract_zh: null, status: '', active_job_id: 'job_0123456789abcdef', last_error: 'redacted' })
   const pdfOut = await call('/sr/api/paper', 'GET', `/sr/api/paper/${paperId}/pdf`)
   assert.equal(pdfOut.statusCode, 200)
   assert.deepEqual(Buffer.from(pdfOut.body), pdf)

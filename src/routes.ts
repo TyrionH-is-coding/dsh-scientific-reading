@@ -161,6 +161,17 @@ function withoutSensitiveFields(value: unknown): unknown {
     .map(([key, child]) => [key, withoutSensitiveFields(child)]))
 }
 
+const ERROR_TEXT_FIELDS = new Set(['error', 'last_error', 'error_status', 'message', 'detail'])
+
+function safeLibraryItem(value: unknown, field = ''): unknown {
+  if (Array.isArray(value)) return value.map((child) => safeLibraryItem(child))
+  if (typeof value === 'string') return ERROR_TEXT_FIELDS.has(field) ? safeError(value) : value
+  if (!value || typeof value !== 'object') return ERROR_TEXT_FIELDS.has(field) ? '' : value
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !/(?:stack|secret|token|password)/i.test(key))
+    .map(([key, child]) => [key, safeLibraryItem(child, key)]))
+}
+
 /**
  * 文献页 API 路由（只读数据 + 动作触发）。动作端点复用插件同一套引擎适配器。
  * 安全：paper_id / job_id 白名单校验；只读 dataRoot 内路径。
@@ -398,7 +409,8 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const itemRaw = await readOrNull(metaPath)
         const metadata = itemRaw ? JSON.parse(itemRaw) : null
         const libraryItem = await engineLibraryItem(config, id)
-        const item = libraryItem.ok && libraryItem.json ? { ...metadata, ...libraryItem.json } : metadata
+        const engineItem = libraryItem.ok && libraryItem.json ? safeLibraryItem(libraryItem.json) as Record<string, unknown> : null
+        const item = engineItem ? { ...metadata, ...engineItem } : metadata
         const activeJobId = typeof item?.active_job_id === 'string' && JOB_ID_RE.test(item.active_job_id) ? item.active_job_id : ''
         const activeJob = activeJobId ? await engineJobStatus(config, activeJobId) : null
         const reading = await readOrNull(join(root, 'reading', 'quick_read.md'))
@@ -406,7 +418,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
         for (const p of ['reading/quick_read.md']) {
           try { await access(join(root, p)); outputs.push(p) } catch { /* 不存在 */ }
         }
-        sendJson(res, 200, { paper_id: id, item, job: activeJob?.json ?? null, reading, outputs })
+        sendJson(res, 200, { paper_id: id, item, job: activeJob?.json ? withoutSensitiveFields(activeJob.json) : null, reading, outputs })
         return
       }
 
