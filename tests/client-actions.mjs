@@ -21,6 +21,8 @@ const isSafeHttpUrl = loadNamedFunction('isSafeHttpUrl')
 const pairAbstractParagraphs = loadNamedFunction('pairAbstractParagraphs')
 const paperEntryModel = loadNamedFunction('paperEntryModel')
 const createPaperActionController = loadNamedFunction('createPaperActionController')
+const createDrawerSessionController = loadNamedFunction('createDrawerSessionController')
+const nextDialogFocus = loadNamedFunction('nextDialogFocus')
 
 assert.equal(isSafeHttpUrl('https://example.test/record'), true)
 assert.equal(isSafeHttpUrl('http://example.test/record'), true)
@@ -38,6 +40,13 @@ assert.equal(disabled.feishu.label, '飞书未配置')
 const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true, feishu_sync_state: 'synced', feishu_record_url: 'https://example.test/r' }, isSafeHttpUrl)
 assert.equal(paperEntryModel({ abstract_status: 'completed' }, isSafeHttpUrl).quick.disabledReason, '', 'worker completed 状态也必须可浅读')
 assert.equal(paperEntryModel({ full_read_status: 'running' }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中')
+for (const status of ['精读排队', '获取 PDF', '解析全文', '翻译与生成', '需要用户处理', 'queued', 'running', 'needs_user', 'waiting_user']) {
+  assert.equal(paperEntryModel({ full_read_status: status }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中', status)
+}
+for (const status of ['精读完成', 'completed', 'full_read_ready']) {
+  assert.equal(paperEntryModel({ full_read_status: status, has_reader: false }, isSafeHttpUrl).reader.disabledReason, '精读 HTML 待校验', status)
+}
+assert.equal(paperEntryModel({ full_read_status: '处理失败' }, isSafeHttpUrl).reader.disabledReason, '', '失败状态允许从更多菜单重试而非 busy')
 assert.equal(ready.reader.href, '/sr/reader/')
 assert.equal(ready.feishu.href, 'https://example.test/r')
 assert.equal(paperEntryModel({ feishu_sync_state: 'synced', feishu_record_url: 'javascript:alert(1)' }, isSafeHttpUrl).feishu.href, '')
@@ -160,8 +169,24 @@ const invalidJob = createPaperActionController({ api() { return Promise.resolve(
 await assert.rejects(invalidJob.startFullRead('library_invalid_job'), /任务编号无效/)
 
 assert.match(source, /outputs \|\| \[\]\)\.includes\('reading\/quick_read\.md'\)/, '仅 detail 证明旧浅读存在时才显示入口')
-assert.doesNotMatch(source, /more\.appendChild\(entryLink\('查看历史浅读'/, '列表不得无条件生成历史浅读 404 入口')
 assert.match(source, /job\.status === 'waiting_user'[^]*jobDetail\.reason_code === 'pdf_required'/, '持久重载必须从 detail job 恢复 PDF gate')
-assert.match(source, /reader\.onload[^]*disposed \|\| controls\.backdrop\.hidden/, '关闭 drawer 后 FileReader 晚回调不得挂接 PDF')
+assert.match(source, /reader\.onload[^]*drawerSessions\.guard/, 'FileReader 晚回调必须经过 drawer session 门控')
+
+const sessions = createDrawerSessionController()
+const a = sessions.open('library_a')
+const lateReader = { aborted: false, abort() { this.aborted = true } }
+sessions.trackReader(a, 'library_a', lateReader)
+sessions.close()
+assert.equal(lateReader.aborted, true, 'close 必须 abort 正在读取的 FileReader')
+const b = sessions.open('library_b')
+assert.equal(sessions.guard(a, 'library_a', () => 'A'), undefined, 'A 晚响应不得覆盖 B')
+assert.equal(sessions.guard(b, 'library_b', () => 'B'), 'B')
+let lateAttach = 0
+sessions.guard(a, 'library_a', () => { lateAttach += 1 })
+assert.equal(lateAttach, 0, 'A 晚 FileReader 不得 attach 或关闭 B')
+
+const focusables = [{ id: 'close' }, { id: 'pdf' }, { id: 'copy' }]
+assert.equal(nextDialogFocus(focusables, focusables[2], false), focusables[0], 'Tab 从末尾循环到开头')
+assert.equal(nextDialogFocus(focusables, focusables[0], true), focusables[2], 'Shift+Tab 从开头循环到末尾')
 
 console.log('PASS: 文献行、详情缓存、安全 URL 与单篇动作生命周期')

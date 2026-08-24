@@ -27,6 +27,6 @@ assert.deepEqual(runs, [
   'npm run test:offline',
 ], 'workflow 只能执行离线命令')
 assert.equal(manifest.scripts?.['build:ci'], 'tsc -p tsconfig.json && node scripts/build-client.mjs')
-assert.equal(manifest.scripts?.['test:offline'], 'node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/reading-routes.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/task7-hidden-subprocess.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs')
+assert.equal(manifest.scripts?.['test:offline'], 'node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/client-actions.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/reading-routes.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/task7-hidden-subprocess.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-env-only.mjs && node scripts/plugin-check.mjs')
 
 console.log('PASS: CI workflow 仅执行离线门禁')
