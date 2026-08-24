@@ -171,25 +171,25 @@ git commit -m "界面：改造为可收起的文献导航页"
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\client-actions.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\reading-routes.mjs`
 
-- [ ] **Step 1: 写交互失败合同**
+- [x] **Step 1: 写交互失败合同**
 
 覆盖：题名点击加载一次详情；drawer 可 Escape/遮罩/关闭按钮关闭并恢复焦点；Abstract 按英文→中文
 逐段显示；missing 明确“待补摘要”；按钮按产物状态切换；失败才显示高级入口；飞书未配置/待同步/
 已同步；路径复制；旧 HTML/旧浅读回退。
 
-- [ ] **Step 2: 实现文献行**
+- [x] **Step 2: 实现文献行**
 
 每行只显示：选择框、题名、简短作者/年份、主文件夹/最多两个标签、浅读/精读/飞书状态、
 【浅读】【开始精读/阅读 HTML】【PDF】【飞书】和更多菜单。没有产物的按钮 disabled 并给原因，
 不要让空链接可点击。
 
-- [ ] **Step 3: 实现详情 drawer**
+- [x] **Step 3: 实现详情 drawer**
 
 drawer 内容：完整题录、Abstract 英中对照、阶段状态/失败原因、PDF/HTML/飞书/资产目录入口。
 不内嵌 reader，不展示 MinerU 参数。若只有旧九节式浅读，在更多菜单给“查看历史浅读”，不能把它
 当作新 Abstract 浅读。
 
-- [ ] **Step 4: 实现单篇动作和轮询**
+- [x] **Step 4: 实现单篇动作和轮询**
 
 - 开始精读 POST 后按钮立刻显示排队；只轮询该 parent job，完成后刷新该行；
 - needs_user 时才显示“使用机构浏览器”“挂接本地 PDF”；
@@ -197,7 +197,7 @@ drawer 内容：完整题录、Abstract 英中对照、阶段状态/失败原因
 - PDF/reader 使用服务器路由；飞书使用 `target=_blank` 和 `rel=noopener`；
 - 组件卸载或 drawer 关闭时清理 timer/AbortController。
 
-- [ ] **Step 5: 测试并提交**
+- [x] **Step 5: 测试并提交**
 
 ```powershell
 npm run build:client
@@ -449,3 +449,5 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 - Task 1 已完成（commits `7134c23`、`672521e`、`5b6130f`）：固定导航/批量 HTTP 合同、严格字段类型与脱敏、1 MiB body 上限与 405；六种 action 白名单，101 篇选择由路由完整单次转发，批量分块仍留给 Task 4。generation 资产路由覆盖 PDF、reader、assets，并校验 SHA 与 symlink 边界。最终规范审核与质量审核均为 `APPROVED`。`build:ci`、`typecheck`、计划指定 3 项测试、library、full-read、assets、Phase 1 与 harness 全部 `PASS`。本任务未改引擎/UI/v2.1，未操作 3080、网络或飞书。
 
 - Task 2 已完成（commits `4a1063d`、`1be8e0e`、`997377b`）：实现可收起 sidebar、宽主列表与隐藏 overlay drawer 骨架，接入服务器分页、搜索和筛选；folders 顶层数组使用 `folder_id`，待归类使用 `__unclassified__`。无 DOM 依赖的 mount-controller 生命周期 harness 覆盖稳定 ref 重渲染、卸载清理与同节点重挂。规范审核与质量审核均为 `APPROVED`；`build:ci`、`typecheck`、`client-ui`、`client-build`、完整 `offline` 与 `git diff --check` 均通过。未提前实现 Task 3，未联网、未操作 3080，也未启动真实 worker。
+
+- Task 3 已完成（engine commits `7bfed70`、`18156d5`；plugin commits `a1e3adb`、`b0297ae`、`52b39fd`、`80efa93`）：实现文献行、按需单次详情读取的 Abstract overlay drawer、安全 PDF/reader/飞书/历史浅读入口、资产目录与图表导出反馈，以及相互隔离的行级精读轮询和 drawer 生命周期。规范审核与质量审核均为 `APPROVED`；root 在清空 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后重跑完整 `npm run test:offline` 全部 `PASS`，engine targeted tests 为 `48 passed`。最小计划偏差：为满足固定导航合同，engine 使用单条 set-based SQLite 查询补齐列表字段，未在插件逐行启动子进程；未开放根目录 legacy `reader_full.html`，正式 reader 仍只允许同 generation 的 `reading/reader.html`，并回退同 generation 的 `output/reader_full.html`，根旧资产留给 Task 5 migration audit 建立只读索引。本任务未执行外部写入、3080 操作、网络访问或真实飞书同步。
