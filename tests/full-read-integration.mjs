@@ -38,9 +38,23 @@ assert.equal(result.external_writes, false)
 assert.equal(result.network_used, false)
 assert.equal(result.profile_isolated, true)
 assert.equal(result.installed_package?.unchanged, true)
+assert.equal(result.installed_package?.inventory_unchanged, true)
+assert.equal(result.formal_parent?.all_completed, true)
+assert.equal(result.formal_parent?.stable_parent_ids, true)
+assert.equal(result.formal_parent?.unique_active_parent, true)
+assert.equal(result.formal_parent?.all_stage_counts_once, true)
+assert.deepEqual(result.tamper_negative, { reader: true, export: true })
 assert.equal(result.fixture.pages, 4)
 assert.equal(result.fixture.translation_batches, 2)
 
 const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(packageJson.scripts['test:full-read-integration'], 'node tests/full-read-integration.mjs')
+const defaultEnv = { ...isolatedEnv }
+delete defaultEnv.SR_ENGINE_ROOT
+const defaultResult = JSON.parse(execFileSync(python, [join(root, 'scripts', 'verify_full_read_pipeline.py'), '--resolve-engine-only'], {
+  cwd: root,
+  encoding: 'utf8',
+  env: defaultEnv,
+}))
+assert.equal(defaultResult.engine_root, engine)
 console.log('PASS: Phase 2 精读全链路四边界中断恢复与完整性验收')
