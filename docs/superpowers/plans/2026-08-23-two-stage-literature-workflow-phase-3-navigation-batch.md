@@ -288,26 +288,26 @@ git commit -m "界面：加入跨页批量操作与父任务反馈"
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\no-zotero-runtime.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-ui-contract.mjs`
 
-- [ ] **Step 1: 写旧库 fixture 与失败测试**
+- [x] **Step 1: 写旧库 fixture 与失败测试**
 
 fixture 包含：旧 `metadata.zotero_key`、旧 PDF、MinerU 目录、`reader_full.html`、`quick_read.md/json`、
 一个缺失路径。断言审计只建立引用/警告，不移动/删除/重算；legacy key 映射为 library_key；旧 reader
 仍可路由；旧 quick read 仅更多菜单；新 CLI/worker/tools/UI 无 Zotero 入口。
 
-- [ ] **Step 2: 实现只读迁移审计**
+- [x] **Step 2: 实现只读迁移审计**
 
 `migration_audit.py` 扫描 SQLite 和 workspace，写 `library/migration-audit.json`：每篇现有资产、SHA
 可读性、legacy 路径、缺失警告。已有可信 manifest/SHA 直接复用；只为缺 SHA 且文件存在的资产计算
 SHA，不重解析 PDF。
 
-- [ ] **Step 3: 移除运行可达性，不做大规模源码删除**
+- [x] **Step 3: 移除运行可达性，不做大规模源码删除**
 
 - 从 `DEFAULT_HANDLERS` 移除 `zotero_record`；
 - 从新 CLI parser 移除 Zotero 写入/迁移命令；若必须保留只读审计命令，命名为 `legacy-audit`；
 - 插件不注册 `sr_zotero_*`，新 description/README/UI 不出现 Zotero；
 - Python 旧模块暂留供历史测试和审计 import，避免在本阶段做无收益大删除。
 
-- [ ] **Step 4: 测试并分别提交**
+- [x] **Step 4: 测试并分别提交**
 
 ```powershell
 # 引擎
@@ -334,17 +334,17 @@ git commit -m "插件：移除Zotero入口并保留旧资产访问"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\profile-runtime-verifier.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\package.json`
 
-- [ ] **Step 1: 打包真实 tarball 并安装到隔离 Profile**
+- [x] **Step 1: 打包真实 tarball 并安装到隔离 Profile**
 
 使用临时 `DSH_HOME`、临时 data root、独立端口（例如 3180）。`npm pack --dry-run` 先验证内容，再
 安装实际 tarball。不得使用开发注入冒充 Bundle 验收。
 
-- [ ] **Step 2: HTTP 自动验收**
+- [x] **Step 2: HTTP 自动验收**
 
 导入 60 篇虚构工科题录，断言第 1/2 页、搜索、待归类、文件夹、详情、Abstract、批量父任务、
 reader/pdf/exports 路由。所有请求清空飞书凭证、scansci 用 fake provider。
 
-- [ ] **Step 3: 浏览器视觉与交互 QA**
+- [x] **Step 3: 浏览器视觉与交互 QA**
 
 在 1440×900、1280×720、窄宽 900×720 截图/检查：
 
@@ -358,11 +358,11 @@ reader/pdf/exports 路由。所有请求清空飞书凭证、scansci 用 fake pr
 
 发现视觉问题先写/更新 DOM 合同或 runtime assertion，再做最小 CSS 修复。
 
-- [ ] **Step 4: 关闭清理**
+- [x] **Step 4: 关闭清理**
 
 停止隔离 DSH 后断言端口释放、worker 无残留、临时 Profile 可删除。当前 3080 仍未变化。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```powershell
 npm run typecheck
@@ -453,3 +453,7 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 - Task 3 已完成（engine commits `7bfed70`、`18156d5`；plugin commits `a1e3adb`、`b0297ae`、`52b39fd`、`80efa93`）：实现文献行、按需单次详情读取的 Abstract overlay drawer、安全 PDF/reader/飞书/历史浅读入口、资产目录与图表导出反馈，以及相互隔离的行级精读轮询和 drawer 生命周期。规范审核与质量审核均为 `APPROVED`；root 在清空 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后重跑完整 `npm run test:offline` 全部 `PASS`，engine targeted tests 为 `48 passed`。最小计划偏差：为满足固定导航合同，engine 使用单条 set-based SQLite 查询补齐列表字段，未在插件逐行启动子进程；未开放根目录 legacy `reader_full.html`，正式 reader 仍只允许同 generation 的 `reading/reader.html`，并回退同 generation 的 `output/reader_full.html`，根旧资产留给 Task 5 migration audit 建立只读索引。本任务未执行外部写入、3080 操作、网络访问或真实飞书同步。
 
 - Task 4 已完成（engine commits `9bbfe2a`、`e10bc95`、`a38952c`、`0a240e3`、`f30a211`、`93134d4`；plugin commits `f4d14c1`、`5018067`、`89e4c0a`）：实现批量选择稳定去重与按 100 篇分块、逐篇独立结果、父任务增量持久化与脱敏失败收束、事务型文件夹/标签操作及完整撤销句柄；精读与飞书动作只创建或复用持久队列，不在批量调用中启动重 worker。前端按 `paper_id` 跨页保留选择，以选择 revision 隔离晚响应，同一时刻只允许一个副作用提交；仅移除 `created/reused`，并用独立 `aria-live` 父汇总区分完成、失败和处理中状态。Windows 越界门禁实际创建 directory junction 并验证拒绝，且子进程使用 `CREATE_NO_WINDOW`。最终规范审核与质量审核均为 `APPROVED`；engine worktree 全量为 `778 passed, 1 skipped`，root 独立定向复核为 `70 passed`，plugin 完整 `npm run test:offline` 全部 `PASS`。最小计划偏差：未修改 `reading_pipeline.py`，而是复用既有 `start`/resume 合同，并以真实 worker 回归证明失败阶段可恢复且不重复已完成重阶段。本任务未操作 3080/persistent Profile，未联网，未执行真实飞书写入、机构认证或其他外部操作。
+
+- Task 5 已完成（engine commits `a43fcac`、`1b6b1e3`、`ed5737f`、`26082cd`、`264925d`；plugin commit `2e38ce7`）：旧库 fixture 覆盖 legacy key、PDF、MinerU、旧 reader/浅读和缺失路径；迁移审计以完整 manifest、SHA、路径 containment、hardlink/junction 边界验证现有资产，仅建立索引与警告，不移动、删除或重算旧产物。Zotero record、旧 PDF acquisition CLI/default handler 及插件运行入口已移除，旧源码只为只读兼容保留。最终独立审核为 `APPROVED`；engine 定向复核为 `100 passed, 2 skipped`，worktree 全量为 `798 passed, 3 skipped`，插件离线测试全部通过。审计只保证单用户数据根中的陈旧/误改可检测性；拥有本地完整写权限并同时篡改资产与审计文件的恶意写者不属于本轮密码学信任边界。
+
+- Task 6 已完成（engine commits `3b624d1`、`1621276`；plugin commits `1c1f05b`、`ffd9a13`、`93cd41c`、`8a9b973`、`9129dff`、`972bd3f`、`55c0069`）：使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科文献完成隔离实机验收；HTTP 读回覆盖两页列表、搜索、待归类、文件夹、详情、英中 Abstract、批量父任务、正式 generation reader、活动代次 PDF 及真实 PNG/CSV 资产。浏览器在 1440×900、1280×720、900×720 三档检查录入 modal、搜索/筛选/分页、跨页选择、overlay drawer、Escape/焦点恢复、disabled 原因、排队汇总与 `needs_user` fallback；视觉仅使用黄色/亮蓝重点。QA 发现并以合同测试驱动修复文献列表内部滚动和宿主 composer 遮挡。关闭门禁逐项验证宿主停止、端口释放、worker 身份与清理、临时根删除；任一步失败都会保留现场，且后续清理仍继续执行。真实导航运行返回 `navigation_runtime_verified`，真实 Bundle/Profile verifier 均通过，engine 全量为 `805 passed, 3 skipped`；当前 3080/persistent Profile 未动，未执行真实飞书写入或机构认证。
