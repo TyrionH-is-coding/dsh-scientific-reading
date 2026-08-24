@@ -13,7 +13,7 @@ declare module 'cordis' {
   }
 }
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { mkdir, writeFile, readFile, access, rename, lstat } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, access, lstat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from './config.js'
@@ -23,10 +23,6 @@ import { BATCH_ACTIONS, listNavigation, resolveNavigationArtifact, submitBatch }
 import {
   engineList,
   engineJobStatus,
-  engineParse,
-  engineQuickRead,
-  engineCheckItem,
-  engineInit,
   engineLibraryItem,
   engineLibraryIngest,
   engineFolderManage,
@@ -360,39 +356,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
     sendJson(res, 200, { papers: enriched })
   })
 
-  // ── 新建论文（添加文献）─────────────────────────────────────────────
-  exact('/sr/api/paper', async (req, res) => {
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
-    try {
-      const body = await readJsonBody(req)
-      const title = String(body.title ?? '').trim()
-      if (!title) return sendJson(res, 400, { error: 'title_required' })
-      const pendingDir = join(dataRoot(), '.pending')
-      await mkdir(pendingDir, { recursive: true })
-      const meta: Record<string, unknown> = {
-        title,
-        authors: Array.isArray(body.authors) ? (body.authors as string[]) : [],
-        doi: typeof body.doi === 'string' && body.doi.trim() ? body.doi.trim() : null,
-        pmid: typeof body.pmid === 'string' && body.pmid.trim() ? body.pmid.trim() : null,
-        year: typeof body.year === 'number' ? body.year : null,
-        journal: typeof body.journal === 'string' && body.journal.trim() ? body.journal.trim() : null,
-        zotero_key: null,
-      }
-      const digest = createHash('sha256').update(JSON.stringify(meta)).digest('hex').slice(0, 12)
-      const staging = join(pendingDir, 'meta_' + digest + '.json')
-      await writeFile(staging + '.tmp', JSON.stringify(meta, null, 2), 'utf8')
-      await rename(staging + '.tmp', staging)
-      const init = await engineInit(config, staging)
-      if (!init.ok || !init.json) return sendJson(res, 500, { error: init.stderr || 'init_failed' })
-      const paperId = String(init.json.paper_id ?? '')
-      const check = await engineCheckItem(config, join(paperRoot(paperId), 'metadata.json'))
-      const d = (check.json?.detail ?? {}) as Record<string, unknown>
-      sendJson(res, 200, { paper_id: paperId, dedupe: String(d.dedupe ?? 'none') })
-    } catch (e) {
-      sendJson(res, 400, { error: (e as Error).message })
-    }
-  })
-
   // ── 论文详情与动作 ──────────────────────────────────────────────────
   prefix('/sr/api/paper', async (req, res) => {
     const parts = parsePaperRoute(req.url ?? '', '/sr/api/paper')
@@ -572,21 +535,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
-      if (req.method === 'POST' && action === 'parse') {
-        const r = await engineParse(config, metaPath)
-        sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'parse_failed' })
-        return
-      }
-
-      if (req.method === 'POST' && action === 'quick-read') {
-        const body = await readJsonBody(req)
-        const ctxText = typeof body.project_context === 'string' ? body.project_context : undefined
-        const r = await engineQuickRead(config, metaPath, ctxText)
-        sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'quick_read_failed' })
-        return
-      }
-
-      const knownActions = new Set(['abstract', 'pdf', 'assets', 'exports', 'reader', 'full-read', 'attach-pdf', 'export-assets', 'download', 'attach', 'start', 'export', 'parse', 'quick-read'])
+      const knownActions = new Set(['abstract', 'pdf', 'assets', 'exports', 'reader', 'full-read', 'attach-pdf', 'export-assets', 'download', 'attach', 'start', 'export'])
       sendJson(res, knownActions.has(action) ? 405 : 404, { error: knownActions.has(action) ? 'method_not_allowed' : 'not_found' })
     } catch {
       sendJson(res, 500, { error: 'internal_error' })
