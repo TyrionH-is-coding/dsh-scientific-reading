@@ -16,8 +16,12 @@ for (const marker of ['generations', 'reading', 'reader.html', 'reader-manifest.
 }
 assert.match(verifierSource, /dsh_shutdown_failed/, '验证器必须拒绝无法确认退出的 DSH 子进程')
 assert.match(navigationSource, /npm_pack_dry_run/, '导航验收必须先执行tarball dry-run')
-assert.match(navigationSource, /SR_EXTERNAL_PROVIDER: 'fake'/, '导航验收必须强制外部provider为fake')
-assert.match(navigationSource, /delete env\.FEISHU_APP_ID; delete env\.FEISHU_APP_SECRET/, '导航验收必须清空飞书凭证')
+assert.doesNotMatch(navigationSource, /SR_DATA_ROOT|SR_EXTERNAL_PROVIDER/, '导航验收不得依赖插件未消费的假环境变量')
+assert.match(navigationSource, /--engine-python/, '导航验收必须使用显式引擎解释器')
+assert.match(navigationSource, /join\(userProfile, 'scientific-reading-data'\)/, '导航验收必须使用临时 USERPROFILE 下的默认 dataRoot')
+for (const secret of ['FEISHU_APP_ID', 'FEISHU_APP_SECRET']) {
+  assert.match(navigationSource, new RegExp(`delete env\\.${secret}`), `导航验收必须清空 ${secret}`)
+}
 const fixture = mkdtempSync(join(tmpdir(), 'sr-runtime-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
 

@@ -41,7 +41,8 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   '  kind=a[a.index("--kind")+1]',
   '  if kind=="reader": print(json.dumps({"rel_path":f"generations/{gen}/reading/reader.html","sha256":reader_sha}))',
   '  elif kind=="pdf": print(json.dumps({"rel_path":f"generations/{gen}/source.pdf","sha256":pdf_sha}))',
-  '  else: print(json.dumps({"rel_path":f"generations/{gen}/exports","manifest":{"assets":[]}}))',
+  '  elif kind=="exports": print(json.dumps({"rel_path":f"generations/{gen}/exports","manifest":{"assets":[]}}))',
+  '  else: sys.exit(2)',
   'elif cmd=="full-read-pipeline-start": print(json.dumps({"parent_job_id":"job_0123456789abcdef"}))',
   'elif cmd=="full-read-pipeline-resume": print(json.dumps({"parent_job_id":"job_0123456789abcdef","state":"queued","required_input":{"kind":"gate","nested":{"safe":"ok","stack":"Traceback"},"message":"SECRET token"},"api_secret":"TOKEN"}))',
   'elif cmd=="export-assets": print(json.dumps({"parent_job_id":"job_fedcba9876543210","status":"queued"}))',
@@ -98,6 +99,8 @@ try {
   assert.equal(pdfOut.statusCode, 200)
   assert.deepEqual(Buffer.from(pdfOut.body), pdf)
   assert.match(pdfOut.headers['Content-Type'], /^application\/pdf/)
+  const pdfArgs = readFileSync(logPath, 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse).filter((args) => args.includes('artifact-resolve'))
+  assert.equal(pdfArgs.some((args) => args.includes('pdf')), true, 'PDF 必须通过引擎活动代次资产合同解析')
   assert.equal((await call('/sr/api/paper', 'POST', `/sr/api/paper/${paperId}/full-read`, '{}')).statusCode, 200)
   assert.equal((await call('/sr/api/paper', 'POST', `/sr/api/paper/${paperId}/export-assets`, '{}')).statusCode, 200)
   assert.equal((await call('/sr/api/paper', 'POST', `/sr/api/paper/${paperId}`, '{}')).statusCode, 405)
