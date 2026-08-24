@@ -54,6 +54,115 @@ window.__ModuleLoader__.load({
       }
       return { ref: literatureRef, cleanup: cleanup };
     }
+    function isSafeHttpUrl(value) {
+      try {
+        var parsed = new URL(String(value));
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !!parsed.hostname;
+      } catch (e) { return false; }
+    }
+    function pairAbstractParagraphs(english, chinese) {
+      var en = String(english || '').split(/\n\s*\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+      var zh = String(chinese || '').split(/\n\s*\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+      return Array.from({ length: Math.max(en.length, zh.length) }, function (_, index) {
+        return { en: en[index] || '', zh: zh[index] || '' };
+      });
+    }
+    function paperEntryModel(paper) {
+      var safeFeishu = false;
+      try { var parsed = new URL(String(paper.feishu_record_url || '')); safeFeishu = (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !!parsed.hostname; } catch (e) {}
+      var feishuState = paper.feishu_sync_state || 'unconfigured';
+      return {
+        quick: { label: '浅读', disabledReason: ['ready', 'completed'].includes(paper.abstract_status) ? '' : '待补摘要' },
+        reader: paper.has_reader
+          ? { label: '阅读 HTML', href: '/sr/reader/', disabledReason: '' }
+          : { label: '开始精读', href: '', disabledReason: paper.full_read_status === 'queued' ? '精读已排队' : '' },
+        pdf: { label: 'PDF', href: paper.has_pdf ? '/sr/api/paper/' : '', disabledReason: paper.has_pdf ? '' : '尚无 PDF 原件' },
+        feishu: {
+          label: feishuState === 'synced' ? '飞书' : feishuState === 'pending' ? '飞书待同步' : '飞书未配置',
+          href: feishuState === 'synced' && safeFeishu ? paper.feishu_record_url : '',
+          disabledReason: feishuState === 'synced' && !safeFeishu ? '飞书链接无效' : feishuState === 'pending' ? '等待同步' : feishuState === 'synced' ? '' : '飞书未配置',
+        },
+      };
+    }
+    function createPaperActionController(deps) {
+      var detailCache = new Map();
+      var activeControllers = new Set();
+      var pollTimer = null;
+      var pollSequence = 0;
+      var disposed = false;
+      var schedule = deps.schedule || function (fn) { return setTimeout(fn, 800); };
+      var cancel = deps.cancel || clearTimeout;
+      function trackedApi(path, options) {
+        var controller = new AbortController(); activeControllers.add(controller);
+        return deps.api(path, Object.assign({}, options || {}, { signal: controller.signal })).finally(function () { activeControllers.delete(controller); });
+      }
+      function stop() {
+        pollSequence += 1;
+        if (pollTimer !== null) cancel(pollTimer);
+        pollTimer = null;
+        activeControllers.forEach(function (controller) { controller.abort(); });
+        activeControllers.clear();
+      }
+      function loadDetail(paperId) {
+        if (detailCache.has(paperId)) return detailCache.get(paperId);
+        var promise = trackedApi('/sr/api/paper/' + encodeURIComponent(paperId)).then(function (detail) {
+          var item = detail.item || {};
+          return { detail: detail, abstract: { abstract_en: item.abstract_en, abstract_zh: item.abstract_zh, status: item.abstract_status, last_error: item.last_error } };
+        }).catch(function (error) { detailCache.delete(paperId); throw error; });
+        detailCache.set(paperId, promise);
+        return promise;
+      }
+      function poll(paperId, jobId, sequence, onSuccess, onFailure) {
+        if (disposed || sequence !== pollSequence) return Promise.resolve();
+        return trackedApi('/sr/api/job/' + encodeURIComponent(jobId)).then(function (job) {
+          if (disposed || sequence !== pollSequence) return;
+          var detail = job.detail || {};
+          var status = job.status || job.state || '';
+          if (status === 'waiting_user') return onFailure(job);
+          if (['completed', 'succeeded', 'ready', 'full_read_ready', 'exported'].includes(status)) { return onSuccess(); }
+          if (['failed', 'cancelled'].includes(status)) return onFailure(job);
+          pollTimer = schedule(function () { return runPoll(paperId, jobId, sequence, onSuccess, onFailure); });
+        });
+      }
+      function runPoll(paperId, jobId, sequence, onSuccess, onFailure) {
+        return poll(paperId, jobId, sequence, onSuccess, onFailure).catch(function (error) {
+          if (error && error.name === 'AbortError') return;
+          if (!disposed && sequence === pollSequence) onFailure({ status: 'failed', error: error && error.message ? error.message : '任务状态读取失败' });
+        });
+      }
+      function startFullRead(paperId) {
+        var sequence = ++pollSequence;
+        return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/full-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (result) {
+          if (disposed || sequence !== pollSequence) return result;
+          var jobId = result.parent_job_id;
+          if (!/^job_[A-Za-z0-9]{16,}$/.test(String(jobId || ''))) throw new Error('任务编号无效');
+          deps.onPatch(paperId, { full_read_status: 'queued', active_job_id: jobId });
+          function onFailure(job) { var detail = job.detail || {}; deps.onPatch(paperId, job.status === 'waiting_user' ? { full_read_status: 'needs_user', needsUser: detail.reason_code === 'pdf_required', pdfRequired: detail.reason_code === 'pdf_required', active_job_id: jobId } : { full_read_status: 'failed', last_error: job.error || '任务失败' }); }
+          pollTimer = schedule(function () { return runPoll(paperId, jobId, sequence, function () { return deps.onRefresh(paperId); }, onFailure); });
+          return result;
+        });
+      }
+      function exportAssets(paperId) {
+        var sequence = ++pollSequence;
+        return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/export-assets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(function (result) {
+            if (disposed || sequence !== pollSequence) return result;
+            function readAssets() { return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/assets').then(function (assets) { if (!disposed && sequence === pollSequence && deps.onAssets) deps.onAssets(paperId, assets); return assets; }); }
+            function exportFailure(job) { if (deps.onAssetsError) deps.onAssetsError(paperId, job.error || '资产导出失败'); }
+            if (!result.parent_job_id) return readAssets();
+            if (!/^job_[A-Za-z0-9]{16,}$/.test(String(result.parent_job_id))) throw new Error('任务编号无效');
+            pollTimer = schedule(function () { return runPoll(paperId, result.parent_job_id, sequence, readAssets, exportFailure); });
+            return result;
+          });
+      }
+      function institutionDownload(paperId, jobId, identifier) {
+        return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId, identifier: identifier }) }).then(function (result) { detailCache.delete(paperId); return result; });
+      }
+      function attachPdf(paperId, jobId, pdfBase64) {
+        return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/attach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId, pdf_b64: pdfBase64 }) }).then(function (result) { detailCache.delete(paperId); return result; });
+      }
+      return { loadDetail: loadDetail, invalidate: function (paperId) { detailCache.delete(paperId); }, startFullRead: startFullRead, exportAssets: exportAssets, institutionDownload: institutionDownload, attachPdf: attachPdf, close: stop, dispose: function () { disposed = true; stop(); detailCache.clear(); } };
+    }
     // ── Phase 3 两栏文献导航 ──────────────────────────────────
     function renderLiterature() {
       var disposed = false;
@@ -63,6 +172,7 @@ window.__ModuleLoader__.load({
       var tagTimer = null;
       var state = { items: [], total: 0, folders: [], status: 'idle', error: '' };
       var controls = {};
+      var drawerOpener = null;
 
       function createQueryStore(onChange) {
         var query = { page: 1, page_size: 50, q: '', folder: '', tags: '', status: '', recent_days: '' };
@@ -100,10 +210,73 @@ window.__ModuleLoader__.load({
         controls.next.disabled = state.status !== 'ready' || query.page * query.page_size >= state.total;
       }
 
+      function entryButton(model, onClick) {
+        var button = btn(model.label, onClick || function () {}, 'sr-entry');
+        if (model.disabledReason) { button.disabled = true; button.title = model.disabledReason; button.setAttribute('aria-label', model.label + '：' + model.disabledReason); }
+        return button;
+      }
+      function entryLink(label, href, external) {
+        var link = el('a', 'sr-entry', label); link.href = href;
+        if (external) { link.target = '_blank'; link.rel = 'noopener'; }
+        return link;
+      }
+      function closeDrawer(event) {
+        if (event && event.type === 'click' && event.target !== controls.backdrop && event.currentTarget === controls.backdrop) return;
+        actionController.close(); controls.backdrop.hidden = true; controls.drawer.setAttribute('aria-hidden', 'true');
+        if (drawerOpener && typeof drawerOpener.focus === 'function') drawerOpener.focus(); drawerOpener = null;
+      }
+      function renderDrawer(paper, payload) {
+        var item = payload.detail.item || payload.detail || {}; var abstract = payload.abstract || {};
+        controls.drawerBody.textContent = '';
+        controls.drawerBody.appendChild(el('h2', '', item.title || paper.title || '（无题名）'));
+        controls.drawerBody.appendChild(el('p', 'sr-muted', (item.authors || paper.authors_short || '作者未知') + (item.year || paper.year ? ' · ' + (item.year || paper.year) : '') + (item.journal ? ' · ' + item.journal : '')));
+        var pairs = pairAbstractParagraphs(abstract.abstract_en, abstract.abstract_zh);
+        controls.drawerBody.appendChild(el('h3', '', 'Abstract'));
+        if (!pairs.length) controls.drawerBody.appendChild(el('p', 'sr-empty-note', '待补摘要'));
+        pairs.forEach(function (pair) { var block = el('section', 'sr-abstract-pair'); if (pair.en) block.appendChild(el('p', 'sr-abstract-en', pair.en)); if (pair.zh) block.appendChild(el('p', 'sr-abstract-zh', pair.zh)); controls.drawerBody.appendChild(block); });
+        controls.drawerBody.appendChild(el('p', 'sr-muted', '浅读：' + (abstract.status || paper.abstract_status || '待补摘要') + '｜精读：' + (paper.full_read_status || '未开始') + '｜飞书：' + (paper.feishu_sync_state || '未配置')));
+        var failure = abstract.last_error || paper.last_error; if (failure) controls.drawerBody.appendChild(el('p', 'sr-error-note', '失败原因：' + failure));
+        var links = el('div', 'sr-drawer-actions'); var model = paperEntryModel(paper);
+        if (paper.has_pdf) links.appendChild(entryLink('PDF', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/pdf'));
+        if (paper.has_reader) links.appendChild(entryLink('阅读 HTML', '/sr/reader/' + encodeURIComponent(paper.paper_id)));
+        if (model.feishu.href) links.appendChild(entryLink('飞书', model.feishu.href, true));
+        links.appendChild(btn('整理文章图表', function () { exportPaperAssets(paper.paper_id); }, 'sr-entry'));
+        if ((payload.detail.outputs || []).includes('reading/quick_read.md')) links.appendChild(entryLink('查看历史浅读', '/sr/reading/' + encodeURIComponent(paper.paper_id)));
+        var job = payload.detail.job || {}; var jobDetail = job.detail || {}; var needsPdf = (job.status === 'waiting_user' && jobDetail.reason_code === 'pdf_required') || (paper.needsUser && paper.pdfRequired);
+        if (needsPdf) {
+          var identifier = item.doi || item.pmid || item.source_url || '';
+          var activeJobId = item.active_job_id || paper.active_job_id || '';
+          var institution = btn('使用机构浏览器', function () { actionController.institutionDownload(paper.paper_id, activeJobId, identifier).then(function () { closeDrawer(); refreshPaper(); }).catch(function (error) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '机构获取失败：' + error.message)); }); }, 'sr-entry');
+          if (!identifier) { institution.disabled = true; institution.title = '缺少可用文献标识'; } links.appendChild(institution);
+          var uploadLabel = el('label', 'sr-entry', '挂接本地 PDF'); var upload = document.createElement('input'); upload.type = 'file'; upload.accept = 'application/pdf,.pdf'; upload.hidden = true;
+          upload.addEventListener('change', function () { var file = upload.files && upload.files[0]; if (!file) return; var reader = new FileReader(); reader.onload = function () { actionController.attachPdf(paper.paper_id, activeJobId, String(reader.result).split(',').pop()).then(function () { closeDrawer(); refreshPaper(); }).catch(function (error) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '挂接 PDF 失败：' + error.message)); }); }; reader.readAsDataURL(file); });
+          uploadLabel.appendChild(upload); links.appendChild(uploadLabel);
+        }
+        controls.drawerBody.appendChild(links);
+      }
+      function openDrawer(paper, opener) {
+        drawerOpener = opener; controls.backdrop.hidden = false; controls.drawer.setAttribute('aria-hidden', 'false'); controls.drawerBody.textContent = '正在加载详情…'; controls.drawerClose.focus();
+        actionController.loadDetail(paper.paper_id).then(function (payload) { if (!disposed && !controls.backdrop.hidden) renderDrawer(paper, payload); }).catch(function (error) { if (error.name !== 'AbortError') controls.drawerBody.textContent = '详情加载失败：' + error.message; });
+      }
+      function patchPaper(paperId, patch) {
+        state.items = state.items.map(function (paper) { return paper.paper_id === paperId ? Object.assign({}, paper, patch) : paper; }); renderNavigationTable();
+      }
+      function refreshPaper() { loadLibrary(); }
+      function showExportAssets(paperId, assets) {
+        var count = 'Figures ' + (Number(assets.figures) || 0) + '｜Tables ' + (Number(assets.tables) || 0);
+        var result = el('div', 'sr-export-result', count); result.appendChild(el('code', '', assets.exports_path || ''));
+        if (assets.exports_path && navigator.clipboard) result.appendChild(btn('复制资产路径', function () { navigator.clipboard.writeText(assets.exports_path); }, 'sr-entry'));
+        controls.drawerBody.appendChild(result);
+      }
+      function showExportError(paperId, message) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '资产整理失败：' + message)); }
+      function exportPaperAssets(paperId) {
+        actionController.exportAssets(paperId).catch(function (error) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '资产整理失败：' + error.message)); });
+      }
+
       function tableMessage(text, cls, retry) {
         var tr = el('tr');
         var td = el('td', cls || 'sr-empty');
-        td.colSpan = 5;
+        td.colSpan = 6;
         td.appendChild(el('span', '', text));
         if (retry) td.appendChild(btn('重试', loadLibrary, 'sr-btn sr-retry'));
         tr.appendChild(td);
@@ -119,15 +292,25 @@ window.__ModuleLoader__.load({
         if (!state.items.length) { controls.tableBody.appendChild(tableMessage('没有符合条件的文献')); return; }
         state.items.forEach(function (paper) {
           var tr = el('tr', 'sr-paper-row');
-          var title = el('td', 'sr-paper-title', paper.title || '（无题名）');
-          title.title = paper.title || '（无题名）';
-          tr.appendChild(title);
+          var selection = el('td'); var checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.setAttribute('aria-label', '选择 ' + (paper.title || '无题名文献')); selection.appendChild(checkbox); tr.appendChild(selection);
+          var titleCell = el('td'); var title = btn(paper.title || '（无题名）', function () { openDrawer(paper, title); }, 'sr-paper-title sr-link-button'); title.title = paper.title || '（无题名）'; titleCell.appendChild(title); tr.appendChild(titleCell);
           tr.appendChild(el('td', 'sr-muted', (paper.authors_short || '—') + (paper.year ? ' · ' + paper.year : '')));
-          tr.appendChild(el('td', 'sr-muted', paper.folder || '待归类'));
+          var classification = el('td', 'sr-muted', paper.folder || '待归类'); (paper.tags || []).slice(0, 2).forEach(function (tag) { classification.appendChild(el('span', 'sr-tag', tag)); }); tr.appendChild(classification);
           var status = el('td');
-          status.appendChild(el('span', 'sr-status', paper.full_read_status || paper.abstract_status || '未开始'));
+          status.appendChild(el('span', 'sr-status', '浅读 ' + (paper.abstract_status || '待补摘要')));
+          status.appendChild(el('span', 'sr-status', '精读 ' + (paper.full_read_status || '未开始')));
+          status.appendChild(el('span', 'sr-status', '飞书 ' + (paper.feishu_sync_state || '未配置')));
           tr.appendChild(status);
-          tr.appendChild(el('td', 'sr-entries', '—'));
+          var entries = el('td', 'sr-entries'); var model = paperEntryModel(paper);
+          entries.appendChild(entryButton(model.quick, function () { openDrawer(paper, title); }));
+          if (model.reader.href) entries.appendChild(entryLink(model.reader.label, model.reader.href + encodeURIComponent(paper.paper_id)));
+          else entries.appendChild(entryButton(model.reader, function () { actionController.startFullRead(paper.paper_id); }));
+          entries.appendChild(model.pdf.href ? entryLink('PDF', model.pdf.href + encodeURIComponent(paper.paper_id) + '/pdf') : entryButton(model.pdf));
+          entries.appendChild(model.feishu.href ? entryLink(model.feishu.label, model.feishu.href, true) : entryButton(model.feishu));
+          var more = document.createElement('details'); var summary = el('summary', '', '更多'); more.appendChild(summary);
+          if (paper.last_error) more.appendChild(btn('重试失败任务', function () { actionController.startFullRead(paper.paper_id); }, 'sr-menu-action'));
+          more.appendChild(btn('整理文章图表', function () { exportPaperAssets(paper.paper_id); }, 'sr-menu-action'));
+          entries.appendChild(more); tr.appendChild(entries);
           controls.tableBody.appendChild(tr);
         });
       }
@@ -175,11 +358,12 @@ window.__ModuleLoader__.load({
       }
 
       var queryStore = createQueryStore(loadLibrary);
+      var actionController = createPaperActionController({ api: api, onPatch: patchPaper, onRefresh: refreshPaper, onAssets: showExportAssets, onAssetsError: showExportError });
       controls.navigation = [];
       var root = el('div', 'sr-root');
       root.style.cssText = '--sr-bg:#f6f3ec;--sr-surface:#fffdf8;--sr-text:#20332f;--sr-muted:#6e7974;--sr-line:#d9ddd6;--sr-accent:#315f70;--sr-highlight-yellow:#ffd84d;--sr-highlight-blue:#3aa7ff;--sr-sidebar-width:240px;--sr-sidebar-width-collapsed:56px';
       var style = document.createElement('style');
-      style.textContent = '.sr-root{position:relative;display:grid;grid-template-columns:var(--sr-sidebar-width) minmax(0,1fr);height:100%;min-width:0;min-height:720px;background:var(--sr-bg);color:var(--sr-text);font:13px/1.45 Georgia,"Noto Serif SC",serif;overflow:hidden}.sr-root.sr-collapsed{grid-template-columns:var(--sr-sidebar-width-collapsed) minmax(0,1fr)}.sr-sidebar{border-right:1px solid var(--sr-line);padding:18px 12px;background:#f1eee6;overflow:hidden}.sr-sidebar-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.sr-brand{font-weight:700;letter-spacing:.08em}.sr-collapsed .sr-brand,.sr-collapsed .sr-nav-label,.sr-collapsed .sr-folder-list{display:none}.sr-toggle,.sr-btn,.sr-nav-item{border:1px solid var(--sr-line);background:var(--sr-surface);color:var(--sr-text);border-radius:4px;cursor:pointer}.sr-toggle{width:32px;height:32px}.sr-nav-item{display:flex;width:100%;gap:9px;padding:8px;margin:4px 0;text-align:left}.sr-nav-item[aria-current=true]{border-color:var(--sr-accent);box-shadow:inset 3px 0 var(--sr-highlight-yellow)}.sr-folder-title{margin:20px 8px 8px;color:var(--sr-muted);font-size:11px;letter-spacing:.12em}.sr-folder-list{display:flex;flex-direction:column}.sr-main{display:flex;flex-direction:column;min-width:0;padding:22px 24px}.sr-toolbar{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--sr-line)}.sr-search{flex:1 1 300px;min-width:240px}.sr-search input,.sr-filter input,.sr-filter select{box-sizing:border-box;width:100%;height:34px;border:1px solid var(--sr-line);border-radius:4px;background:var(--sr-surface);color:var(--sr-text);padding:0 10px}.sr-filter{display:flex;flex-direction:column;gap:3px;color:var(--sr-muted);font-size:11px}.sr-btn{height:34px;padding:0 12px}.sr-btn-primary{background:var(--sr-text);color:var(--sr-surface);border-color:var(--sr-text)}.sr-btn-mark{box-shadow:inset 0 -3px var(--sr-highlight-blue)}.sr-table-wrap{flex:1;min-height:0;overflow:auto;background:var(--sr-surface)}.sr-table{width:100%;min-width:860px;border-collapse:collapse;table-layout:fixed}.sr-table th{text-align:left;padding:11px 12px;position:sticky;top:0;background:var(--sr-surface);border-bottom:1px solid var(--sr-text);font-weight:600}.sr-table td{padding:12px;border-bottom:1px solid var(--sr-line);vertical-align:top}.sr-paper-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sr-muted{color:var(--sr-muted)}.sr-status{white-space:nowrap;border-left:3px solid var(--sr-highlight-blue);padding-left:7px}.sr-entries{color:var(--sr-muted)}.sr-empty,.sr-error{text-align:center;padding:48px!important;color:var(--sr-muted)}.sr-error{color:#9b3f35}.sr-retry{margin-left:10px}.sr-pagination{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding-top:12px}.sr-drawer{position:absolute;z-index:4;inset:0 0 0 auto;width:min(440px,92%);box-sizing:border-box;padding:24px;background:var(--sr-surface);border-left:1px solid var(--sr-line);box-shadow:-14px 0 30px rgba(32,51,47,.12)}.sr-drawer[hidden]{display:none}';
+      style.textContent = '.sr-root{position:relative;display:grid;grid-template-columns:var(--sr-sidebar-width) minmax(0,1fr);height:100%;min-width:0;min-height:720px;background:var(--sr-bg);color:var(--sr-text);font:13px/1.45 Georgia,"Noto Serif SC",serif;overflow:hidden}.sr-root.sr-collapsed{grid-template-columns:var(--sr-sidebar-width-collapsed) minmax(0,1fr)}.sr-sidebar{border-right:1px solid var(--sr-line);padding:18px 12px;background:#f1eee6;overflow:hidden}.sr-sidebar-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.sr-brand{font-weight:700;letter-spacing:.08em}.sr-collapsed .sr-brand,.sr-collapsed .sr-nav-label,.sr-collapsed .sr-folder-list{display:none}.sr-toggle,.sr-btn,.sr-nav-item{border:1px solid var(--sr-line);background:var(--sr-surface);color:var(--sr-text);border-radius:4px;cursor:pointer}.sr-toggle{width:32px;height:32px}.sr-nav-item{display:flex;width:100%;gap:9px;padding:8px;margin:4px 0;text-align:left}.sr-nav-item[aria-current=true]{border-color:var(--sr-accent);box-shadow:inset 3px 0 var(--sr-highlight-yellow)}.sr-folder-title{margin:20px 8px 8px;color:var(--sr-muted);font-size:11px;letter-spacing:.12em}.sr-folder-list{display:flex;flex-direction:column}.sr-main{display:flex;flex-direction:column;min-width:0;padding:22px 24px}.sr-toolbar{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--sr-line)}.sr-search{flex:1 1 300px;min-width:240px}.sr-search input,.sr-filter input,.sr-filter select{box-sizing:border-box;width:100%;height:34px;border:1px solid var(--sr-line);border-radius:4px;background:var(--sr-surface);color:var(--sr-text);padding:0 10px}.sr-filter{display:flex;flex-direction:column;gap:3px;color:var(--sr-muted);font-size:11px}.sr-btn{height:34px;padding:0 12px}.sr-btn-primary{background:var(--sr-text);color:var(--sr-surface);border-color:var(--sr-text)}.sr-btn-mark{box-shadow:inset 0 -3px var(--sr-highlight-blue)}.sr-table-wrap{flex:1;min-height:0;overflow:auto;background:var(--sr-surface)}.sr-table{width:100%;min-width:1080px;border-collapse:collapse;table-layout:fixed}.sr-table th{text-align:left;padding:11px 12px;position:sticky;top:0;background:var(--sr-surface);border-bottom:1px solid var(--sr-text);font-weight:600}.sr-table td{padding:12px;border-bottom:1px solid var(--sr-line);vertical-align:top}.sr-paper-title{font:inherit;font-weight:600;border:0;background:none;color:var(--sr-text);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sr-muted{color:var(--sr-muted)}.sr-tag{display:inline-block;margin:4px 3px 0 0;padding:1px 5px;border:1px solid var(--sr-line);border-radius:3px}.sr-status{display:block;white-space:nowrap;border-left:3px solid var(--sr-highlight-blue);padding-left:7px;margin-bottom:3px}.sr-entries{color:var(--sr-muted)}.sr-entry{display:inline-block;margin:0 5px 5px 0;padding:3px 6px;border:1px solid var(--sr-line);border-radius:3px;background:var(--sr-surface);color:var(--sr-accent);font:inherit;text-decoration:none;cursor:pointer}.sr-entry:disabled{cursor:not-allowed;color:var(--sr-muted)}.sr-menu-action{display:block;border:0;background:none;padding:5px;cursor:pointer}.sr-empty,.sr-error{text-align:center;padding:48px!important;color:var(--sr-muted)}.sr-error{color:#9b3f35}.sr-retry{margin-left:10px}.sr-pagination{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding-top:12px}.sr-drawer-backdrop{position:absolute;z-index:4;inset:0;background:rgba(32,51,47,.24)}.sr-drawer-backdrop[hidden]{display:none}.sr-drawer{position:absolute;inset:0 0 0 auto;width:min(520px,92%);box-sizing:border-box;padding:24px;background:var(--sr-surface);border-left:1px solid var(--sr-line);box-shadow:-14px 0 30px rgba(32,51,47,.12);overflow:auto}.sr-drawer-head{display:flex;justify-content:flex-end}.sr-abstract-pair{padding:8px 0;border-bottom:1px solid var(--sr-line)}.sr-abstract-zh{color:var(--sr-accent)}.sr-error-note{color:#9b3f35}.sr-drawer-actions{margin-top:18px}';
       root.appendChild(style);
 
       var sidebar = el('aside', 'sr-sidebar');
@@ -215,14 +399,18 @@ window.__ModuleLoader__.load({
       var tableWrap = el('div', 'sr-table-wrap');
       var table = el('table', 'sr-table');
       var head = el('thead'); var headRow = el('tr');
-      ['题名', '作者 / 年份', '归类', '状态', '快捷入口'].forEach(function (label) { headRow.appendChild(el('th', '', label)); });
+      ['', '题名', '作者 / 年份', '归类', '状态', '快捷入口'].forEach(function (label) { headRow.appendChild(el('th', '', label)); });
       head.appendChild(headRow); table.appendChild(head); controls.tableBody = el('tbody'); table.appendChild(controls.tableBody); tableWrap.appendChild(table); main.appendChild(tableWrap);
       var pager = el('div', 'sr-pagination');
       controls.prev = btn('上一页', function () { var q = queryStore.get(); queryStore.set({ page: Math.max(1, q.page - 1) }); });
       controls.pageLabel = el('span', 'sr-muted', '第 1 页');
       controls.next = btn('下一页', function () { var q = queryStore.get(); queryStore.set({ page: q.page + 1 }); });
       pager.appendChild(controls.prev); pager.appendChild(controls.pageLabel); pager.appendChild(controls.next); main.appendChild(pager); root.appendChild(main);
-      var drawer = el('aside', 'sr-drawer'); drawer.hidden = true; drawer.setAttribute('aria-hidden', 'true'); root.appendChild(drawer);
+      controls.backdrop = el('div', 'sr-drawer-backdrop'); controls.backdrop.hidden = true; controls.backdrop.addEventListener('click', function (event) { if (event.target === controls.backdrop) closeDrawer(); });
+      controls.drawer = el('aside', 'sr-drawer'); controls.drawer.setAttribute('role', 'dialog'); controls.drawer.setAttribute('aria-modal', 'true'); controls.drawer.setAttribute('aria-hidden', 'true'); controls.drawer.setAttribute('aria-label', '文献详情');
+      var drawerHead = el('div', 'sr-drawer-head'); controls.drawerClose = btn('关闭', closeDrawer, 'sr-btn'); drawerHead.appendChild(controls.drawerClose); controls.drawer.appendChild(drawerHead); controls.drawerBody = el('div'); controls.drawer.appendChild(controls.drawerBody); controls.backdrop.appendChild(controls.drawer); root.appendChild(controls.backdrop);
+      function onKeydown(event) { if (event.key === 'Escape' && !controls.backdrop.hidden) closeDrawer(); }
+      document.addEventListener('keydown', onKeydown);
 
       api('/sr/api/folders').then(function (folders) {
         if (disposed || !Array.isArray(folders)) return;
@@ -237,6 +425,8 @@ window.__ModuleLoader__.load({
           clearTimeout(searchTimer);
           clearTimeout(tagTimer);
           if (request) request.abort();
+          actionController.dispose();
+          document.removeEventListener('keydown', onKeydown);
           disposed = true;
           requestSequence += 1;
         },

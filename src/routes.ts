@@ -551,8 +551,13 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const manifest = r.json?.manifest
         if (!r.ok || !exportsRoot || await hasSymlink(root, exportsRoot) || !manifest || typeof manifest !== 'object') return sendJson(res, 404, { error: 'assets_not_ready' })
         const requested = parts.slice(2).join('/')
-        if (!requested) return sendJson(res, 200, manifest)
         const rows = Array.isArray((manifest as Record<string, unknown>).assets) ? (manifest as { assets: Array<Record<string, unknown>> }).assets : []
+        if (!requested) return sendJson(res, 200, {
+          ...(manifest as Record<string, unknown>),
+          exports_path: exportsRoot,
+          figures: rows.filter((row) => row.kind === 'figure' || (typeof row.export_path === 'string' && row.export_path.startsWith('figures/'))).length,
+          tables: rows.filter((row) => row.kind === 'table' || (typeof row.export_path === 'string' && row.export_path.startsWith('tables/'))).length,
+        })
         const match = rows.flatMap((row) => [
           { path: row.export_path, sha: row.export_sha256 },
           { path: row.csv_path, sha: row.csv_sha256 },
