@@ -67,15 +67,15 @@ window.__ModuleLoader__.load({
         return { en: en[index] || '', zh: zh[index] || '' };
       });
     }
-    function paperEntryModel(paper) {
-      var safeFeishu = false;
-      try { var parsed = new URL(String(paper.feishu_record_url || '')); safeFeishu = (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !!parsed.hostname; } catch (e) {}
+    function paperEntryModel(paper, validateUrl) {
+      var safeFeishu = validateUrl(String(paper.feishu_record_url || ''));
       var feishuState = paper.feishu_sync_state || 'unconfigured';
+      var busy = ['queued', 'running', 'needs_user', 'waiting_user'].includes(paper.full_read_status);
       return {
         quick: { label: '浅读', disabledReason: ['ready', 'completed'].includes(paper.abstract_status) ? '' : '待补摘要' },
         reader: paper.has_reader
           ? { label: '阅读 HTML', href: '/sr/reader/', disabledReason: '' }
-          : { label: '开始精读', href: '', disabledReason: paper.full_read_status === 'queued' ? '精读已排队' : '' },
+          : { label: '开始精读', href: '', disabledReason: busy ? '精读已排队或处理中' : '' },
         pdf: { label: 'PDF', href: paper.has_pdf ? '/sr/api/paper/' : '', disabledReason: paper.has_pdf ? '' : '尚无 PDF 原件' },
         feishu: {
           label: feishuState === 'synced' ? '飞书' : feishuState === 'pending' ? '飞书待同步' : '飞书未配置',
@@ -135,7 +135,7 @@ window.__ModuleLoader__.load({
         return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/full-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(function (result) {
           if (disposed || sequence !== pollSequence) return result;
           var jobId = result.parent_job_id;
-          if (!/^job_[A-Za-z0-9]{16,}$/.test(String(jobId || ''))) throw new Error('任务编号无效');
+          if (!/^job_[0-9a-f]{16}$/.test(String(jobId || ''))) throw new Error('任务编号无效');
           deps.onPatch(paperId, { full_read_status: 'queued', active_job_id: jobId });
           function onFailure(job) { var detail = job.detail || {}; deps.onPatch(paperId, job.status === 'waiting_user' ? { full_read_status: 'needs_user', needsUser: detail.reason_code === 'pdf_required', pdfRequired: detail.reason_code === 'pdf_required', active_job_id: jobId } : { full_read_status: 'failed', last_error: job.error || '任务失败' }); }
           pollTimer = schedule(function () { return runPoll(paperId, jobId, sequence, function () { return deps.onRefresh(paperId); }, onFailure); });
@@ -150,7 +150,7 @@ window.__ModuleLoader__.load({
             function readAssets() { return trackedApi('/sr/api/paper/' + encodeURIComponent(paperId) + '/assets').then(function (assets) { if (!disposed && sequence === pollSequence && deps.onAssets) deps.onAssets(paperId, assets); return assets; }); }
             function exportFailure(job) { if (deps.onAssetsError) deps.onAssetsError(paperId, job.error || '资产导出失败'); }
             if (!result.parent_job_id) return readAssets();
-            if (!/^job_[A-Za-z0-9]{16,}$/.test(String(result.parent_job_id))) throw new Error('任务编号无效');
+            if (!/^job_[0-9a-f]{16}$/.test(String(result.parent_job_id))) throw new Error('任务编号无效');
             pollTimer = schedule(function () { return runPoll(paperId, result.parent_job_id, sequence, readAssets, exportFailure); });
             return result;
           });
@@ -220,6 +220,12 @@ window.__ModuleLoader__.load({
         if (external) { link.target = '_blank'; link.rel = 'noopener'; }
         return link;
       }
+      function runUiAction(promise, label, paperId) {
+        return promise.catch(function (error) {
+          if (error && error.name === 'AbortError') return;
+          if (!disposed) patchPaper(paperId, { last_error: label + '失败：' + (error && error.message ? error.message : '请求失败') });
+        });
+      }
       function closeDrawer(event) {
         if (event && event.type === 'click' && event.target !== controls.backdrop && event.currentTarget === controls.backdrop) return;
         actionController.close(); controls.backdrop.hidden = true; controls.drawer.setAttribute('aria-hidden', 'true');
@@ -236,7 +242,7 @@ window.__ModuleLoader__.load({
         pairs.forEach(function (pair) { var block = el('section', 'sr-abstract-pair'); if (pair.en) block.appendChild(el('p', 'sr-abstract-en', pair.en)); if (pair.zh) block.appendChild(el('p', 'sr-abstract-zh', pair.zh)); controls.drawerBody.appendChild(block); });
         controls.drawerBody.appendChild(el('p', 'sr-muted', '浅读：' + (abstract.status || paper.abstract_status || '待补摘要') + '｜精读：' + (paper.full_read_status || '未开始') + '｜飞书：' + (paper.feishu_sync_state || '未配置')));
         var failure = abstract.last_error || paper.last_error; if (failure) controls.drawerBody.appendChild(el('p', 'sr-error-note', '失败原因：' + failure));
-        var links = el('div', 'sr-drawer-actions'); var model = paperEntryModel(paper);
+        var links = el('div', 'sr-drawer-actions'); var model = paperEntryModel(paper, isSafeHttpUrl);
         if (paper.has_pdf) links.appendChild(entryLink('PDF', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/pdf'));
         if (paper.has_reader) links.appendChild(entryLink('阅读 HTML', '/sr/reader/' + encodeURIComponent(paper.paper_id)));
         if (model.feishu.href) links.appendChild(entryLink('飞书', model.feishu.href, true));
@@ -246,10 +252,10 @@ window.__ModuleLoader__.load({
         if (needsPdf) {
           var identifier = item.doi || item.pmid || item.source_url || '';
           var activeJobId = item.active_job_id || paper.active_job_id || '';
-          var institution = btn('使用机构浏览器', function () { actionController.institutionDownload(paper.paper_id, activeJobId, identifier).then(function () { closeDrawer(); refreshPaper(); }).catch(function (error) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '机构获取失败：' + error.message)); }); }, 'sr-entry');
+          var institution = btn('使用机构浏览器', function () { runUiAction(actionController.institutionDownload(paper.paper_id, activeJobId, identifier).then(function () { closeDrawer(); refreshPaper(); }), '机构获取', paper.paper_id); }, 'sr-entry');
           if (!identifier) { institution.disabled = true; institution.title = '缺少可用文献标识'; } links.appendChild(institution);
           var uploadLabel = el('label', 'sr-entry', '挂接本地 PDF'); var upload = document.createElement('input'); upload.type = 'file'; upload.accept = 'application/pdf,.pdf'; upload.hidden = true;
-          upload.addEventListener('change', function () { var file = upload.files && upload.files[0]; if (!file) return; var reader = new FileReader(); reader.onload = function () { actionController.attachPdf(paper.paper_id, activeJobId, String(reader.result).split(',').pop()).then(function () { closeDrawer(); refreshPaper(); }).catch(function (error) { controls.drawerBody.appendChild(el('p', 'sr-error-note', '挂接 PDF 失败：' + error.message)); }); }; reader.readAsDataURL(file); });
+          upload.addEventListener('change', function () { var file = upload.files && upload.files[0]; if (!file) return; var reader = new FileReader(); reader.onload = function () { if (disposed || controls.backdrop.hidden) return; runUiAction(actionController.attachPdf(paper.paper_id, activeJobId, String(reader.result).split(',').pop()).then(function () { closeDrawer(); refreshPaper(); }), '挂接 PDF', paper.paper_id); }; reader.readAsDataURL(file); });
           uploadLabel.appendChild(upload); links.appendChild(uploadLabel);
         }
         controls.drawerBody.appendChild(links);
@@ -301,14 +307,14 @@ window.__ModuleLoader__.load({
           status.appendChild(el('span', 'sr-status', '精读 ' + (paper.full_read_status || '未开始')));
           status.appendChild(el('span', 'sr-status', '飞书 ' + (paper.feishu_sync_state || '未配置')));
           tr.appendChild(status);
-          var entries = el('td', 'sr-entries'); var model = paperEntryModel(paper);
+          var entries = el('td', 'sr-entries'); var model = paperEntryModel(paper, isSafeHttpUrl);
           entries.appendChild(entryButton(model.quick, function () { openDrawer(paper, title); }));
           if (model.reader.href) entries.appendChild(entryLink(model.reader.label, model.reader.href + encodeURIComponent(paper.paper_id)));
-          else entries.appendChild(entryButton(model.reader, function () { actionController.startFullRead(paper.paper_id); }));
+          else entries.appendChild(entryButton(model.reader, function () { runUiAction(actionController.startFullRead(paper.paper_id), '开始精读', paper.paper_id); }));
           entries.appendChild(model.pdf.href ? entryLink('PDF', model.pdf.href + encodeURIComponent(paper.paper_id) + '/pdf') : entryButton(model.pdf));
           entries.appendChild(model.feishu.href ? entryLink(model.feishu.label, model.feishu.href, true) : entryButton(model.feishu));
           var more = document.createElement('details'); var summary = el('summary', '', '更多'); more.appendChild(summary);
-          if (paper.last_error) more.appendChild(btn('重试失败任务', function () { actionController.startFullRead(paper.paper_id); }, 'sr-menu-action'));
+          if (paper.last_error) more.appendChild(btn('重试失败任务', function () { runUiAction(actionController.startFullRead(paper.paper_id), '重试', paper.paper_id); }, 'sr-menu-action'));
           more.appendChild(btn('整理文章图表', function () { exportPaperAssets(paper.paper_id); }, 'sr-menu-action'));
           entries.appendChild(more); tr.appendChild(entries);
           controls.tableBody.appendChild(tr);

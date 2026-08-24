@@ -30,16 +30,17 @@ assert.deepEqual(pairAbstractParagraphs('English one.\n\nEnglish two.', '中文�
 ])
 assert.deepEqual(pairAbstractParagraphs('', ''), [])
 
-const disabled = paperEntryModel({ abstract_status: 'missing', has_pdf: false, has_reader: false, feishu_sync_state: 'unconfigured', feishu_record_url: '' })
+const disabled = paperEntryModel({ abstract_status: 'missing', has_pdf: false, has_reader: false, feishu_sync_state: 'unconfigured', feishu_record_url: '' }, isSafeHttpUrl)
 assert.equal(disabled.quick.disabledReason, '待补摘要')
 assert.equal(disabled.pdf.disabledReason, '尚无 PDF 原件')
 assert.equal(disabled.reader.label, '开始精读')
 assert.equal(disabled.feishu.label, '飞书未配置')
-const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true, feishu_sync_state: 'synced', feishu_record_url: 'https://example.test/r' })
-assert.equal(paperEntryModel({ abstract_status: 'completed' }).quick.disabledReason, '', 'worker completed 状态也必须可浅读')
+const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true, feishu_sync_state: 'synced', feishu_record_url: 'https://example.test/r' }, isSafeHttpUrl)
+assert.equal(paperEntryModel({ abstract_status: 'completed' }, isSafeHttpUrl).quick.disabledReason, '', 'worker completed 状态也必须可浅读')
+assert.equal(paperEntryModel({ full_read_status: 'running' }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中')
 assert.equal(ready.reader.href, '/sr/reader/')
 assert.equal(ready.feishu.href, 'https://example.test/r')
-assert.equal(paperEntryModel({ feishu_sync_state: 'synced', feishu_record_url: 'javascript:alert(1)' }).feishu.href, '')
+assert.equal(paperEntryModel({ feishu_sync_state: 'synced', feishu_record_url: 'javascript:alert(1)' }, isSafeHttpUrl).feishu.href, '')
 
 const calls = []
 const scheduled = []
@@ -155,8 +156,12 @@ await exportFailureSchedules.shift()()
 assert.deepEqual(exportErrors, [['library_export_failure', 'export_failed']])
 assert.equal(exportFailurePatches.length, 0, '资产导出失败不得误标精读失败')
 
+const invalidJob = createPaperActionController({ api() { return Promise.resolve({ parent_job_id: 'job_ABCDEF0123456789' }) }, schedule() { throw new Error('不得轮询') }, cancel() {}, onPatch() { throw new Error('不得更新') }, onRefresh() {} })
+await assert.rejects(invalidJob.startFullRead('library_invalid_job'), /任务编号无效/)
+
 assert.match(source, /outputs \|\| \[\]\)\.includes\('reading\/quick_read\.md'\)/, '仅 detail 证明旧浅读存在时才显示入口')
 assert.doesNotMatch(source, /more\.appendChild\(entryLink\('查看历史浅读'/, '列表不得无条件生成历史浅读 404 入口')
 assert.match(source, /job\.status === 'waiting_user'[^]*jobDetail\.reason_code === 'pdf_required'/, '持久重载必须从 detail job 恢复 PDF gate')
+assert.match(source, /reader\.onload[^]*disposed \|\| controls\.backdrop\.hidden/, '关闭 drawer 后 FileReader 晚回调不得挂接 PDF')
 
 console.log('PASS: 文献行、详情缓存、安全 URL 与单篇动作生命周期')
