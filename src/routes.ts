@@ -27,7 +27,6 @@ import {
   engineQuickRead,
   engineCheckItem,
   engineInit,
-  engineFullRead,
   engineLibraryItem,
   engineLibraryIngest,
   engineFolderManage,
@@ -106,32 +105,43 @@ async function hasSymlink(root: string, target: string): Promise<boolean> {
   return false
 }
 
-const LIST_FIELDS = [
-  'paper_id', 'title', 'authors_short', 'year', 'folder', 'tags', 'abstract_status',
-  'full_read_status', 'feishu_sync_state', 'has_pdf', 'has_reader', 'feishu_record_url', 'last_error',
-] as const
-const LIST_DEFAULTS: Record<(typeof LIST_FIELDS)[number], unknown> = {
-  paper_id: '', title: '', authors_short: '', year: null, folder: null, tags: [],
-  abstract_status: '', full_read_status: '', feishu_sync_state: '',
-  has_pdf: false, has_reader: false, feishu_record_url: '', last_error: '',
-}
+const safeString = (value: unknown): string => typeof value === 'string' ? value : ''
+const safeNullableString = (value: unknown): string | null => typeof value === 'string' ? value : null
+const safeError = (value: unknown): string => typeof value === 'string'
+  ? String(withoutSensitiveFields(value))
+  : ''
+const safeNonnegativeInteger = (value: unknown, fallback: number): number => Number.isInteger(value) && Number(value) >= 0 ? Number(value) : fallback
 
 function navigationList(value: unknown, page: number, pageSize: number): Record<string, unknown> {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const rawItems = Array.isArray(source.items) ? source.items : []
   const items = rawItems.map((raw) => {
     const sourceItem = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-    return Object.fromEntries(LIST_FIELDS.map((key) => [key, sourceItem[key] ?? LIST_DEFAULTS[key]]))
+    return {
+      paper_id: safeString(sourceItem.paper_id),
+      title: safeString(sourceItem.title),
+      authors_short: safeString(sourceItem.authors_short),
+      year: Number.isInteger(sourceItem.year) ? sourceItem.year : null,
+      folder: safeNullableString(sourceItem.folder),
+      tags: Array.isArray(sourceItem.tags) ? sourceItem.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      abstract_status: safeString(sourceItem.abstract_status),
+      full_read_status: safeString(sourceItem.full_read_status),
+      feishu_sync_state: safeString(sourceItem.feishu_sync_state),
+      has_pdf: typeof sourceItem.has_pdf === 'boolean' ? sourceItem.has_pdf : false,
+      has_reader: typeof sourceItem.has_reader === 'boolean' ? sourceItem.has_reader : false,
+      feishu_record_url: safeString(sourceItem.feishu_record_url),
+      last_error: safeError(sourceItem.last_error),
+    }
   })
   const jobs = source.jobs && typeof source.jobs === 'object' ? source.jobs as Record<string, unknown> : {}
   return {
     items,
-    page: Number.isInteger(source.page) ? source.page : page,
-    page_size: Number.isInteger(source.page_size) ? source.page_size : pageSize,
-    total: Number.isInteger(source.total) ? source.total : items.length,
+    page: Number.isInteger(source.page) && Number(source.page) >= 1 ? Number(source.page) : page,
+    page_size: Number.isInteger(source.page_size) && Number(source.page_size) >= 1 && Number(source.page_size) <= 100 ? Number(source.page_size) : pageSize,
+    total: safeNonnegativeInteger(source.total, items.length),
     jobs: {
-      running: Number.isInteger(jobs.running) ? jobs.running : 0,
-      queued: Number.isInteger(jobs.queued) ? jobs.queued : 0,
+      running: safeNonnegativeInteger(jobs.running, 0),
+      queued: safeNonnegativeInteger(jobs.queued, 0),
     },
   }
 }
@@ -413,19 +423,21 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
+      if (!action && req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+
       if (req.method === 'GET' && action === 'abstract') {
         const result = await engineLibraryItem(config, id)
         const item = result.json
-        if (!result.ok || !item || typeof item.abstract_status !== 'string') {
+        if (!result.ok || !item) {
           return sendJson(res, 502, { error: 'abstract_unavailable', detail: 'library_item_failed' })
         }
         return sendJson(res, 200, {
           paper_id: id,
-          abstract_en: item.abstract_en ?? null,
-          abstract_zh: item.abstract_zh ?? null,
-          status: item.abstract_status,
-          active_job_id: item.active_job_id ?? null,
-          last_error: item.last_error ?? null,
+          abstract_en: safeNullableString(item.abstract_en),
+          abstract_zh: safeNullableString(item.abstract_zh),
+          status: safeString(item.abstract_status),
+          active_job_id: typeof item.active_job_id === 'string' && JOB_ID_RE.test(item.active_job_id) ? item.active_job_id : null,
+          last_error: safeError(item.last_error),
         })
       }
 
@@ -472,6 +484,10 @@ export function registerRoutes(ctx: Context, config: Config): void {
       }
 
       if (req.method === 'POST' && action === 'full-read') {
+        try { await readJsonBody(req, 1 * 1024 * 1024) } catch (error) {
+          const tooLarge = error instanceof Error && error.message === 'body_too_large'
+          return sendJson(res, tooLarge ? 413 : 400, { error: tooLarge ? 'body_too_large' : 'invalid_request' })
+        }
         const r = await engineStartFullRead(config, id)
         if (!r.ok || !r.json) return sendJson(res, 502, { error: 'full_read_start_failed' })
         return sendJson(res, 200, { parent_job_id: String(r.json.parent_job_id ?? '') })
@@ -494,6 +510,10 @@ export function registerRoutes(ctx: Context, config: Config): void {
       }
 
       if (req.method === 'POST' && action === 'export-assets') {
+        try { await readJsonBody(req, 1 * 1024 * 1024) } catch (error) {
+          const tooLarge = error instanceof Error && error.message === 'body_too_large'
+          return sendJson(res, tooLarge ? 413 : 400, { error: tooLarge ? 'body_too_large' : 'invalid_request' })
+        }
         const r = await engineExportAssets(config, id)
         return sendJson(res, r.ok ? 200 : 502, r.json ?? { error: 'asset_export_failed' })
       }
@@ -549,12 +569,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
         return
       }
 
-      if (req.method === 'POST' && action === 'full-read') {
-        const r = await engineFullRead(config, metaPath)
-        sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'full_read_failed' })
-        return
-      }
-
       const knownActions = new Set(['abstract', 'pdf', 'assets', 'exports', 'reader', 'full-read', 'attach-pdf', 'export-assets', 'download', 'attach', 'start', 'export', 'parse', 'quick-read'])
       sendJson(res, knownActions.has(action) ? 405 : 404, { error: knownActions.has(action) ? 'method_not_allowed' : 'not_found' })
     } catch {
@@ -572,18 +586,19 @@ export function registerRoutes(ctx: Context, config: Config): void {
     if (!parts || parts.length > 2 || (parts.length === 2 && parts[1] !== 'continue')) return sendJson(res, 404, { error: 'bad_job_id' })
     const id = parts[0] ?? ''
     if (!JOB_ID_RE.test(id)) return sendJson(res, 404, { error: 'bad_job_id' })
+    if (parts[1] === 'continue' && req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
     if (req.method === 'POST' && parts[1] === 'continue') {
       try {
         const body = await readJsonBody(req, 8 * 1024 * 1024)
         const r = await engineContinueFullRead(config, id, body)
-        return sendJson(res, r.ok ? 200 : 409, r.json ?? { error: 'full_read_continue_failed' })
+        return sendJson(res, r.ok && r.json ? 200 : 409, r.ok && r.json ? withoutSensitiveFields(r.json) : { error: 'full_read_continue_failed' })
       } catch {
         return sendJson(res, 400, { error: 'invalid_request' })
       }
     }
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const r = await engineJobStatus(config, id)
-    sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? r.json : { error: 'job_unavailable', detail: 'engine_rejected_request' })
+    sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? withoutSensitiveFields(r.json) : { error: 'job_unavailable', detail: 'engine_rejected_request' })
   })
 
   // ── 浅读笔记（HTML 呈现）───────────────────────────────────────────
