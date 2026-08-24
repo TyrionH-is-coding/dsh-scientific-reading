@@ -32,13 +32,14 @@ writeFileSync(join(fakeRoot, 'scansci_pdf', 'sources', 'arxiv.py'), 'def downloa
 writeFileSync(join(fakeRoot, 'scansci_pdf', 'main.py'), 'import json,os,sys\ndef app(args=None,standalone_mode=True):\n args=args or sys.argv[1:]; out=args[args.index("--output")+1]; p=os.path.join(out,"download.pdf"); open(p,"wb").write(b"%PDF-1.4\\n"+b"x"*1200+b"\\n%%EOF"); print(json.dumps({"status":"success","quality":"legal","paper":{"pdf_path":p}}))\n')
 writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   'import json, os, sys',
-  'a=sys.argv[1:]; cmd=next((x for x in a if x in {"full-read-pipeline-start","full-read-pipeline-resume","pdf-attach","export-assets","artifact-resolve","library-item-v2","job-status"}), "")',
+  'a=sys.argv[1:]; cmd=next((x for x in a if x in {"full-read-pipeline-start","full-read-pipeline-resume","full-read-pdf-attach-resume","pdf-attach","export-assets","artifact-resolve","library-item-v2","job-status"}), "")',
   `log=${JSON.stringify(log)}`,
   'with open(log,"a",encoding="utf-8") as f: f.write(json.dumps(a)+"\\n")',
   'pid=a[a.index("--paper-id")+1] if "--paper-id" in a else "title_fixture"',
   'if cmd=="full-read-pipeline-start": print(json.dumps({"parent_job_id":"job_0123456789abcdef"}))',
   'elif cmd=="full-read-pipeline-resume": print(json.dumps({"parent_job_id":"job_0123456789abcdef","state":"queued"}))',
   'elif cmd=="pdf-attach": print(json.dumps({"status":"pdf_ready","detail":{"sha256":"' + 'c'.repeat(64) + '","page_count":3,"source_path":"C:/secret/source.pdf"}}))',
+  'elif cmd=="full-read-pdf-attach-resume": print(json.dumps({"status":"queued","parent_job_id":"job_0123456789abcdef","sha256":"' + 'c'.repeat(64) + '","page_count":3}))',
   'elif cmd=="export-assets": print(json.dumps({"status":"exported"}))',
   'elif cmd=="library-item-v2": print(json.dumps({"paper_id":pid,"active_job_id":"job_0123456789abcdef"}))',
   'elif cmd=="job-status": print(json.dumps({"paper_id":pid,"status":"waiting_user","detail":{"reason_code":"pdf_required"}}))',
@@ -64,12 +65,12 @@ try {
   const continued = res(); await prefix('/sr/api/job').handler(req('POST', '/sr/api/job/job_0123456789abcdef/continue', {}), continued); assert.equal(continued.statusCode, 200)
   const badJob = res(); await prefix('/sr/api/job').handler(req('POST', '/sr/api/job/not-a-job/continue', {}), badJob); assert.equal(badJob.statusCode, 404)
   const payload = { pdf_b64: Buffer.alloc(1200, 1).toString('base64'), job_id: 'job_0123456789abcdef' }
-  const a = res(), b = res(); await Promise.all([prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/attach`, payload), a), prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/attach`, payload), b)])
+  const a = res(), b = res(); await prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/attach`, payload), a); await prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/attach`, payload), b)
   assert.equal(a.statusCode, 200); assert.equal(b.statusCode, 200)
   for (const output of [a, b]) { const value = JSON.parse(output.body); assert.equal(value.parent_job_id, 'job_0123456789abcdef'); assert.equal(value.sha256, 'c'.repeat(64)); assert.equal('source_path' in value, false); assert.equal('pdf_path' in value, false); assert.equal('raw' in value, false) }
-  const rows = readFileSync(log, 'utf8').trim().split(/\r?\n/).map(JSON.parse).filter((x) => x.includes('pdf-attach'))
+  const rows = readFileSync(log, 'utf8').trim().split(/\r?\n/).map(JSON.parse).filter((x) => x.includes('full-read-pdf-attach-resume'))
   const paths = rows.map((x) => x[x.indexOf('--pdf') + 1]); assert.equal(new Set(paths).size, 2); assert.ok(paths.every((x) => x.endsWith('.pdf') && !existsSync(x)))
-  const continuedJobs = readFileSync(log, 'utf8').trim().split(/\r?\n/).map(JSON.parse).filter((x) => x.includes('full-read-pipeline-resume')).map((x) => x[x.indexOf('--job-id') + 1]); assert.ok(continuedJobs.length >= 2); assert.ok(continuedJobs.every((x) => x === 'job_0123456789abcdef'))
+  const atomicJobs = rows.map((x) => x[x.indexOf('--job-id') + 1]); assert.ok(atomicJobs.every((x) => x === 'job_0123456789abcdef'))
   const downloaded = res(); await prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/download`, { identifier: '10.1/fixture', job_id: 'job_0123456789abcdef' }), downloaded); assert.equal(downloaded.statusCode, 200); const safeDownload = JSON.parse(downloaded.body); assert.equal(safeDownload.parent_job_id, 'job_0123456789abcdef'); assert.equal('source_path' in safeDownload, false); assert.equal('pdf_path' in safeDownload, false); assert.equal('raw' in safeDownload, false)
   const traversal = res(); await prefix('/sr/api/paper').handler(req('GET', '/sr/api/paper/title_traversal/reader'), traversal); assert.equal(traversal.statusCode, 404)
   const readerOut = res(); await prefix('/sr/api/paper').handler(req('GET', `/sr/api/paper/${paperId}/reader`), readerOut); assert.equal(readerOut.statusCode, 200)

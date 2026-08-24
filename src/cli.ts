@@ -616,6 +616,12 @@ export async function engineAttachFullReadPdf(config: Config, paperId: string, p
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
+export async function engineAttachAndResumeFullReadPdf(config: Config, paperId: string, jobId: string, pdfPath: string) {
+  const env = await trustedProviderEnv(config)
+  const r = await engineJson(config, ['full-read-pdf-attach-resume', '--paper-id', paperId, '--job-id', jobId, '--pdf', pdfPath], undefined, env)
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
 export async function engineExportAssets(config: Config, paperId: string) {
   const r = await engineJson(config, ['export-assets', '--paper-id', paperId])
   return { ok: r.ok, json: r.json, stderr: r.stderr }

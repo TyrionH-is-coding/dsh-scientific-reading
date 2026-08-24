@@ -35,9 +35,9 @@ import {
   fetchPaper,
   engineStartFullRead,
   engineContinueFullRead,
-  engineAttachFullReadPdf,
   engineExportAssets,
   engineResolveArtifact,
+  engineAttachAndResumeFullReadPdf,
 } from './cli.js'
 
 const JOB_ID_RE = /^job_[0-9a-f]{16}$/
@@ -151,8 +151,8 @@ export function registerRoutes(ctx: Context, config: Config): void {
       paper_id: paperId,
       parent_job_id: jobId,
       status: String(resumed?.state ?? resumed?.status ?? 'queued'),
-      sha256: typeof detail?.sha256 === 'string' ? detail.sha256 : undefined,
-      page_count: typeof detail?.page_count === 'number' ? detail.page_count : undefined,
+      sha256: typeof attach.sha256 === 'string' ? attach.sha256 : typeof detail?.sha256 === 'string' ? detail.sha256 : undefined,
+      page_count: typeof attach.page_count === 'number' ? attach.page_count : typeof detail?.page_count === 'number' ? detail.page_count : undefined,
     }
   }
 
@@ -330,11 +330,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
         if (!identifier || !await requirePdfGate(id, jobId)) return sendJson(res, 409, { error: 'pdf_gate_required' })
         const outcome = await fetchPaper(config.scansciExe, identifier, resolveOutputDir(config), config)
         if (outcome.status !== 'success' || !outcome.paper?.pdf_path) return sendJson(res, 502, { error: 'pdf_download_failed', options: ['institution_browser', 'local_pdf'] })
-        const attach = await engineAttachFullReadPdf(config, id, outcome.paper.pdf_path)
-        if (!attach.ok || !attach.json) return sendJson(res, 502, { error: 'pdf_attach_failed', options: ['institution_browser', 'local_pdf'] })
-        const resumed = await engineContinueFullRead(config, jobId, { pdf_attached: true })
-        if (!resumed.ok) return sendJson(res, 502, { error: 'pdf_resume_failed', options: ['institution_browser', 'local_pdf'] })
-        sendJson(res, 200, safePdfResult(id, jobId, attach.json, resumed.json))
+        const attached = await engineAttachAndResumeFullReadPdf(config, id, jobId, outcome.paper.pdf_path)
+        if (!attached.ok || !attached.json) return sendJson(res, 502, { error: 'pdf_attach_failed', options: ['institution_browser', 'local_pdf'] })
+        sendJson(res, 200, safePdfResult(id, jobId, attached.json, attached.json))
         return
       }
 
@@ -351,11 +349,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const file = join(uploads, id + '-' + randomUUID() + '.pdf')
         await writeFile(file, bytes)
         try {
-          const r = await engineAttachFullReadPdf(config, id, file)
+          const r = await engineAttachAndResumeFullReadPdf(config, id, jobId, file)
           if (!r.ok || !r.json) return sendJson(res, 502, { error: 'pdf_attach_failed' })
-          const resumed = await engineContinueFullRead(config, jobId, { pdf_attached: true })
-          if (!resumed.ok) return sendJson(res, 502, { error: 'pdf_resume_failed' })
-          sendJson(res, 200, safePdfResult(id, jobId, r.json, resumed.json))
+          sendJson(res, 200, safePdfResult(id, jobId, r.json, r.json))
         } finally {
           await import('node:fs/promises').then(({ unlink }) => unlink(file).catch(() => {}))
         }

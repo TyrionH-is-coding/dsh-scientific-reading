@@ -29,8 +29,8 @@ import {
   engineFeishuResync,
   engineStartFullRead,
   engineContinueFullRead,
-  engineAttachFullReadPdf,
   engineExportAssets,
+  engineAttachAndResumeFullReadPdf,
 } from './cli.js'
 import { isPaperId } from './papers.js'
 
@@ -92,12 +92,13 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_attach_pdf',
     description: '为当前精读 gate 挂接本地绝对路径 PDF。',
-    parameters: { paper_id: { type: 'string', required: true }, pdf: { type: 'string', required: true } },
+    parameters: { paper_id: { type: 'string', required: true }, job_id: { type: 'string', required: true }, pdf: { type: 'string', required: true } },
     output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('PDF 挂接：' + JSON.stringify(value)) },
-    async execute(args: { paper_id: string; pdf: string }) {
+    async execute(args: { paper_id: string; job_id: string; pdf: string }) {
       requirePaperId(args.paper_id)
+      requireJobId(args.job_id)
       if (!/^(?:[A-Za-z]:[\\/]|\/).+\.pdf$/i.test(args.pdf)) throw new Error('absolute_pdf_required')
-      const r = await engineAttachFullReadPdf(config, args.paper_id, args.pdf)
+      const r = await engineAttachAndResumeFullReadPdf(config, args.paper_id, args.job_id, args.pdf)
       return (r.json ?? { ok: false, detail: r.stderr || 'pdf_attach_failed' }) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_attach_pdf')
