@@ -119,13 +119,13 @@ git commit -m "精读：建立可恢复的父任务状态机"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_pdf_acquisition.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_pdf_validation.py`
 
-- [ ] **Step 1: 写 PDF 失败测试**
+- [x] **Step 1: 写 PDF 失败测试**
 
 使用本地最小 PDF 和 fake provider command。覆盖：已有有效 PDF 直接复用、非 `%PDF` 拒绝、SHA/页数
 记录、provider 成功、provider 无访问权转 needs_user、本地挂接后恢复、坏文件不覆盖旧原件、命令
 身份不写入 job JSON。
 
-- [ ] **Step 2: 把获取器改为通用受信任 provider**
+- [x] **Step 2: 把获取器改为通用受信任 provider**
 
 去掉新流程对 `zotero_pdf_bridge` 的依赖，定义：
 
@@ -137,7 +137,7 @@ class PdfProvider(Protocol):
 worker 只接受启动时注入的 provider 对象/受信任配置，不接受用户 HTTP body 中的任意 shell 命令。
 插件将在 Task 6 注入现有 scansci wrapper。Python 单测只使用 fake provider，不联网。
 
-- [ ] **Step 3: 固定原件发布规则**
+- [x] **Step 3: 固定原件发布规则**
 
 - provider 下载到同目录 staging；`%PDF`、页数和 SHA-256 全部通过后才原子替换 `source.pdf`；
 - 若已有有效 source.pdf 且数据库 SHA 相同，直接复用；
@@ -145,12 +145,12 @@ worker 只接受启动时注入的 provider 对象/受信任配置，不接受�
 - 获取失败返回 `required_action={"kind":"pdf", "options":["institution_browser","local_pdf"]}`；
 - 不读取/保存账号、Cookie、验证码、MFA 或浏览器 profile 内容。
 
-- [ ] **Step 4: CLI 增加 start/resume/attach**
+- [x] **Step 4: CLI 增加 start/resume/attach**
 
 `full-read-pipeline-start` 只接收 paper_id 和引擎信任的 provider profile 名称；
 `full-read-pipeline-resume` 接收 parent job 与 agent/user输入 JSON；`pdf-attach` 复用现有校验。
 
-- [ ] **Step 5: 测试并提交**
+- [x] **Step 5: 测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_pipeline_pdf.py tests/test_pdf_acquisition.py tests/test_pdf_validation.py tests/test_worker_pdf.py -q
@@ -426,3 +426,12 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
 - 双低思考强度 Sol 阶段审查：`APPROVED`。
 - 本任务只建立并验证精读父任务状态机；PDF 获取、MinerU 解析和全文翻译尚未接入。
 - 验证期间未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile 或当前 3080。
+
+### Task 2 执行记录
+
+- 引擎最终 HEAD：`1a02e693a73077d1c545538644cc58c7fefdd5f5`。
+- 主代理引擎全量测试：`631 passed, 1 skipped`，耗时 `68.13s`。
+- 双低思考强度 Sol 阶段审查：`APPROVED`。
+- 已完成受信任 `PdfProvider`、合法 fallback、本地 PDF 挂接与恢复、SHA-256 生成、OS advisory lock、SQLite O(1) 父任务索引，以及 reader stale manifest 标记。
+- scansci 的实际适配仍留在 Task 6，当前状态为 unavailable；本任务未提前接入。
+- 验证期间未联网、未触发机构认证、未写飞书，也未触碰 persistent Profile 或当前 3080。
