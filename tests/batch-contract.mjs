@@ -38,6 +38,8 @@ try {
   assert.equal((await call('POST', { action: 'move_folder', selection: ['../secret'] })).statusCode, 400)
   assert.equal((await call('POST', { action: 'feishu_resync', selection: ['library_1'], payload: { feishu_record_url: 'https://evil.invalid' } })).statusCode, 400)
   assert.equal((await call('POST', '{}', true)).statusCode, 413)
+  const duplicate = await call('POST', { action: 'queue_full_read', selection: ['library_1', 'library_1'], payload: {} })
+  assert.equal(duplicate.statusCode, 200, '引擎负责稳定去重，HTTP 不得拆分或改变原请求')
 
   const allowed = ['move_folder', 'add_tags', 'remove_tags', 'queue_full_read', 'retry_failed', 'feishu_resync']
   for (const action of allowed) {
@@ -51,7 +53,7 @@ try {
   assert.equal(result.statusCode, 200)
   const entries = readFileSync(inputLog, 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse)
   const last = entries.at(-1)
-  assert.equal(entries.length, allowed.length + 1)
+  assert.equal(entries.length, allowed.length + 2)
   assert.equal(last.args.includes('batch-submit'), true)
   assert.deepEqual(last.payload.selection, selection)
 
