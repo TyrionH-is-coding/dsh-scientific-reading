@@ -384,7 +384,7 @@ git commit -m "验收：覆盖文献导航的隔离实机运行"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\README.md`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\docs\superpowers\plans\2026-08-23-two-stage-literature-workflow-index.md`
 
-- [ ] **Step 1: 对照设计逐项审查**
+- [x] **Step 1: 对照设计逐项审查**
 
 检查 11 条验收标准和“不在本轮实现”清单。重点搜索：
 
@@ -395,12 +395,12 @@ rg -n "FEISHU_APP_SECRET|personal_thoughts|understanding_level|user_notes" src t
 
 允许测试/迁移说明中的预期命中；任何新 UI/运行工具命中必须解释或删除。
 
-- [ ] **Step 2: 独立代码审核**
+- [x] **Step 2: 独立代码审核**
 
 审核者检查：schema 回滚、路径边界、飞书首次启用、用户字段 payload、任务幂等/恢复、重任务串行、
 前端 timer/AbortController 清理、旧资产不移动。只修本项目问题，不顺手重构邻近代码。
 
-- [ ] **Step 3: 两仓库 worktree 全量验证**
+- [x] **Step 3: 两仓库 worktree 全量验证**
 
 ```powershell
 # Python 引擎
@@ -457,3 +457,5 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 - Task 5 已完成（engine commits `a43fcac`、`1b6b1e3`、`ed5737f`、`26082cd`、`264925d`；plugin commit `2e38ce7`）：旧库 fixture 覆盖 legacy key、PDF、MinerU、旧 reader/浅读和缺失路径；迁移审计以完整 manifest、SHA、路径 containment、hardlink/junction 边界验证现有资产，仅建立索引与警告，不移动、删除或重算旧产物。Zotero record、旧 PDF acquisition CLI/default handler 及插件运行入口已移除，旧源码只为只读兼容保留。最终独立审核为 `APPROVED`；engine 定向复核为 `100 passed, 2 skipped`，worktree 全量为 `798 passed, 3 skipped`，插件离线测试全部通过。审计只保证单用户数据根中的陈旧/误改可检测性；拥有本地完整写权限并同时篡改资产与审计文件的恶意写者不属于本轮密码学信任边界。
 
 - Task 6 已完成（engine commits `3b624d1`、`1621276`；plugin commits `1c1f05b`、`ffd9a13`、`93cd41c`、`8a9b973`、`9129dff`、`972bd3f`、`55c0069`）：使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科文献完成隔离实机验收；HTTP 读回覆盖两页列表、搜索、待归类、文件夹、详情、英中 Abstract、批量父任务、正式 generation reader、活动代次 PDF 及真实 PNG/CSV 资产。浏览器在 1440×900、1280×720、900×720 三档检查录入 modal、搜索/筛选/分页、跨页选择、overlay drawer、Escape/焦点恢复、disabled 原因、排队汇总与 `needs_user` fallback；视觉仅使用黄色/亮蓝重点。QA 发现并以合同测试驱动修复文献列表内部滚动和宿主 composer 遮挡。关闭门禁逐项验证宿主停止、端口释放、worker 身份与清理、临时根删除；任一步失败都会保留现场，且后续清理仍继续执行。真实导航运行返回 `navigation_runtime_verified`，真实 Bundle/Profile verifier 均通过，engine 全量为 `805 passed, 3 skipped`；当前 3080/persistent Profile 未动，未执行真实飞书写入或机构认证。
+
+- Task 7 Steps 1-4 已完成（engine commits `2e49f23`、`cd859b8`；plugin commits `5d1a9f9`、`e55aa41`、`125f7c3`）：逐项审查后为 MinerU 探测/执行及 scansci provider 的生产子进程统一补齐 Windows `CREATE_NO_WINDOW`，并以直接拦截三个真实启动点的测试验证；插件停用旧 `POST /sr/api/paper`、parse、quick-read 写入路由，旧请求统一 404 且不泄露异常，同时保留批准的 library/detail/full-read/PDF/assets/reader 路由。中文 README 已与实际两段式合同一致。独立低推理 Sol 复核为 `APPROVED`，无 Critical/Important/Minor；插件 `typecheck` 与完整 `test:offline` 全部通过，引擎 worktree 独占全量为 `808 passed, 3 skipped`（69.12 秒），两仓库 `git diff --check` 通过。尚未执行本地合并、persistent Profile 更新或任何外部写入。
