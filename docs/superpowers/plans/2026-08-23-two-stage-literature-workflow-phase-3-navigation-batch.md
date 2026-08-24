@@ -116,7 +116,7 @@ git commit -m "接口：固定文献导航与批量操作合同"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-ui-contract.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-build.mjs`
 
-- [ ] **Step 1: 写 DOM/文案失败合同**
+- [x] **Step 1: 写 DOM/文案失败合同**
 
 断言：
 
@@ -128,7 +128,7 @@ git commit -m "接口：固定文献导航与批量操作合同"
 - 不出现普通【下载 PDF】【解析】【生成浅读】阶段按钮；
 - canonical `client/client.js` 与生成 `lib/client.js` 一致。
 
-- [ ] **Step 2: 实现布局与 design tokens**
+- [x] **Step 2: 实现布局与 design tokens**
 
 在现有组件内定义少量 CSS variables，不引入 UI 框架：
 
@@ -146,12 +146,12 @@ git commit -m "接口：固定文献导航与批量操作合同"
 sidebar 展开宽 240px、收起仅保留图标/开关；main 使用剩余宽度；普通桌面最小验收 1280×720。
 不要给每个文件夹或列名分配不同颜色。
 
-- [ ] **Step 3: 实现服务器分页和筛选状态**
+- [x] **Step 3: 实现服务器分页和筛选状态**
 
 URL/query 状态由一个明确 store 管理；搜索 250ms debounce，切换文件夹/筛选回到第 1 页；请求
 使用 AbortController 丢弃过时响应；加载/空/错误三态都有中文文案。
 
-- [ ] **Step 4: 构建、测试并提交**
+- [x] **Step 4: 构建、测试并提交**
 
 ```powershell
 npm run build:client
@@ -447,3 +447,5 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 验证码或个人文献内容。
 
 - Task 1 已完成（commits `7134c23`、`672521e`、`5b6130f`）：固定导航/批量 HTTP 合同、严格字段类型与脱敏、1 MiB body 上限与 405；六种 action 白名单，101 篇选择由路由完整单次转发，批量分块仍留给 Task 4。generation 资产路由覆盖 PDF、reader、assets，并校验 SHA 与 symlink 边界。最终规范审核与质量审核均为 `APPROVED`。`build:ci`、`typecheck`、计划指定 3 项测试、library、full-read、assets、Phase 1 与 harness 全部 `PASS`。本任务未改引擎/UI/v2.1，未操作 3080、网络或飞书。
+
+- Task 2 已完成（commits `4a1063d`、`1be8e0e`、`997377b`）：实现可收起 sidebar、宽主列表与隐藏 overlay drawer 骨架，接入服务器分页、搜索和筛选；folders 顶层数组使用 `folder_id`，待归类使用 `__unclassified__`。无 DOM 依赖的 mount-controller 生命周期 harness 覆盖稳定 ref 重渲染、卸载清理与同节点重挂。规范审核与质量审核均为 `APPROVED`；`build:ci`、`typecheck`、`client-ui`、`client-build`、完整 `offline` 与 `git diff --check` 均通过。未提前实现 Task 3，未联网、未操作 3080，也未启动真实 worker。
