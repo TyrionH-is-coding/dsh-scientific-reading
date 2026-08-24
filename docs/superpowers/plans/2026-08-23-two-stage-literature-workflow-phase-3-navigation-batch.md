@@ -424,18 +424,18 @@ git diff --check
 README 只描述真实完成的两段式流程、启动、数据目录、飞书/XLSX所有权、资产导出、失败恢复和限制。
 总索引追加 commit/测试结果，不记录凭证和真实用户数据。
 
-- [ ] **Step 5: 本地合并回 main 并在 main 重测**
+- [x] **Step 5: 本地合并回 main 并在 main 重测**
 
 分别按依赖顺序先合并 Python 引擎，再合并插件。禁止 `git reset --hard`/`git checkout --` 清除
 用户改动。main 上重跑 Step 3 全套测试，结果必须与 worktree 一致；完成后清理临时 worktree/分支。
 
-- [ ] **Step 6: 最后才更新当前 persistent Profile**
+- [x] **Step 6: 最后才更新当前 persistent Profile**
 
 记录旧 tarball/config/数据 DB 备份与 SHA；安装 main 构建的真实 tarball，重启当前 Profile。先做只读
 启动/列表/详情/路由验证，再用一篇合法开放、非医学测试论文验证本地入库。没有本轮单独授权时，
 不执行真实飞书写入和机构认证下载。
 
-- [ ] **Step 7: 最终实机读回**
+- [x] **Step 7: 最终实机读回**
 
 浏览器检查当前 3080 的全部文献、待归类、长题名、Abstract 抽屉、已有 PDF/旧 HTML 入口。停止/
 重启一次，确认任务和路由恢复；记录 package SHA、HTTP assertion、浏览器截图路径和已知限制。
@@ -459,3 +459,7 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 - Task 6 已完成（engine commits `3b624d1`、`1621276`；plugin commits `1c1f05b`、`ffd9a13`、`93cd41c`、`8a9b973`、`9129dff`、`972bd3f`、`55c0069`）：使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科文献完成隔离实机验收；HTTP 读回覆盖两页列表、搜索、待归类、文件夹、详情、英中 Abstract、批量父任务、正式 generation reader、活动代次 PDF 及真实 PNG/CSV 资产。浏览器在 1440×900、1280×720、900×720 三档检查录入 modal、搜索/筛选/分页、跨页选择、overlay drawer、Escape/焦点恢复、disabled 原因、排队汇总与 `needs_user` fallback；视觉仅使用黄色/亮蓝重点。QA 发现并以合同测试驱动修复文献列表内部滚动和宿主 composer 遮挡。关闭门禁逐项验证宿主停止、端口释放、worker 身份与清理、临时根删除；任一步失败都会保留现场，且后续清理仍继续执行。真实导航运行返回 `navigation_runtime_verified`，真实 Bundle/Profile verifier 均通过，engine 全量为 `805 passed, 3 skipped`；当前 3080/persistent Profile 未动，未执行真实飞书写入或机构认证。
 
 - Task 7 Steps 1-4 已完成（engine commits `2e49f23`、`cd859b8`；plugin commits `5d1a9f9`、`e55aa41`、`125f7c3`）：逐项审查后为 MinerU 探测/执行及 scansci provider 的生产子进程统一补齐 Windows `CREATE_NO_WINDOW`，并以直接拦截三个真实启动点的测试验证；插件停用旧 `POST /sr/api/paper`、parse、quick-read 写入路由，旧请求统一 404 且不泄露异常，同时保留批准的 library/detail/full-read/PDF/assets/reader 路由。中文 README 已与实际两段式合同一致。独立低推理 Sol 复核为 `APPROVED`，无 Critical/Important/Minor；插件 `typecheck` 与完整 `test:offline` 全部通过，引擎 worktree 独占全量为 `808 passed, 3 skipped`（69.12 秒），两仓库 `git diff --check` 通过。尚未执行本地合并、persistent Profile 更新或任何外部写入。
+
+- Task 7 Steps 5-7 已完成：引擎与插件按依赖顺序本地合并回 `main`，并在 `main` 分别通过引擎全量 `810 passed, 3 skipped`、插件 `build:ci`、`typecheck` 与完整 `test:offline`。最终合并及兼容热修状态为引擎 `e1cb149`、插件 `998155d`；热修只开放由迁移审计、数据库 attachment 与当前文件 SHA 三方一致证明的旧根目录 `source.pdf`，活动 generation 声明损坏时仍关闭回退。更新前备份位于 `C:\Users\15694\.dsh\backups\scientific-reading-20260825T004359`，SQLite 使用 backup API 且完整性为 `ok`。persistent Profile 安装包为 `dsh-external-dsh-scientific-reading-0.0.1-A6E10061D0C5A94E.tgz`，SHA-256 为 `a6e10061d0c5a94eeec7bc75e1afb66288b45a2d055a8e31ad15622befc360cb`；迁移审计 SHA-256 为 `df36cea28d61065963a511f3193af1a0ca0bbef300da4ba4cff2d87a92eeaf75`。
+
+- 当前 3080 完成只读 HTTP、浏览器与停止/重启验收：主页、文献导航、列表、详情、Abstract 与旧浅读均为 200；审计旧 PDF 返回 2,215,244 字节且 SHA 与数据库一致；未生成的精读 reader 正确返回 404。同一篇工科题录重复入库命中 DOI 去重并返回原 `paper_id`，未新增记录。浏览器 1280×720 下验证 sidebar 展开/收起、overlay drawer、Escape 焦点归还、作者搜索、空状态、录入与批量对话框及禁用原因，无页面级横向溢出；最终截图 `persistent-3080-final.png` 的 SHA-256 为 `a4a73bfa05635493270561ba0adfbd4ace7a6f7cb907c14d67a74a413f8cbec8`。停止后端口释放，重启后库中 1 篇记录与 PDF 路由恢复。任务 worktree/分支已清理，其他 reader v2.1 工作树及用户未跟踪的 `docs/survey.html` 保持不动。本轮未真实写飞书、未执行机构认证或网络下载、未 push GitHub。

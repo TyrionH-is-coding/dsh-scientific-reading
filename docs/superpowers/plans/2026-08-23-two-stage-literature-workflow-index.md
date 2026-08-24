@@ -64,7 +64,7 @@
 - [x] 跨仓库测试时通过 `PYTHONPATH=<引擎 worktree>\src` 指向待测引擎，不覆盖用户现有虚拟环境里的稳定安装。
 - [x] 每个任务先写失败测试，再写最小实现；按计划给出的中文 commit message 小步提交。
 - [x] 阶段完成后独立复核 `git diff --check`、目标测试和全量测试。
-- [ ] 最终验收通过后，分别本地合并回两个仓库的 `main`，在 `main` 重跑全量测试，再清理临时 worktree/分支。
+- [x] 最终验收通过后，分别本地合并回两个仓库的 `main`，在 `main` 重跑全量测试，再清理临时 worktree/分支。
 - [x] 未经用户本轮另行要求，不 push GitHub。
 
 ## 3. 永久安全约束
@@ -201,4 +201,6 @@ npm run verify:restart-recovery
 - Phase 1/2/3 计划中的产品任务与安全门已完成；最后一次引擎 worktree 全量为 `805 passed, 3 skipped`。插件 `build:ci`、`typecheck`、完整离线门禁、真实 Bundle/Profile verifier、导航 runtime 与 restart recovery 均已通过。
 - 隔离实机使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科题录；HTTP 读回覆盖分页、搜索、待归类、文件夹、Abstract、批量 parent、正式 generation reader/PDF 和 PNG/CSV exports。
 - 浏览器在 1440×900、1280×720、900×720 完成布局与交互 QA；关闭后验证宿主停止、端口释放、worker 无残留、临时根可清理。Windows 子进程无可见终端窗口。
-- 当前 persistent Profile/3080 尚未更新；两仓库尚未本地合并回 `main`。未执行真实飞书写入、机构认证、真实论文导入或 GitHub push。Task 7 Step 5–7 保持未完成，等待最终复核后的依赖顺序执行。
+- 两仓库已按依赖顺序本地合并回 `main`，任务 worktree/分支已清理；引擎 `main` 全量为 `810 passed, 3 skipped`，插件 `build:ci`、`typecheck` 与完整 `test:offline` 全部通过。最终兼容热修状态为引擎 `e1cb149`、插件 `998155d`。
+- persistent Profile 已先完成 tarball/config/SQLite 备份，再安装 SHA-256 为 `a6e10061d0c5a94eeec7bc75e1afb66288b45a2d055a8e31ad15622befc360cb` 的真实 tarball。当前 3080 的主页、导航、列表、详情、Abstract、旧浅读和经审计旧 PDF 路由通过 HTTP 读回；1280×720 浏览器验收覆盖 sidebar、drawer、搜索、空状态、对话框、disabled 原因与无横向溢出，停止/重启后库与 PDF 路由恢复。
+- 持久库只对现有一篇非医学工科文献执行 DOI 去重验证，未新增记录；未执行真实飞书写入、机构认证、网络下载或 GitHub push。尚未生成的精读 reader 正确保持 404；“期刊正文优先”生产 reader builder 迁移属于后续独立范围。
