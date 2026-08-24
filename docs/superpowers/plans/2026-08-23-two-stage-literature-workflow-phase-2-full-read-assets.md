@@ -272,13 +272,13 @@ git commit -m "阅读器：固定双语全文样式与来源清单"
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_export_service.py`
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_cli_export_assets.py`
 
-- [ ] **Step 1: 写导出失败测试**
+- [x] **Step 1: 写导出失败测试**
 
 构造两张 Figure、两张 Table、一个 logo 和一个页眉。断言只导出正文资产、编号按正文顺序、同名不
 覆盖、PNG 可打开、caption/page/source/SHA 完整、可靠 CSV 保留、不可靠表不生成 CSV、重复导出
 幂等、失败不破坏旧 exports。
 
-- [ ] **Step 2: 扩展工作区派生路径**
+- [x] **Step 2: 扩展工作区派生路径**
 
 ```python
 exports_dir / "figures"
@@ -289,7 +289,7 @@ exports_dir / "manifest.json"
 
 实际旧 parsed 路径保持原样；exports 是派生包，可以在 staging 完成后原子替换。
 
-- [ ] **Step 3: 实现纯确定性 `ExportService`**
+- [x] **Step 3: 实现纯确定性 `ExportService`**
 
 - 只读取 active MinerU/asset manifest 中 `kind=figure|table` 且正文标志为真的记录；
 - Figure 优先复制最高质量解析图；没有图但有可信 bbox 时用 PyMuPDF 从 source.pdf 2x crop；
@@ -298,7 +298,7 @@ exports_dir / "manifest.json"
 - 不让 AI 补 label、caption、bbox 或单元格；缺字段写 warning；
 - 文件命名 `Fig_01.png`、`Table_01.png`，manifest 保存原 label/序号。
 
-- [ ] **Step 4: 增加 `export-assets` CLI 并验证**
+- [x] **Step 4: 增加 `export-assets` CLI 并验证**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_export_service.py tests/test_cli_export_assets.py tests/test_assets.py -q
@@ -458,3 +458,14 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
   SHA、路径 containment、active workspace 与 SQLite artifact/status；失败不把旧 artifact 错标为 ready。
 - 本任务未引入 v2.1，未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile/3080；旧
   PDF、MinerU、HTML、quick_read 与 stale 资产均未移动或删除。
+
+### Task 5 执行记录
+
+- 引擎提交链：`ce2f007`、`168382e`、`18224c3`、`ce03613`。
+- fresh 引擎全量测试：`709 passed, 1 skipped`；规格审查与独立质量审查均为 `APPROVED`。
+- 导出服务仅整理显式正文 Figure/Table；旧 MinerU 缓存保持只读，缺少正文证据时 fail-closed，
+  不重写旧 manifest、parse report 或 content list，也不重跑解析。
+- Figure/Table 固定发布为可读 PNG；仅在可信 page+bbox 明示时从当前 source PDF 做 2× crop。
+  CSV 只接受显式可靠、路径受限且 SHA 匹配的 CSV/结构化 JSON，不从 HTML、截图或 AI 推断单元格。
+- staging 在完整读回 PNG、CSV、路径与 SHA 后原子发布；验证或发布失败保留旧 exports，重复导出
+  字节幂等。执行期间未联网、未写飞书、未触碰当前 3080，也未进入 reader v2.1。
