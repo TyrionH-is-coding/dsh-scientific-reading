@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import signal
@@ -15,6 +16,69 @@ from pathlib import Path
 PROBE_DOI = "10.5555/restart-recovery-probe"
 EXPECTED_LIBRARY_STATUS = "restart_probe_ready"
 TIMEOUT_SECONDS = 15.0
+
+
+def run_hidden(*args, **kwargs):
+    kwargs.setdefault(
+        "creationflags",
+        getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+    )
+    return subprocess.run(*args, **kwargs)
+
+
+def process_is_alive(pid: int) -> bool:
+    """只读探测进程；Windows 上不能使用会终止目标的 os.kill(pid, 0)。"""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except (OSError, OverflowError):
+            return False
+        return True
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    open_process.restype = ctypes.c_void_p
+    get_exit_code = kernel32.GetExitCodeProcess
+    get_exit_code.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    get_exit_code.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+
+    handle = open_process(0x1000, False, pid)
+    if not handle:
+        return False
+    try:
+        exit_code = ctypes.c_ulong()
+        return bool(get_exit_code(handle, ctypes.byref(exit_code))) and exit_code.value == 259
+    finally:
+        close_handle(handle)
+
+
+def terminate_process(pid: int) -> None:
+    if os.name != "nt":
+        os.kill(pid, signal.SIGTERM)
+        return
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    open_process.restype = ctypes.c_void_p
+    terminate = kernel32.TerminateProcess
+    terminate.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    terminate.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+
+    handle = open_process(0x0001, False, pid)
+    if not handle:
+        return
+    try:
+        terminate(handle, 1)
+    finally:
+        close_handle(handle)
 
 
 def resolve_python(explicit: str | None) -> Path:
@@ -35,7 +99,7 @@ def resolve_python(explicit: str | None) -> Path:
 
 
 def run_json(python: Path, args: list[str], *, env: dict[str, str]) -> tuple[int, object, str]:
-    result = subprocess.run(
+    result = run_hidden(
         [str(python), *args],
         capture_output=True,
         text=True,
@@ -59,7 +123,7 @@ def run_json(python: Path, args: list[str], *, env: dict[str, str]) -> tuple[int
 
 def real_package_directory(python: Path) -> Path:
     code = "import scientific_reading; print(scientific_reading.__path__[0])"
-    result = subprocess.run(
+    result = run_hidden(
         [str(python), "-c", code],
         capture_output=True,
         text=True,
@@ -173,7 +237,7 @@ def write_launch_parent(path: Path) -> None:
 def worker_command_matches(pid: int, job_id: str, data_root: Path) -> bool:
     try:
         if os.name == "nt":
-            result = subprocess.run(
+            result = run_hidden(
                 [
                     "powershell",
                     "-NoProfile",
@@ -219,18 +283,10 @@ def terminate_test_worker(data_root: Path, job_id: str) -> str:
         and pid > 0
         and worker_command_matches(pid, job_id, data_root)
     ):
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            pass
-        else:
-            os.kill(pid, signal.SIGTERM)
+        if process_is_alive(pid):
+            terminate_process(pid)
             deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
+            while time.monotonic() < deadline and process_is_alive(pid):
                 time.sleep(0.05)
     log_path = data_root / "jobs" / job_id / "worker.log"
     if log_path.is_file():
@@ -252,7 +308,7 @@ def verify(python: Path) -> dict[str, object]:
         env["PYTHONPATH"] = str(overlay)
         cli_env = os.environ.copy()
         cli_env["PYTHONPATH"] = str(real_package.parent)
-        parent = subprocess.run(
+        parent = run_hidden(
             [str(python), str(launch_parent), str(data_root)],
             capture_output=True,
             text=True,
@@ -333,8 +389,32 @@ def main() -> None:
         "--python",
         help="引擎 Python 的绝对路径；默认依次读取环境变量、用户 venv 和当前 Python",
     )
+    parser.add_argument(
+        "--full-read",
+        action="store_true",
+        help="同时运行四个精读产物边界的子进程中断恢复验收",
+    )
     args = parser.parse_args()
-    print(json.dumps(verify(resolve_python(args.python)), ensure_ascii=False))
+    python = resolve_python(args.python)
+    result = verify(python)
+    if args.full_read:
+        full_read_env = os.environ.copy()
+        full_read_env.pop("FEISHU_APP_ID", None)
+        full_read_env.pop("FEISHU_APP_SECRET", None)
+        full_read = run_hidden(
+            [str(python), str(Path(__file__).with_name("verify_full_read_pipeline.py"))],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=full_read_env,
+            timeout=60,
+            check=False,
+        )
+        if full_read.returncode:
+            raise RuntimeError(f"full_read_recovery_failed: {full_read.stderr.strip()}")
+        result["full_read"] = json.loads(full_read.stdout)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

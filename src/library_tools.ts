@@ -10,7 +10,6 @@ import {
   engineEnsureItem,
   engineCheckItem,
   engineAttachPdf,
-  engineList,
   engineSearch,
   engineInit,
   engineParse,
@@ -19,27 +18,176 @@ import {
   engineFullRead,
   engineFeishuPreview,
   engineFeishuSync,
-  engineZoteroMigrate,
+  engineLibraryIngest,
+  engineDerivedEnqueue,
+  engineAbstractReadSubmit,
+  engineLibraryList,
+  engineFolderManage,
+  engineClassification,
+  engineFeishuProbe,
+  engineFeishuResync,
+  engineStartFullRead,
+  engineContinueFullRead,
+  engineExportAssets,
+  engineAttachAndResumeFullReadPdf,
+  engineJson,
 } from './cli.js'
+import { isPaperId } from './papers.js'
 
 type Block = { type: 'text'; text: string }
 const text = (t: string): Block[] => [{ type: 'text', text: t }]
+
+export const BATCH_ACTIONS = new Set([
+  'move_folder', 'add_tags', 'remove_tags',
+  'queue_full_read', 'retry_failed', 'feishu_resync',
+])
+
+export async function submitBatch(config: Config, request: Record<string, unknown>) {
+  const result = await engineJson(config, ['batch-submit'], request)
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
+
+export async function listNavigation(config: Config, options: {
+  page: number; pageSize: number; query?: string; folder?: string; tags: string[]; status?: string; recentDays?: number
+}) {
+  const args = ['library-list-v2', '--page', String(options.page), '--page-size', String(options.pageSize)]
+  if (options.query) args.push('--query', options.query)
+  if (options.folder) args.push('--folder-id', options.folder)
+  for (const tag of options.tags) args.push('--tag', tag)
+  if (options.status) args.push('--status', options.status)
+  if (options.recentDays !== undefined) args.push('--recent-days', String(options.recentDays))
+  const result = await engineJson(config, args)
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
+
+export async function resolveNavigationArtifact(config: Config, paperId: string, kind: 'pdf') {
+  const result = await engineJson(config, ['artifact-resolve', '--paper-id', paperId, '--kind', kind])
+  return { ok: result.ok, json: result.json, stderr: result.stderr }
+}
 
 function resolveMeta(config: Config, paperId: string): string {
   return paperMetadataPath(resolveDataRoot(config), paperId)
 }
 
+function scheduleDerived(config: Config, paperId: string, logger?: (message: string) => void): void {
+  queueMicrotask(() => {
+    void (async () => {
+      const result = await engineDerivedEnqueue(config, paperId)
+      if (!result.ok) logger?.('sr-derived pending: enqueue_failed')
+    })().catch(() => logger?.('sr-derived pending: enqueue_failed'))
+  })
+}
+
 /**
- * Phase 1 工具集：本地文献库（替代 Zotero）闭环。
+ * Phase 1 工具集：本地文献库闭环。
  * sr_init → sr_library_check → sr_library_ensure(confirm) → sr_pdf_attach
  * → sr_parse → sr_quick_read → sr_job_status
  */
 export function registerLibraryTools(ctx: Context, config: Config): void {
 
+  const requirePaperId = (value: string): void => {
+    if (!isPaperId(value)) throw new Error('paper_id_invalid')
+  }
+  const requireJobId = (value: string): void => {
+    if (!/^job_[0-9a-f]{16}$/.test(value)) throw new Error('job_id_invalid')
+  }
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_start_full_read',
+    description: '启动或复用单篇持久精读父任务。',
+    parameters: { paper_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('精读任务：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string }) {
+      requirePaperId(args.paper_id)
+      const r = await engineStartFullRead(config, args.paper_id)
+      if (!r.ok || !r.json) return { ok: false, detail: r.stderr || 'full_read_start_failed' } as never
+      return { parent_job_id: String(r.json.parent_job_id ?? '') } as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_start_full_read')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_continue_full_read',
+    description: '仅按当前 needs_user/waiting_agent gate 合同继续精读父任务。',
+    parameters: { job_id: { type: 'string', required: true }, input: { type: 'object', required: true, additionalProperties: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('精读继续：' + JSON.stringify(value)) },
+    async execute(args: { job_id: string; input: Record<string, unknown> }) {
+      requireJobId(args.job_id)
+      const r = await engineContinueFullRead(config, args.job_id, args.input)
+      return (r.json ?? { ok: false, detail: r.stderr || 'full_read_continue_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_continue_full_read')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_attach_pdf',
+    description: '为当前精读 gate 挂接本地绝对路径 PDF。',
+    parameters: { paper_id: { type: 'string', required: true }, job_id: { type: 'string', required: true }, pdf: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('PDF 挂接：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string; job_id: string; pdf: string }) {
+      requirePaperId(args.paper_id)
+      requireJobId(args.job_id)
+      if (!/^(?:[A-Za-z]:[\\/]|\/).+\.pdf$/i.test(args.pdf)) throw new Error('absolute_pdf_required')
+      const r = await engineAttachAndResumeFullReadPdf(config, args.paper_id, args.job_id, args.pdf)
+      return (r.json ?? { ok: false, detail: r.stderr || 'pdf_attach_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_attach_pdf')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_export_assets',
+    description: '导出当前精读代的正文 Figure/Table 资产包。',
+    parameters: { paper_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('图表导出：' + JSON.stringify(value)) },
+    async execute(args: { paper_id: string }) {
+      requirePaperId(args.paper_id)
+      const r = await engineExportAssets(config, args.paper_id)
+      return (r.json ?? { ok: false, detail: r.stderr || 'asset_export_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_export_assets')
+
+  // ── sr_ingest：本地快速入库 + 脱离派生 ────────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_ingest',
+    description: '快速写入本地文献库 skeleton；本地结果返回后再排队题录、Abstract、XLSX 和可选飞书派生。',
+    parameters: {
+      metadata: { type: 'object', required: true, additionalProperties: true, description: '论文元数据 JSON' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args: unknown, value: unknown) => text('入库：' + JSON.stringify(value)),
+    },
+    async execute(args: { metadata?: Record<string, unknown> } & Record<string, unknown>) {
+      const metadata = (args.metadata && typeof args.metadata === 'object' ? args.metadata : args) as Record<string, unknown>
+      const result = await engineLibraryIngest(config, metadata)
+      if (!result.ok || !result.json) return { ok: false, status: 'failed', detail: result.stderr || 'library_ingest_failed' } as never
+      const paperId = String(result.json.paper_id ?? '')
+      if (!paperId) return { ok: true, local: result.json, derived: 'pending' } as never
+      scheduleDerived(config, paperId, ctx.logger?.bind(ctx))
+      return { ok: true, local: result.json, paper_id: paperId, derived: 'pending' } as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_ingest')
+
+  // ── sr_abstract_submit：提交 agent 翻译，闭合 waiting_agent gate ───────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_abstract_submit',
+    description: '提交 agent 已完成的 Abstract 翻译 JSON；不会自动生成或伪造翻译。',
+    parameters: {
+      job_id: { type: 'string', required: true, description: '等待 agent 的 Abstract 任务 ID' },
+      abstract_translation: { type: 'object', required: true, additionalProperties: true, description: 'agent 提供的 Abstract 翻译 JSON' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args: unknown, value: unknown) => text('Abstract 提交：' + JSON.stringify(value)),
+    },
+    async execute(args: { job_id: string; abstract_translation: Record<string, unknown> }) {
+      const r = await engineAbstractReadSubmit(config, args.job_id, args.abstract_translation)
+      if (!r.ok || !r.json) return { ok: false, status: 'failed', detail: r.stderr || 'abstract_submit_failed' } as never
+      return r.json as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_abstract_submit')
+
   // ── sr_init：初始化论文工作区 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_init',
-    description: '新建一篇论文的工作区（元数据入参，返回 paper_id）。后续用 paper_id 调用入库/挂PDF/解析。',
+    description: '[legacy/internal] 新建一篇论文的工作区（旧分步流程）。',
     parameters: {
       title: { type: 'string', required: true, description: '论文题名' },
       authors: { type: 'array', items: { type: 'string' }, description: '作者列表（可选）' },
@@ -92,7 +240,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_check：只读查重 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_check',
-    description: '本地文献库只读查重（不写入）：dedupe = exact（已存在）| none（可新建）| ambiguous（冲突，需用户选择）。',
+    description: '[legacy/internal] 本地文献库只读查重。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID（sr_init 返回）' },
     },
@@ -138,7 +286,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_ensure：写入文献库（需 confirm）──────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_ensure',
-    description: '把论文写入本地文献库（替代 Zotero 入库）。新建条目需要 confirm=true（agent 先取得用户确认）；已存在时无需确认。歧义时返回 ambiguous 由用户选择。',
+    description: '[legacy/internal] 分步写入本地文献库；新流程请用 sr_ingest。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       confirm: { type: 'boolean', required: true, description: '是否已获得用户对“新建条目”的确认' },
@@ -193,7 +341,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_pdf_attach：本地 PDF 登记到文献库附件 ────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_pdf_attach',
-    description: '把本地 PDF 登记到文献库附件（校验 + 复制到工作区 + 读回验证）。pdf 必须是绝对路径。',
+    description: '[legacy/internal] 把本地 PDF 登记到文献库附件。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       pdf: { type: 'string', required: true, description: '本地 PDF 绝对路径' },
@@ -235,28 +383,88 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_library_list：列出文献库 ─────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_list',
-    description: '列出本地文献库全部条目（论文 ID/题名/状态/年份）。文献页数据源。',
-    parameters: {},
+    description: '分页列出本地文献库（支持 page/page_size/query/folder/tags/status）。文献页数据源。',
+    parameters: {
+      page: { type: 'integer' },
+      page_size: { type: 'integer' },
+      query: { type: 'string' },
+      folder: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+      status: { type: 'string' },
+    },
     output: {
       schema: { type: 'json' },
       render: (_args: unknown, value: unknown) => {
-        const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : []
+        const raw = value as { items?: unknown }
+        const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : (Array.isArray(raw?.items) ? raw.items as Array<Record<string, unknown>> : [])
         if (items.length === 0) return text('文献库为空')
         const lines = items.map((it) => '· ' + String(it.paper_id) + ' | ' + String(it.title) + ' | ' + String(it.status))
         return text(lines.join('\n'))
       },
     },
-    async execute() {
-      const r = await engineList(config)
+    async execute(args: { page?: number; page_size?: number; query?: string; folder?: string; tags?: string[]; status?: string } = {}) {
+      const r = await engineLibraryList(config, { page: args.page, pageSize: args.page_size, query: args.query, folder: args.folder, tags: args.tags, status: args.status })
       if (!r.ok) throw new Error(r.stderr || 'library-list 失败')
       return (r.json ?? []) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_library_list')
 
+  // ── sr_folder_manage：主库文件夹管理 ─────────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_folder_manage',
+    description: '列出、创建或重命名主库文件夹。',
+    parameters: {
+      action: { type: 'string', required: true, description: 'list | create | rename' },
+      folder_id: { type: 'string' },
+      name: { type: 'string' },
+    },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { action: string; folder_id?: string; name?: string }) {
+      if (args.action === 'list') {
+        const r = await engineFolderManage(config, ['folder-list'])
+        if (!r.ok) return { error: r.stderr || 'folder_list_failed' }
+        return r.json as never
+      }
+      if (args.action === 'create' && args.name) {
+        const r = await engineFolderManage(config, ['folder-create', '--name', args.name])
+        return (r.json ?? { error: r.stderr || 'folder_create_failed' }) as never
+      }
+      if (args.action === 'rename' && args.folder_id && args.name) {
+        const r = await engineFolderManage(config, ['folder-rename', '--folder-id', args.folder_id, '--name', args.name])
+        return (r.json ?? { error: r.stderr || 'folder_rename_failed' }) as never
+      }
+      return { error: 'invalid_folder_request' }
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_folder_manage')
+
+  // ── sr_classification_apply/undo：批量归类 ────────────────────────────
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_classification_apply',
+    description: '验证并应用批量归类提案（JSON）。',
+    parameters: { proposals: { type: 'json', required: true }, minimum_confidence: { type: 'number' }, allow_new_folders: { type: 'boolean' } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { proposals: unknown; minimum_confidence?: number; allow_new_folders?: boolean }) {
+      const proposals = Array.isArray(args.proposals) ? args.proposals : { proposals: args.proposals }
+      const r = await engineClassification(config, 'classification-apply', proposals)
+      return (r.json ?? { error: r.stderr || 'classification_apply_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_classification_apply')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_classification_undo',
+    description: '撤销一次批量归类操作。',
+    parameters: { operation_id: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { operation_id: string }) {
+      const r = await engineClassification(config, 'classification-undo', undefined, args.operation_id)
+      return (r.json ?? { error: r.stderr || 'classification_undo_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_classification_undo')
+
   // ── sr_library_search：全文搜索 ─────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_search',
-    description: '全文搜索本地文献库（FTS5：标题/作者/DOI/期刊）。返回匹配条目。',
+    description: '[legacy/internal] 全文搜索本地文献库。',
     parameters: {
       query: { type: 'string', required: true, description: '搜索词' },
     },
@@ -279,7 +487,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_parse：后台快速解析 ─────────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_parse',
-    description: '把已挂 PDF 的论文排入后台解析（parsed_fast）。返回 job_id，用 sr_job_status 轮询。',
+    description: '[legacy/internal] 把已挂 PDF 的论文排入后台解析。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -310,7 +518,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_quick_read：后台准备默认中文浅读 ─────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_quick_read',
-    description: '把已解析的论文排入后台浅读任务。到达 produce_quick_read gate 时，agent 需读取 gate 列出的本地文件并提交 quick-read-v1 提案。',
+    description: '[legacy/internal] 把已解析的论文排入后台浅读任务。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       project_context: { type: 'string', description: '可选的用户课题背景短文本' },
@@ -342,7 +550,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_full_read：后台准备按需全文精读 ─────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_full_read',
-    description: '把已解析的论文排入后台全文精读任务。到达 produce_full_read gate 时，agent 需读取 gate 列出的本地文件并提交 full-read-v1 提案（含翻译与复核）。',
+    description: '[legacy/internal] 把已解析的论文排入后台全文精读任务。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -373,7 +581,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_feishu_preview：零网络生成飞书同步预览 ───────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_feishu_preview',
-    description: '零网络生成飞书多维表格同步预览（需设置页配置 feishuConfig JSON 路径）。返回预览文件路径与去重键，写库前先预览确认。',
+    description: '[legacy/internal] 零网络生成飞书多维表格同步预览；不进入快速入库流程。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
     },
@@ -414,7 +622,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_feishu_sync：显式授权后同步飞书多维表格 ──────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_feishu_sync',
-    description: '显式授权后后台同步飞书多维表格（设置页只配 feishuConfig；FEISHU_APP_ID/SECRET 须在启动 DSH 前设为宿主环境变量）。写库前必须先用 sr_feishu_preview 预览并取得用户确认（confirm=true）。',
+    description: '[legacy/internal] 逐篇确认后同步飞书；不进入快速入库流程。',
     parameters: {
       paper_id: { type: 'string', required: true, description: '论文 ID' },
       confirm: { type: 'boolean', required: true, description: '是否已获得用户对本次飞书写入的确认（必须先预览）' },
@@ -446,42 +654,19 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
     },
   })), '@dsh-external/dsh-scientific-reading: sr_feishu_sync')
 
-  // ── sr_zotero_migrate：Zotero 旧数据一次性迁移 ─────────────────────
+  // ── sr_feishu_resync：仅在本地 probe enabled 后重排 ──────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
-    name: 'sr_zotero_migrate',
-    description: 'Zotero 旧数据一次性迁移：读 Zotero Desktop（须本机运行）条目列表 → 批量写入本地文献库，保留 zotero_key。dry_run=true 只列出将迁移的条目（不写入）。',
-    parameters: {
-      dry_run: { type: 'boolean', description: '为 true 时只列出将迁移的条目，不写入本地库' },
+    name: 'sr_feishu_resync',
+    description: '检查飞书自动同步配置，仅 enabled 时重排待同步条目。',
+    parameters: { paper_ids: { type: 'array', items: { type: 'string' } } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { paper_ids?: string[] }) {
+      const probe = await engineFeishuProbe(config)
+      if (!probe.ok || !(probe.json?.enabled === true || probe.json?.status === 'enabled')) return { status: 'disabled', detail: probe.stderr || 'feishu_not_enabled' }
+      const r = await engineFeishuResync(config, args.paper_ids ?? [])
+      return (r.json ?? { status: 'failed', error: r.stderr || 'feishu_resync_failed' }) as never
     },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          status: { type: 'string', required: true },
-          total: { type: 'integer' },
-          migrated: { type: 'integer' },
-          ambiguous: { type: 'integer' },
-          entries: { type: 'array' },
-          ambiguous_entries: { type: 'array' },
-          error: { type: 'string' },
-        },
-      },
-      render: (_args: unknown, value: unknown) => {
-        const v = value as Record<string, unknown>
-        if (v.error) return text('迁移失败：' + String(v.error))
-        return text('Zotero 迁移：status=' + String(v.status) + ' total=' + String(v.total) + ' migrated=' + String(v.migrated ?? 0) + ' ambiguous=' + String(v.ambiguous ?? 0))
-      },
-    },
-    async execute(args: { dry_run?: boolean }) {
-      const r = await engineZoteroMigrate(config, args.dry_run === true)
-      if (!r.ok) {
-        // 连接失败（Zotero 未运行）等：exit 4 但 json 含 error
-        return (r.json ?? { status: 'failed', error: r.stderr || '迁移失败' }) as never
-      }
-      return (r.json ?? { status: 'failed', error: '无输出' }) as never
-    },
-  })), '@dsh-external/dsh-scientific-reading: sr_zotero_migrate')
+  })), '@dsh-external/dsh-scientific-reading: sr_feishu_resync')
 
   // ── sr_job_status：查询后台任务状态 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
@@ -500,6 +685,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       },
     },
     async execute(args: { job_id: string }) {
+      requireJobId(args.job_id)
       const r = await engineJobStatus(config, args.job_id)
       if (!r.ok || !r.json) throw new Error(r.stderr || 'job-status 失败')
       return r.json as never

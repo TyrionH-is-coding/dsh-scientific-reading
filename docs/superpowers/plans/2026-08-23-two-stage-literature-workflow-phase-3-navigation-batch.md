@@ -37,7 +37,7 @@
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\batch-contract.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\reading-routes.mjs`
 
-- [ ] **Step 1: 写 HTTP 失败合同**
+- [x] **Step 1: 写 HTTP 失败合同**
 
 固定端点：
 
@@ -59,7 +59,7 @@ GET  /sr/reader/<paper_id>
 测试 method 405、非法 page/size、路径穿越、body 超限、未知 action、批量空选择、超过 100 时引擎
 父请求仍只收到一份完整 selection、错误无 stack/secret。
 
-- [ ] **Step 2: 固定列表响应**
+- [x] **Step 2: 固定列表响应**
 
 ```json
 {
@@ -87,12 +87,12 @@ GET  /sr/reader/<paper_id>
 
 不要把 Abstract 全文或 job 内部 required_input 塞进列表；详情按需读取。
 
-- [ ] **Step 3: 固定批量 action 白名单**
+- [x] **Step 3: 固定批量 action 白名单**
 
 只允许：`move_folder`、`add_tags`、`remove_tags`、`queue_full_read`、`retry_failed`、
 `feishu_resync`。明确拒绝 `delete`。响应统一为 parent summary/job id；单篇错误保留在 children 中。
 
-- [ ] **Step 4: 实现路由并验证**
+- [x] **Step 4: 实现路由并验证**
 
 路由只做验证/转发。PDF 和 reader 使用已解析的 workspace 路径并校验必须位于 data root；飞书 URL
 只从 SQLite 返回，不接受客户端注入。
@@ -116,7 +116,7 @@ git commit -m "接口：固定文献导航与批量操作合同"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-ui-contract.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-build.mjs`
 
-- [ ] **Step 1: 写 DOM/文案失败合同**
+- [x] **Step 1: 写 DOM/文案失败合同**
 
 断言：
 
@@ -128,7 +128,7 @@ git commit -m "接口：固定文献导航与批量操作合同"
 - 不出现普通【下载 PDF】【解析】【生成浅读】阶段按钮；
 - canonical `client/client.js` 与生成 `lib/client.js` 一致。
 
-- [ ] **Step 2: 实现布局与 design tokens**
+- [x] **Step 2: 实现布局与 design tokens**
 
 在现有组件内定义少量 CSS variables，不引入 UI 框架：
 
@@ -146,12 +146,12 @@ git commit -m "接口：固定文献导航与批量操作合同"
 sidebar 展开宽 240px、收起仅保留图标/开关；main 使用剩余宽度；普通桌面最小验收 1280×720。
 不要给每个文件夹或列名分配不同颜色。
 
-- [ ] **Step 3: 实现服务器分页和筛选状态**
+- [x] **Step 3: 实现服务器分页和筛选状态**
 
 URL/query 状态由一个明确 store 管理；搜索 250ms debounce，切换文件夹/筛选回到第 1 页；请求
 使用 AbortController 丢弃过时响应；加载/空/错误三态都有中文文案。
 
-- [ ] **Step 4: 构建、测试并提交**
+- [x] **Step 4: 构建、测试并提交**
 
 ```powershell
 npm run build:client
@@ -171,25 +171,25 @@ git commit -m "界面：改造为可收起的文献导航页"
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\client-actions.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\reading-routes.mjs`
 
-- [ ] **Step 1: 写交互失败合同**
+- [x] **Step 1: 写交互失败合同**
 
 覆盖：题名点击加载一次详情；drawer 可 Escape/遮罩/关闭按钮关闭并恢复焦点；Abstract 按英文→中文
 逐段显示；missing 明确“待补摘要”；按钮按产物状态切换；失败才显示高级入口；飞书未配置/待同步/
 已同步；路径复制；旧 HTML/旧浅读回退。
 
-- [ ] **Step 2: 实现文献行**
+- [x] **Step 2: 实现文献行**
 
 每行只显示：选择框、题名、简短作者/年份、主文件夹/最多两个标签、浅读/精读/飞书状态、
 【浅读】【开始精读/阅读 HTML】【PDF】【飞书】和更多菜单。没有产物的按钮 disabled 并给原因，
 不要让空链接可点击。
 
-- [ ] **Step 3: 实现详情 drawer**
+- [x] **Step 3: 实现详情 drawer**
 
 drawer 内容：完整题录、Abstract 英中对照、阶段状态/失败原因、PDF/HTML/飞书/资产目录入口。
 不内嵌 reader，不展示 MinerU 参数。若只有旧九节式浅读，在更多菜单给“查看历史浅读”，不能把它
 当作新 Abstract 浅读。
 
-- [ ] **Step 4: 实现单篇动作和轮询**
+- [x] **Step 4: 实现单篇动作和轮询**
 
 - 开始精读 POST 后按钮立刻显示排队；只轮询该 parent job，完成后刷新该行；
 - needs_user 时才显示“使用机构浏览器”“挂接本地 PDF”；
@@ -197,7 +197,7 @@ drawer 内容：完整题录、Abstract 英中对照、阶段状态/失败原因
 - PDF/reader 使用服务器路由；飞书使用 `target=_blank` 和 `rel=noopener`；
 - 组件卸载或 drawer 关闭时清理 timer/AbortController。
 
-- [ ] **Step 5: 测试并提交**
+- [x] **Step 5: 测试并提交**
 
 ```powershell
 npm run build:client
@@ -221,13 +221,13 @@ git commit -m "界面：加入Abstract抽屉与资产快捷入口"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\batch-contract.mjs`
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\client-batch-actions.mjs`
 
-- [ ] **Step 1: 写引擎批量失败测试**
+- [x] **Step 1: 写引擎批量失败测试**
 
 覆盖 0/1/100/101/250 篇，断言 101→2 chunks、250→3 chunks；重复/失败/needs_user 不终止其他；
 queue_full_read 只排队不并行；retry 只选失败项；飞书 resync 只选 pending/用户指定项；父 summary
 计数相加准确；无 delete action。
 
-- [ ] **Step 2: 实现 `BatchService`**
+- [x] **Step 2: 实现 `BatchService`**
 
 ```python
 ALLOWED_ACTIONS = {
@@ -244,7 +244,7 @@ class BatchService:
 父任务保存原选择顺序、chunks 和 children；逐条保存 created/reused/needs_user/failed。事务型移动/标签
 操作可整体撤销；队列/重试不承诺撤销已开始的任务。
 
-- [ ] **Step 3: 写前端选择失败合同并实现**
+- [x] **Step 3: 写前端选择失败合同并实现**
 
 选择集合以 paper_id 保存，翻页不丢；顶部只显示“已选 N 篇”和允许动作。批量工具栏不含删除。
 提交后清空已成功项，保留失败项供重试；父 summary 用一条提示，不弹 N 个 toast。
@@ -252,7 +252,7 @@ class BatchService:
 AI 批量归类仍由对话工具发提案：默认只用现有 folders，低置信度留待归类；UI 只应用/撤销结果，
 不在浏览器里实现分类算法。
 
-- [ ] **Step 4: 测试并分别提交**
+- [x] **Step 4: 测试并分别提交**
 
 引擎：
 
@@ -288,26 +288,26 @@ git commit -m "界面：加入跨页批量操作与父任务反馈"
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\no-zotero-runtime.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\client-ui-contract.mjs`
 
-- [ ] **Step 1: 写旧库 fixture 与失败测试**
+- [x] **Step 1: 写旧库 fixture 与失败测试**
 
 fixture 包含：旧 `metadata.zotero_key`、旧 PDF、MinerU 目录、`reader_full.html`、`quick_read.md/json`、
 一个缺失路径。断言审计只建立引用/警告，不移动/删除/重算；legacy key 映射为 library_key；旧 reader
 仍可路由；旧 quick read 仅更多菜单；新 CLI/worker/tools/UI 无 Zotero 入口。
 
-- [ ] **Step 2: 实现只读迁移审计**
+- [x] **Step 2: 实现只读迁移审计**
 
 `migration_audit.py` 扫描 SQLite 和 workspace，写 `library/migration-audit.json`：每篇现有资产、SHA
 可读性、legacy 路径、缺失警告。已有可信 manifest/SHA 直接复用；只为缺 SHA 且文件存在的资产计算
 SHA，不重解析 PDF。
 
-- [ ] **Step 3: 移除运行可达性，不做大规模源码删除**
+- [x] **Step 3: 移除运行可达性，不做大规模源码删除**
 
 - 从 `DEFAULT_HANDLERS` 移除 `zotero_record`；
 - 从新 CLI parser 移除 Zotero 写入/迁移命令；若必须保留只读审计命令，命名为 `legacy-audit`；
 - 插件不注册 `sr_zotero_*`，新 description/README/UI 不出现 Zotero；
 - Python 旧模块暂留供历史测试和审计 import，避免在本阶段做无收益大删除。
 
-- [ ] **Step 4: 测试并分别提交**
+- [x] **Step 4: 测试并分别提交**
 
 ```powershell
 # 引擎
@@ -334,17 +334,17 @@ git commit -m "插件：移除Zotero入口并保留旧资产访问"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\profile-runtime-verifier.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\package.json`
 
-- [ ] **Step 1: 打包真实 tarball 并安装到隔离 Profile**
+- [x] **Step 1: 打包真实 tarball 并安装到隔离 Profile**
 
 使用临时 `DSH_HOME`、临时 data root、独立端口（例如 3180）。`npm pack --dry-run` 先验证内容，再
 安装实际 tarball。不得使用开发注入冒充 Bundle 验收。
 
-- [ ] **Step 2: HTTP 自动验收**
+- [x] **Step 2: HTTP 自动验收**
 
 导入 60 篇虚构工科题录，断言第 1/2 页、搜索、待归类、文件夹、详情、Abstract、批量父任务、
 reader/pdf/exports 路由。所有请求清空飞书凭证、scansci 用 fake provider。
 
-- [ ] **Step 3: 浏览器视觉与交互 QA**
+- [x] **Step 3: 浏览器视觉与交互 QA**
 
 在 1440×900、1280×720、窄宽 900×720 截图/检查：
 
@@ -358,11 +358,11 @@ reader/pdf/exports 路由。所有请求清空飞书凭证、scansci 用 fake pr
 
 发现视觉问题先写/更新 DOM 合同或 runtime assertion，再做最小 CSS 修复。
 
-- [ ] **Step 4: 关闭清理**
+- [x] **Step 4: 关闭清理**
 
 停止隔离 DSH 后断言端口释放、worker 无残留、临时 Profile 可删除。当前 3080 仍未变化。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```powershell
 npm run typecheck
@@ -384,7 +384,7 @@ git commit -m "验收：覆盖文献导航的隔离实机运行"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\README.md`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\docs\superpowers\plans\2026-08-23-two-stage-literature-workflow-index.md`
 
-- [ ] **Step 1: 对照设计逐项审查**
+- [x] **Step 1: 对照设计逐项审查**
 
 检查 11 条验收标准和“不在本轮实现”清单。重点搜索：
 
@@ -395,12 +395,12 @@ rg -n "FEISHU_APP_SECRET|personal_thoughts|understanding_level|user_notes" src t
 
 允许测试/迁移说明中的预期命中；任何新 UI/运行工具命中必须解释或删除。
 
-- [ ] **Step 2: 独立代码审核**
+- [x] **Step 2: 独立代码审核**
 
 审核者检查：schema 回滚、路径边界、飞书首次启用、用户字段 payload、任务幂等/恢复、重任务串行、
 前端 timer/AbortController 清理、旧资产不移动。只修本项目问题，不顺手重构邻近代码。
 
-- [ ] **Step 3: 两仓库 worktree 全量验证**
+- [x] **Step 3: 两仓库 worktree 全量验证**
 
 ```powershell
 # Python 引擎
@@ -419,7 +419,7 @@ npm run verify:restart-recovery
 git diff --check
 ```
 
-- [ ] **Step 4: 更新中文 README 与执行记录**
+- [x] **Step 4: 更新中文 README 与执行记录**
 
 README 只描述真实完成的两段式流程、启动、数据目录、飞书/XLSX所有权、资产导出、失败恢复和限制。
 总索引追加 commit/测试结果，不记录凭证和真实用户数据。
@@ -445,3 +445,17 @@ README 只描述真实完成的两段式流程、启动、数据目录、飞书/
 实现 agent 追加隔离 Profile 路径/端口、tarball SHA、HTTP 与视觉 QA 结果、两仓库 main merge commit、
 main 全量测试结果、persistent Profile 版本和未执行的外部写入项。不得记录飞书 secret、Cookie、
 验证码或个人文献内容。
+
+- Task 1 已完成（commits `7134c23`、`672521e`、`5b6130f`）：固定导航/批量 HTTP 合同、严格字段类型与脱敏、1 MiB body 上限与 405；六种 action 白名单，101 篇选择由路由完整单次转发，批量分块仍留给 Task 4。generation 资产路由覆盖 PDF、reader、assets，并校验 SHA 与 symlink 边界。最终规范审核与质量审核均为 `APPROVED`。`build:ci`、`typecheck`、计划指定 3 项测试、library、full-read、assets、Phase 1 与 harness 全部 `PASS`。本任务未改引擎/UI/v2.1，未操作 3080、网络或飞书。
+
+- Task 2 已完成（commits `4a1063d`、`1be8e0e`、`997377b`）：实现可收起 sidebar、宽主列表与隐藏 overlay drawer 骨架，接入服务器分页、搜索和筛选；folders 顶层数组使用 `folder_id`，待归类使用 `__unclassified__`。无 DOM 依赖的 mount-controller 生命周期 harness 覆盖稳定 ref 重渲染、卸载清理与同节点重挂。规范审核与质量审核均为 `APPROVED`；`build:ci`、`typecheck`、`client-ui`、`client-build`、完整 `offline` 与 `git diff --check` 均通过。未提前实现 Task 3，未联网、未操作 3080，也未启动真实 worker。
+
+- Task 3 已完成（engine commits `7bfed70`、`18156d5`；plugin commits `a1e3adb`、`b0297ae`、`52b39fd`、`80efa93`）：实现文献行、按需单次详情读取的 Abstract overlay drawer、安全 PDF/reader/飞书/历史浅读入口、资产目录与图表导出反馈，以及相互隔离的行级精读轮询和 drawer 生命周期。规范审核与质量审核均为 `APPROVED`；root 在清空 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后重跑完整 `npm run test:offline` 全部 `PASS`，engine targeted tests 为 `48 passed`。最小计划偏差：为满足固定导航合同，engine 使用单条 set-based SQLite 查询补齐列表字段，未在插件逐行启动子进程；未开放根目录 legacy `reader_full.html`，正式 reader 仍只允许同 generation 的 `reading/reader.html`，并回退同 generation 的 `output/reader_full.html`，根旧资产留给 Task 5 migration audit 建立只读索引。本任务未执行外部写入、3080 操作、网络访问或真实飞书同步。
+
+- Task 4 已完成（engine commits `9bbfe2a`、`e10bc95`、`a38952c`、`0a240e3`、`f30a211`、`93134d4`；plugin commits `f4d14c1`、`5018067`、`89e4c0a`）：实现批量选择稳定去重与按 100 篇分块、逐篇独立结果、父任务增量持久化与脱敏失败收束、事务型文件夹/标签操作及完整撤销句柄；精读与飞书动作只创建或复用持久队列，不在批量调用中启动重 worker。前端按 `paper_id` 跨页保留选择，以选择 revision 隔离晚响应，同一时刻只允许一个副作用提交；仅移除 `created/reused`，并用独立 `aria-live` 父汇总区分完成、失败和处理中状态。Windows 越界门禁实际创建 directory junction 并验证拒绝，且子进程使用 `CREATE_NO_WINDOW`。最终规范审核与质量审核均为 `APPROVED`；engine worktree 全量为 `778 passed, 1 skipped`，root 独立定向复核为 `70 passed`，plugin 完整 `npm run test:offline` 全部 `PASS`。最小计划偏差：未修改 `reading_pipeline.py`，而是复用既有 `start`/resume 合同，并以真实 worker 回归证明失败阶段可恢复且不重复已完成重阶段。本任务未操作 3080/persistent Profile，未联网，未执行真实飞书写入、机构认证或其他外部操作。
+
+- Task 5 已完成（engine commits `a43fcac`、`1b6b1e3`、`ed5737f`、`26082cd`、`264925d`；plugin commit `2e38ce7`）：旧库 fixture 覆盖 legacy key、PDF、MinerU、旧 reader/浅读和缺失路径；迁移审计以完整 manifest、SHA、路径 containment、hardlink/junction 边界验证现有资产，仅建立索引与警告，不移动、删除或重算旧产物。Zotero record、旧 PDF acquisition CLI/default handler 及插件运行入口已移除，旧源码只为只读兼容保留。最终独立审核为 `APPROVED`；engine 定向复核为 `100 passed, 2 skipped`，worktree 全量为 `798 passed, 3 skipped`，插件离线测试全部通过。审计只保证单用户数据根中的陈旧/误改可检测性；拥有本地完整写权限并同时篡改资产与审计文件的恶意写者不属于本轮密码学信任边界。
+
+- Task 6 已完成（engine commits `3b624d1`、`1621276`；plugin commits `1c1f05b`、`ffd9a13`、`93cd41c`、`8a9b973`、`9129dff`、`972bd3f`、`55c0069`）：使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科文献完成隔离实机验收；HTTP 读回覆盖两页列表、搜索、待归类、文件夹、详情、英中 Abstract、批量父任务、正式 generation reader、活动代次 PDF 及真实 PNG/CSV 资产。浏览器在 1440×900、1280×720、900×720 三档检查录入 modal、搜索/筛选/分页、跨页选择、overlay drawer、Escape/焦点恢复、disabled 原因、排队汇总与 `needs_user` fallback；视觉仅使用黄色/亮蓝重点。QA 发现并以合同测试驱动修复文献列表内部滚动和宿主 composer 遮挡。关闭门禁逐项验证宿主停止、端口释放、worker 身份与清理、临时根删除；任一步失败都会保留现场，且后续清理仍继续执行。真实导航运行返回 `navigation_runtime_verified`，真实 Bundle/Profile verifier 均通过，engine 全量为 `805 passed, 3 skipped`；当前 3080/persistent Profile 未动，未执行真实飞书写入或机构认证。
+
+- Task 7 Steps 1-4 已完成（engine commits `2e49f23`、`cd859b8`；plugin commits `5d1a9f9`、`e55aa41`、`125f7c3`）：逐项审查后为 MinerU 探测/执行及 scansci provider 的生产子进程统一补齐 Windows `CREATE_NO_WINDOW`，并以直接拦截三个真实启动点的测试验证；插件停用旧 `POST /sr/api/paper`、parse、quick-read 写入路由，旧请求统一 404 且不泄露异常，同时保留批准的 library/detail/full-read/PDF/assets/reader 路由。中文 README 已与实际两段式合同一致。独立低推理 Sol 复核为 `APPROVED`，无 Critical/Important/Minor；插件 `typecheck` 与完整 `test:offline` 全部通过，引擎 worktree 独占全量为 `808 passed, 3 skipped`（69.12 秒），两仓库 `git diff --check` 通过。尚未执行本地合并、persistent Profile 更新或任何外部写入。

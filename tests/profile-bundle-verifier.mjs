@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const verifierSource = readFileSync(join(root, 'scripts', 'verify-profile-bundle.mjs'), 'utf8')
+assert.match(verifierSource, /function run\([^]*?spawnSync\([^]*?windowsHide: true[^]*?\n\s*\}\)/, 'Profile bundle 的同步 run 必须隐藏 Windows 子进程')
 const fixture = mkdtempSync(join(tmpdir(), 'sr-profile-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
 const fakeShellWrapper = join(fixture, 'fake-dsh.cmd')

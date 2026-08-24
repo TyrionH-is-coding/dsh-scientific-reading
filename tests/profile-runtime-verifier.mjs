@@ -7,8 +7,21 @@ import { spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const verifierSource = readFileSync(join(root, 'scripts', 'verify-profile-runtime.mjs'), 'utf8')
+const navigationSource = readFileSync(join(root, 'scripts', 'verify_navigation_runtime.mjs'), 'utf8')
 assert.match(verifierSource, /timeout: COMMAND_TIMEOUT_MS/, '前置同步命令必须设置超时')
+assert.match(verifierSource, /function run\([^]*?spawnSync\([^]*?windowsHide: true[^]*?\n\s*\}\)/, 'Profile runtime 的同步 run 必须隐藏 Windows 子进程')
+assert.doesNotMatch(verifierSource, /fullOutputDir|reading['"`]?\s*,\s*['"`]full['"`]?\s*,\s*['"`]output|reading\/full\/output\/reader_full\.html/, '不得再构造旧 guessed reader 路径')
+for (const marker of ['generations', 'reading', 'reader.html', 'reader-manifest.json', 'paper_parse_upgrade', 'record_pdf_attachment', 'publish_reader']) {
+  assert.match(verifierSource, new RegExp(marker.replace('.', '\\.')), `正式 generation reader fixture 缺少 ${marker}`)
+}
 assert.match(verifierSource, /dsh_shutdown_failed/, '验证器必须拒绝无法确认退出的 DSH 子进程')
+assert.match(navigationSource, /npm_pack_dry_run/, '导航验收必须先执行tarball dry-run')
+assert.doesNotMatch(navigationSource, /SR_DATA_ROOT|SR_EXTERNAL_PROVIDER/, '导航验收不得依赖插件未消费的假环境变量')
+assert.match(navigationSource, /--engine-python/, '导航验收必须使用显式引擎解释器')
+assert.match(navigationSource, /join\(userProfile, 'scientific-reading-data'\)/, '导航验收必须使用临时 USERPROFILE 下的默认 dataRoot')
+for (const secret of ['FEISHU_APP_ID', 'FEISHU_APP_SECRET']) {
+  assert.match(navigationSource, new RegExp(`delete env\\.${secret}`), `导航验收必须清空 ${secret}`)
+}
 const fixture = mkdtempSync(join(tmpdir(), 'sr-runtime-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
 
