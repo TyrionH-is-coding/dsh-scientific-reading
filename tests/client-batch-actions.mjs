@@ -83,6 +83,25 @@ assert.deepEqual(selection.values(), ['paper_c', 'paper_d'], '成功项清空，
 assert.equal(notices.length, 1, '父汇总只能生成一条提示')
 assert.match(notices[0], /成功 1.*待处理 1.*失败 1/)
 
+const failedSelection = createSelectionStore()
+for (const id of ['paper_ok', 'paper_pending', 'paper_failed']) failedSelection.toggle(id, true)
+const failedNotices = []
+const failedController = createBatchController({
+  selection: failedSelection,
+  api() { return Promise.resolve({ status: 'failed', error: 'batch_operation_failed', summary: { total: 3, created: 1, reused: 0, needs_user: 0, failed: 1, pending: 1 }, children: [{ paper_id: 'paper_ok', status: 'created' }, { paper_id: 'paper_pending', status: 'pending' }, { paper_id: 'paper_failed', status: 'failed' }] }) },
+  onSummary(message) { failedNotices.push(message) },
+})
+await failedController.submit('move_folder', {})
+assert.deepEqual(failedSelection.values(), ['paper_pending', 'paper_failed'])
+assert.equal(failedNotices.length, 1)
+assert.match(failedNotices[0], /^批量失败：batch_operation_failed｜成功 1｜待处理 1｜失败 1$/)
+
+const runningSelection = createSelectionStore(); runningSelection.toggle('paper_wait', true)
+const runningNotices = []
+await createBatchController({ selection: runningSelection, api() { return Promise.resolve({ status: 'running', summary: { total: 1, created: 0, reused: 0, needs_user: 0, failed: 0, pending: 1 }, children: [{ paper_id: 'paper_wait', status: 'pending' }] }) }, onSummary(message) { runningNotices.push(message) } }).submit('queue_full_read', {})
+assert.equal(runningNotices[0], '批量处理中：待处理 1')
+assert.deepEqual(runningSelection.values(), ['paper_wait'])
+
 for (const label of ['已选 ', '移动文件夹', '添加标签', '移除标签', '加入精读队列', '重试失败任务', '重新同步飞书']) {
   assert.match(source, new RegExp(label), `缺少批量工具栏：${label}`)
 }
