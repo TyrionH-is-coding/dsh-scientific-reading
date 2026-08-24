@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -57,10 +57,10 @@ if(args.includes('--profile')){
  const dataRoot=join(process.env.USERPROFILE,'scientific-reading-data'), jobs=join(dataRoot,'jobs'), jobRoot=join(jobs,'job_bbbbbbbbbbbbbbbb')
  mkdirSync(jobRoot,{recursive:true})
  const worker=spawn(process.execPath,['-e','setTimeout(()=>process.exit(0),15000);setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true});worker.unref()
- const workerIdentity=identity(worker.pid)
+ const workerIdentity=identity(worker.pid), recordedIdentity=process.env.FAKE_WORKER_IDENTITY_MISMATCH==='1'?'identity:mismatch':workerIdentity
  writeFileSync(join(jobRoot,'status.json'),JSON.stringify({state:'completed'}))
- writeFileSync(join(jobRoot,'launch.json'),JSON.stringify({pid:worker.pid,process_start_identity:workerIdentity}))
- save({workerPid:worker.pid,workerIdentity,dataRoot,workerStarted:true})
+ writeFileSync(join(jobRoot,'launch.json'),JSON.stringify({pid:worker.pid,process_start_identity:recordedIdentity}))
+ save({workerPid:worker.pid,workerIdentity,recordedIdentity,dataRoot,workerStarted:true})
  let requests=[]
  const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;requests.push(req.method+' '+req.url);save({requests,secretAtStart:Boolean(process.env.FEISHU_APP_ID||process.env.FEISHU_APP_SECRET)})
   const url=new URL(req.url,'http://local');const send=(status,value,type='application/json')=>{res.writeHead(status,{'Content-Type':type});res.end(type==='application/json'?JSON.stringify(value):value)}
@@ -98,6 +98,15 @@ if(args.includes('--profile')){
 process.exit(9)
 `, 'utf8')
 
+const cleanupRoots = new Set()
+const cleanupPids = new Set()
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
+const preservedRoot = (captured) => dirname(captured.dshHome)
+const trackEvidence = (captured) => {
+  if (captured?.dshHome) cleanupRoots.add(preservedRoot(captured))
+  if (Number.isInteger(captured?.workerPid)) cleanupPids.add(captured.workerPid)
+}
+
 try {
   const commonEnv = { ...process.env, SR_NAVIGATION_RUNTIME_FAKE_ENGINE: '1', FAKE_DSH_CAPTURE: capture, FEISHU_APP_ID: 'must-not-leak', FEISHU_APP_SECRET: 'must-not-leak', npm_execpath: '' }
   const result = spawnSync(process.execPath, [verifier, '--dsh-bin', fakeDsh, '--engine-python', process.execPath], {
@@ -134,5 +143,45 @@ try {
   const failedCapture = JSON.parse(readFileSync(capture, 'utf8'))
   assert.equal(existsSync(failedCapture.dshHome), false, '启动失败也必须删除临时 DSH_HOME')
   assert.equal(existsSync(failedCapture.userProfile), false, '启动失败也必须删除临时 USERPROFILE')
+
+  writeFileSync(capture, '{}', 'utf8')
+  const cleanupFailures = spawnSync(process.execPath, [verifier, '--dsh-bin', fakeDsh, '--engine-python', process.execPath], {
+    cwd: root, encoding: 'utf8', timeout: 120_000, windowsHide: true,
+    env: { ...commonEnv, SR_NAVIGATION_RUNTIME_TEST_STOP_FAILURE: '1', SR_NAVIGATION_RUNTIME_TEST_PORT_FAILURE: '1' },
+  })
+  const cleanupCapture = JSON.parse(readFileSync(capture, 'utf8'))
+  trackEvidence(cleanupCapture)
+  assert.notEqual(cleanupFailures.status, 0, '宿主或端口未确认安全时验收必须失败')
+  assert.match(cleanupFailures.stderr, /host_stop:synthetic_stop_failure/)
+  assert.match(cleanupFailures.stderr, /port_release:synthetic_port_failure/)
+  assert.match(cleanupFailures.stderr, new RegExp(preservedRoot(cleanupCapture).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.equal(pidAlive(cleanupCapture.workerPid), false, '宿主/端口失败也必须继续执行 worker 清理')
+  assert.equal(existsSync(preservedRoot(cleanupCapture)), true, '任一步安全确认失败必须保留临时根证据')
+  rmSync(preservedRoot(cleanupCapture), { recursive: true, force: true })
+  cleanupRoots.delete(preservedRoot(cleanupCapture))
+
+  writeFileSync(capture, '{}', 'utf8')
+  const identityMismatch = spawnSync(process.execPath, [verifier, '--dsh-bin', fakeDsh, '--engine-python', process.execPath], {
+    cwd: root, encoding: 'utf8', timeout: 120_000, windowsHide: true,
+    env: { ...commonEnv, FAKE_WORKER_IDENTITY_MISMATCH: '1' },
+  })
+  const mismatchCapture = JSON.parse(readFileSync(capture, 'utf8'))
+  trackEvidence(mismatchCapture)
+  assert.notEqual(identityMismatch.status, 0)
+  assert.match(identityMismatch.stderr, /worker_cleanup:worker_process_identity_unverified/)
+  assert.equal(pidAlive(mismatchCapture.workerPid), true, 'start identity 不匹配时不得杀进程')
+  assert.equal(existsSync(preservedRoot(mismatchCapture)), true, 'worker 身份不可信时必须保留临时根证据')
+  process.kill(mismatchCapture.workerPid, 'SIGTERM')
+  cleanupPids.delete(mismatchCapture.workerPid)
+  rmSync(preservedRoot(mismatchCapture), { recursive: true, force: true })
+  cleanupRoots.delete(preservedRoot(mismatchCapture))
   console.log('PASS: 60篇导航真实tarball、离线夹具与HTTP隔离运行验收')
-} finally { rmSync(fixture, { recursive: true, force: true }) }
+} finally {
+  for (const pid of cleanupPids) { if (pidAlive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* 已退出 */ } } }
+  const temp = resolve(tmpdir())
+  for (const path of cleanupRoots) {
+    const target = resolve(path)
+    if (target.startsWith(temp + sep) && target.split(/[\\/]/).at(-1).startsWith('sr-navigation-runtime-')) rmSync(target, { recursive: true, force: true })
+  }
+  rmSync(fixture, { recursive: true, force: true })
+}

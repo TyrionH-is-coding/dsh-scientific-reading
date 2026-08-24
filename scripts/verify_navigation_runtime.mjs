@@ -301,6 +301,29 @@ async function cleanupWorkers(dataRoot) {
   }
 }
 
+async function verifyCleanup(child, port, dataRoot) {
+  const failures = []
+  const attempt = async (label, action) => {
+    try {
+      await action()
+      return true
+    } catch (error) {
+      failures.push(`${label}:${tail(error instanceof Error ? error.message : error)}`)
+      return false
+    }
+  }
+  const hostSafe = await attempt('host_stop', async () => {
+    await stop(child)
+    if (process.env.SR_NAVIGATION_RUNTIME_TEST_STOP_FAILURE === '1') throw new Error('synthetic_stop_failure')
+  })
+  const portSafe = await attempt('port_release', async () => {
+    if (port !== null) await assertPortReleased(port)
+    if (process.env.SR_NAVIGATION_RUNTIME_TEST_PORT_FAILURE === '1') throw new Error('synthetic_port_failure')
+  })
+  const workersSafe = await attempt('worker_cleanup', async () => cleanupWorkers(dataRoot))
+  return { safe: hostSafe && portSafe && workersSafe, failures }
+}
+
 async function main() {
   const { dshBin, enginePython } = parseArgs(process.argv.slice(2))
   const fakeEngine = process.env.SR_NAVIGATION_RUNTIME_FAKE_ENGINE === '1'
@@ -394,18 +417,19 @@ async function main() {
 
     result = { status: 'navigation_runtime_verified', host_version: hostVersion, profile, imported: ids.length, temporary }
   } finally {
-    let cleanupError = null
-    try {
-      await stop(child)
-      if (port !== null) await assertPortReleased(port)
-      await cleanupWorkers(dataRoot)
-    } catch (error) { cleanupError = error }
-    finally {
-      const resolved = resolve(temporary), tmp = resolve(tmpdir())
-      if (!resolved.startsWith(tmp + sep) || !basename(resolved).startsWith('sr-navigation-runtime-')) throw new Error('unsafe_temporary_cleanup_target')
-      rmSync(resolved, { recursive: true, force: true })
+    const cleanup = await verifyCleanup(child, port, dataRoot)
+    const resolved = resolve(temporary), tmp = resolve(tmpdir())
+    if (!resolved.startsWith(tmp + sep) || !basename(resolved).startsWith('sr-navigation-runtime-')) {
+      throw new Error(`unsafe_temporary_cleanup_target temporary=${resolved}`)
     }
-    if (cleanupError) throw cleanupError
+    if (!cleanup.safe) {
+      throw new Error(`navigation_runtime_cleanup_failed temporary=${resolved} errors=${cleanup.failures.join('|')}`)
+    }
+    try {
+      rmSync(resolved, { recursive: true, force: true })
+    } catch (error) {
+      throw new Error(`navigation_runtime_cleanup_delete_failed temporary=${resolved} error=${tail(error instanceof Error ? error.message : error)}`)
+    }
   }
   console.log(JSON.stringify(result))
 }
