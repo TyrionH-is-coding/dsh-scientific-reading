@@ -112,7 +112,7 @@ FEISHU_APP_SECRET=你的AppSecret
 
 设置后需要重启 DSH。缺少任一凭据或有效配置时仅显示【飞书未配置】，不会联网。首次启用只记录 activation epoch，不自动回填全部历史库；历史记录需显式重新同步。
 
-系统拥有字段包括题名、作者、期刊、年份、DOI/PMID/library key、来源链接、Abstract 英中、PDF/精读状态与路径、精读要点、更新时间和错误状态。`personal_thoughts`、`understanding_level`、`user_notes` 属于用户字段，永不进入更新 payload，也不回写 SQLite。旧配置中的 `zotero_key` 列只可承载本地 `library_key` 以兼容既有表结构，不会调用 Zotero。
+系统拥有字段包括题名、作者、期刊、年份、DOI/PMID/library key、来源链接、Abstract 英中、PDF/精读状态与路径、精读要点、更新时间和错误状态。`personal_thoughts`、`understanding_level`、`user_notes` 属于用户字段，永不进入更新 payload，也不回写 SQLite。旧配置中的稳定标识列只读兼容既有表结构，新流程统一使用本地 `library_key`。
 
 App Secret 不写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应。飞书失败只把该派生状态设为待同步，不改变本地入库/精读完成状态。
 
@@ -143,6 +143,6 @@ npm.cmd run verify:restart-recovery
 
 ## 旧数据与当前限制
 
-`legacy-audit` 只读索引已有 PDF、MinerU、旧 reader 和旧九节式浅读；不移动、删除或无故重算资产。Zotero 与旧 PDF acquisition 的运行入口已经移除。九节浅读和旧分段精读的内部兼容符号仍可能为历史回归测试保留，但新 UI、主流程和本文档都不调用或提供其操作步骤。
+`legacy-audit` 只读索引已有 PDF、MinerU、旧 reader 和旧九节式浅读；不移动、删除或无故重算资产。旧记录管理与旧 PDF acquisition 的运行入口已经移除；旧稳定字段只读兼容。九节浅读和旧分段精读的内部兼容符号仍可能为历史回归测试保留，但新 UI、主流程和本文档都不调用或提供其操作步骤。
 
 当前不实现：SQLite/XLSX/飞书双向同步、飞书个人字段回写、批量删除、多个 MinerU/全文翻译任务并行、AI 自动挑选关键图、批量机构浏览器下载、在 DSH 页面内嵌整篇 reader、自动修改用户飞书表结构，以及推荐/引用网络/知识图谱。
