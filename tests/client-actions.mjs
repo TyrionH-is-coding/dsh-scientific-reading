@@ -23,6 +23,7 @@ const paperEntryModel = loadNamedFunction('paperEntryModel')
 const createPaperActionController = loadNamedFunction('createPaperActionController')
 const createDrawerSessionController = loadNamedFunction('createDrawerSessionController')
 const nextDialogFocus = loadNamedFunction('nextDialogFocus')
+const createLiteratureLifecycle = loadNamedFunction('createLiteratureLifecycle')
 
 assert.equal(isSafeHttpUrl('https://example.test/record'), true)
 assert.equal(isSafeHttpUrl('http://example.test/record'), true)
@@ -188,5 +189,35 @@ assert.equal(lateAttach, 0, 'A 晚 FileReader 不得 attach 或关闭 B')
 const focusables = [{ id: 'close' }, { id: 'pdf' }, { id: 'copy' }]
 assert.equal(nextDialogFocus(focusables, focusables[2], false), focusables[0], 'Tab 从末尾循环到开头')
 assert.equal(nextDialogFocus(focusables, focusables[0], true), focusables[2], 'Shift+Tab 从开头循环到末尾')
+
+const lifecycleEvents = []
+const lifecycleSessions = createDrawerSessionController()
+const lifecycleReader = { abort() { lifecycleEvents.push('reader-abort') } }
+const lifecycleToken = lifecycleSessions.open('library_lifecycle')
+lifecycleSessions.trackReader(lifecycleToken, 'library_lifecycle', lifecycleReader)
+const lifecycle = createLiteratureLifecycle(
+  lifecycleSessions,
+  { close() { lifecycleEvents.push('drawer-close') }, dispose() { lifecycleEvents.push('drawer-dispose') } },
+  { close() { lifecycleEvents.push('row-close') }, dispose() { lifecycleEvents.push('row-dispose') } },
+)
+lifecycle.closeDrawerScope()
+assert.deepEqual(lifecycleEvents, ['reader-abort', 'drawer-close'], '关闭 drawer 不得停止行级 parent polling')
+lifecycleSessions.open('library_unmount')
+lifecycleSessions.trackReader(lifecycleSessions.open('library_unmount'), 'library_unmount', lifecycleReader)
+lifecycle.dispose()
+assert.deepEqual(lifecycleEvents.slice(-3), ['reader-abort', 'drawer-dispose', 'row-dispose'], '组件 dispose 必须先失效 session/abort reader，再停止两类 controller')
+
+const survivingSchedules = []
+let survivingRefresh = 0
+const rowPolling = createPaperActionController({
+  api(path) { if (path.endsWith('/full-read')) return Promise.resolve({ parent_job_id: 'job_6666666666666666' }); return Promise.resolve({ status: 'completed' }) },
+  schedule(fn) { survivingSchedules.push(fn); return survivingSchedules.length }, cancel() {}, onPatch() {}, onRefresh() { survivingRefresh += 1 },
+})
+const drawerOnly = { close() {}, dispose() {} }
+const pollingLifecycle = createLiteratureLifecycle(createDrawerSessionController(), drawerOnly, rowPolling)
+await rowPolling.startFullRead('library_survives_drawer')
+pollingLifecycle.closeDrawerScope()
+await survivingSchedules.shift()()
+assert.equal(survivingRefresh, 1, '打开/关闭 drawer 后行级 parent polling 必须继续到 refresh')
 
 console.log('PASS: 文献行、详情缓存、安全 URL 与单篇动作生命周期')

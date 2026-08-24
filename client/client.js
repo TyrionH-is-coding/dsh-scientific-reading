@@ -71,6 +71,12 @@ window.__ModuleLoader__.load({
       var index = focusables.indexOf(current); if (index < 0) index = backwards ? 0 : -1;
       return focusables[(index + (backwards ? -1 : 1) + focusables.length) % focusables.length];
     }
+    function createLiteratureLifecycle(drawerSessions, drawerActions, rowActions) {
+      return {
+        closeDrawerScope: function () { drawerSessions.close(); drawerActions.close(); },
+        dispose: function () { drawerSessions.close(); drawerActions.dispose(); rowActions.dispose(); },
+      };
+    }
     function isSafeHttpUrl(value) {
       try {
         var parsed = new URL(String(value));
@@ -248,7 +254,7 @@ window.__ModuleLoader__.load({
       }
       function closeDrawer(event) {
         if (event && event.type === 'click' && event.target !== controls.backdrop && event.currentTarget === controls.backdrop) return;
-        drawerSessions.close(); actionController.close(); controls.backdrop.hidden = true; controls.drawer.setAttribute('aria-hidden', 'true'); sidebar.inert = false; main.inert = false;
+        lifecycle.closeDrawerScope(); controls.backdrop.hidden = true; controls.drawer.setAttribute('aria-hidden', 'true'); sidebar.inert = false; main.inert = false;
         if (drawerOpener && typeof drawerOpener.focus === 'function') drawerOpener.focus(); drawerOpener = null;
       }
       function renderDrawer(paper, payload, session) {
@@ -272,7 +278,7 @@ window.__ModuleLoader__.load({
         if (paper.has_pdf) links.appendChild(entryLink('PDF', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/pdf'));
         if (paper.has_reader) links.appendChild(entryLink('阅读 HTML', '/sr/reader/' + encodeURIComponent(paper.paper_id)));
         if (model.feishu.href) links.appendChild(entryLink('飞书', model.feishu.href, true));
-        links.appendChild(btn('查看资产目录', function () { actionController.loadAssets(paper.paper_id, session); }, 'sr-entry'));
+        links.appendChild(btn('查看资产目录', function () { drawerActions.loadAssets(paper.paper_id, session); }, 'sr-entry'));
         links.appendChild(btn('整理文章图表', function () { exportPaperAssets(paper.paper_id, session); }, 'sr-entry'));
         if ((payload.detail.outputs || []).includes('reading/quick_read.md')) { var more = document.createElement('details'); more.appendChild(el('summary', '', '更多')); more.appendChild(entryLink('查看历史浅读', '/sr/reading/' + encodeURIComponent(paper.paper_id))); links.appendChild(more); }
         var job = payload.detail.job || {}; var jobDetail = job.detail || {}; var needsPdf = (job.status === 'waiting_user' && jobDetail.reason_code === 'pdf_required') || (paper.needsUser && paper.pdfRequired);
@@ -280,18 +286,18 @@ window.__ModuleLoader__.load({
           var identifier = item.doi || item.pmid || item.source_url || '';
           var activeJobId = item.active_job_id || paper.active_job_id || '';
           var validActiveJob = /^job_[0-9a-f]{16}$/.test(activeJobId);
-          var institution = btn('使用机构浏览器', function () { actionController.institutionDownload(paper.paper_id, activeJobId, identifier).then(function () { drawerSessions.guard(session, paper.paper_id, function () { closeDrawer(); refreshPaper(); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.appendChild(el('p', 'sr-error-note', '机构获取失败：' + error.message)); }); }); }, 'sr-entry');
+          var institution = btn('使用机构浏览器', function () { drawerActions.institutionDownload(paper.paper_id, activeJobId, identifier).then(function () { drawerSessions.guard(session, paper.paper_id, function () { closeDrawer(); refreshPaper(); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.appendChild(el('p', 'sr-error-note', '机构获取失败：' + error.message)); }); }); }, 'sr-entry');
           if (!identifier || !validActiveJob) { institution.disabled = true; institution.title = !validActiveJob ? '任务编号无效，请重试精读' : '缺少可用文献标识'; } links.appendChild(institution);
           var uploadLabel = el('label', 'sr-entry', '挂接本地 PDF'); var upload = document.createElement('input'); upload.type = 'file'; upload.accept = 'application/pdf,.pdf'; upload.hidden = true;
           if (!validActiveJob) { upload.disabled = true; uploadLabel.title = '任务编号无效，请重试精读'; uploadLabel.setAttribute('aria-disabled', 'true'); }
-          upload.addEventListener('change', function () { var file = upload.files && upload.files[0]; if (!file) return; var reader = new FileReader(); drawerSessions.trackReader(session, paper.paper_id, reader); reader.onload = function () { drawerSessions.guard(session, paper.paper_id, function () { actionController.attachPdf(paper.paper_id, activeJobId, String(reader.result).split(',').pop()).then(function () { drawerSessions.guard(session, paper.paper_id, function () { closeDrawer(); refreshPaper(); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.appendChild(el('p', 'sr-error-note', '挂接 PDF 失败：' + error.message)); }); }); }); }; reader.onloadend = function () { drawerSessions.releaseReader(reader); }; reader.onerror = function () { drawerSessions.releaseReader(reader); drawerSessions.guard(session, paper.paper_id, function () { controls.drawerBody.appendChild(el('p', 'sr-error-note', '读取 PDF 失败')); }); }; reader.onabort = function () { drawerSessions.releaseReader(reader); }; reader.readAsDataURL(file); });
+          upload.addEventListener('change', function () { var file = upload.files && upload.files[0]; if (!file) return; var reader = new FileReader(); drawerSessions.trackReader(session, paper.paper_id, reader); reader.onload = function () { drawerSessions.guard(session, paper.paper_id, function () { drawerActions.attachPdf(paper.paper_id, activeJobId, String(reader.result).split(',').pop()).then(function () { drawerSessions.guard(session, paper.paper_id, function () { closeDrawer(); refreshPaper(); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.appendChild(el('p', 'sr-error-note', '挂接 PDF 失败：' + error.message)); }); }); }); }; reader.onloadend = function () { drawerSessions.releaseReader(reader); }; reader.onerror = function () { drawerSessions.releaseReader(reader); drawerSessions.guard(session, paper.paper_id, function () { controls.drawerBody.appendChild(el('p', 'sr-error-note', '读取 PDF 失败')); }); }; reader.onabort = function () { drawerSessions.releaseReader(reader); }; reader.readAsDataURL(file); });
           uploadLabel.appendChild(upload); links.appendChild(uploadLabel);
         }
         controls.drawerBody.appendChild(links);
       }
       function openDrawer(paper, opener, options) {
-        actionController.close(); var session = drawerSessions.open(paper.paper_id); drawerOpener = opener; controls.backdrop.hidden = false; controls.drawer.setAttribute('aria-hidden', 'false'); sidebar.inert = true; main.inert = true; controls.drawerBody.textContent = '正在加载详情…'; controls.drawerClose.focus();
-        actionController.loadDetail(paper.paper_id).then(function (payload) { drawerSessions.guard(session, paper.paper_id, function () { renderDrawer(paper, payload, session); if (options && options.exportAfter) exportPaperAssets(paper.paper_id, session); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.textContent = '详情加载失败：' + error.message; }); });
+        lifecycle.closeDrawerScope(); var session = drawerSessions.open(paper.paper_id); drawerOpener = opener; controls.backdrop.hidden = false; controls.drawer.setAttribute('aria-hidden', 'false'); sidebar.inert = true; main.inert = true; controls.drawerBody.textContent = '正在加载详情…'; controls.drawerClose.focus();
+        drawerActions.loadDetail(paper.paper_id).then(function (payload) { drawerSessions.guard(session, paper.paper_id, function () { renderDrawer(paper, payload, session); if (options && options.exportAfter) exportPaperAssets(paper.paper_id, session); }); }).catch(function (error) { drawerSessions.guard(session, paper.paper_id, function () { if (error.name !== 'AbortError') controls.drawerBody.textContent = '详情加载失败：' + error.message; }); });
       }
       function patchPaper(paperId, patch) {
         state.items = state.items.map(function (paper) { return paper.paper_id === paperId ? Object.assign({}, paper, patch) : paper; }); renderNavigationTable();
@@ -306,7 +312,7 @@ window.__ModuleLoader__.load({
       }
       function showExportError(paperId, message, session) { if (drawerSessions.isCurrent(session, paperId)) controls.drawerBody.appendChild(el('p', 'sr-error-note', message === '尚未整理' ? '资产尚未整理' : '资产整理失败：' + message)); }
       function exportPaperAssets(paperId, session) {
-        actionController.exportAssets(paperId, session).catch(function (error) { if (error.name !== 'AbortError') showExportError(paperId, error.message, session); });
+        drawerActions.exportAssets(paperId, session).catch(function (error) { if (error.name !== 'AbortError') showExportError(paperId, error.message, session); });
       }
 
       function tableMessage(text, cls, retry) {
@@ -340,11 +346,11 @@ window.__ModuleLoader__.load({
           var entries = el('td', 'sr-entries'); var model = paperEntryModel(paper, isSafeHttpUrl);
           entries.appendChild(entryButton(model.quick, function () { openDrawer(paper, title); }));
           if (model.reader.href) entries.appendChild(entryLink(model.reader.label, model.reader.href + encodeURIComponent(paper.paper_id)));
-          else entries.appendChild(entryButton(model.reader, function () { runUiAction(actionController.startFullRead(paper.paper_id), '开始精读', paper.paper_id); }));
+          else entries.appendChild(entryButton(model.reader, function () { runUiAction(rowActions.startFullRead(paper.paper_id), '开始精读', paper.paper_id); }));
           entries.appendChild(model.pdf.href ? entryLink('PDF', model.pdf.href + encodeURIComponent(paper.paper_id) + '/pdf') : entryButton(model.pdf));
           entries.appendChild(model.feishu.href ? entryLink(model.feishu.label, model.feishu.href, true) : entryButton(model.feishu));
           var more = document.createElement('details'); var summary = el('summary', '', '更多'); more.appendChild(summary);
-          if (paper.last_error) more.appendChild(btn('重试失败任务', function () { runUiAction(actionController.startFullRead(paper.paper_id), '重试', paper.paper_id); }, 'sr-menu-action'));
+          if (paper.last_error) more.appendChild(btn('重试失败任务', function () { runUiAction(rowActions.startFullRead(paper.paper_id), '重试', paper.paper_id); }, 'sr-menu-action'));
           var exportButton = btn('整理文章图表', function () { openDrawer(paper, exportButton, { exportAfter: true }); }, 'sr-menu-action'); more.appendChild(exportButton);
           entries.appendChild(more); tr.appendChild(entries);
           controls.tableBody.appendChild(tr);
@@ -394,7 +400,9 @@ window.__ModuleLoader__.load({
       }
 
       var queryStore = createQueryStore(loadLibrary);
-      var actionController = createPaperActionController({ api: api, onPatch: patchPaper, onRefresh: refreshPaper, onAssets: showExportAssets, onAssetsError: showExportError });
+      var drawerActions = createPaperActionController({ api: api, onPatch: patchPaper, onRefresh: refreshPaper, onAssets: showExportAssets, onAssetsError: showExportError });
+      var rowActions = createPaperActionController({ api: api, onPatch: patchPaper, onRefresh: refreshPaper });
+      var lifecycle = createLiteratureLifecycle(drawerSessions, drawerActions, rowActions);
       controls.navigation = [];
       var root = el('div', 'sr-root');
       root.style.cssText = '--sr-bg:#f6f3ec;--sr-surface:#fffdf8;--sr-text:#20332f;--sr-muted:#6e7974;--sr-line:#d9ddd6;--sr-accent:#315f70;--sr-highlight-yellow:#ffd84d;--sr-highlight-blue:#3aa7ff;--sr-sidebar-width:240px;--sr-sidebar-width-collapsed:56px';
@@ -462,10 +470,10 @@ window.__ModuleLoader__.load({
       return {
         root: root,
         dispose: function () {
+          lifecycle.dispose();
           clearTimeout(searchTimer);
           clearTimeout(tagTimer);
           if (request) request.abort();
-          actionController.dispose();
           document.removeEventListener('keydown', onKeydown);
           disposed = true;
           requestSequence += 1;
