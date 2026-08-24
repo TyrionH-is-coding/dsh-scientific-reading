@@ -419,7 +419,7 @@ npm run verify:restart-recovery
 git diff --check
 ```
 
-- [ ] **Step 4: 更新中文 README 与执行记录**
+- [x] **Step 4: 更新中文 README 与执行记录**
 
 README 只描述真实完成的两段式流程、启动、数据目录、飞书/XLSX所有权、资产导出、失败恢复和限制。
 总索引追加 commit/测试结果，不记录凭证和真实用户数据。

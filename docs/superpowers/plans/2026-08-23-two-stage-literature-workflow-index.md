@@ -58,24 +58,24 @@
 
 ## 2. 分支与工作区规则
 
-- [ ] 先在两个仓库分别运行 `git status --short`，记录基线 commit 和已有用户改动。
-- [ ] 使用 `superpowers:using-git-worktrees` 为每个阶段建立隔离 worktree；不要直接在当前 `main` 开发。
-- [ ] 不触碰当前 `http://127.0.0.1:3080/` 的已安装插件，直到三个阶段的隔离验收全部通过。
-- [ ] 跨仓库测试时通过 `PYTHONPATH=<引擎 worktree>\src` 指向待测引擎，不覆盖用户现有虚拟环境里的稳定安装。
-- [ ] 每个任务先写失败测试，再写最小实现；按计划给出的中文 commit message 小步提交。
-- [ ] 阶段完成后独立复核 `git diff --check`、目标测试和全量测试。
+- [x] 先在两个仓库分别运行 `git status --short`，记录基线 commit 和已有用户改动。
+- [x] 使用 `superpowers:using-git-worktrees` 为每个阶段建立隔离 worktree；不要直接在当前 `main` 开发。
+- [x] 不触碰当前 `http://127.0.0.1:3080/` 的已安装插件，直到三个阶段的隔离验收全部通过。
+- [x] 跨仓库测试时通过 `PYTHONPATH=<引擎 worktree>\src` 指向待测引擎，不覆盖用户现有虚拟环境里的稳定安装。
+- [x] 每个任务先写失败测试，再写最小实现；按计划给出的中文 commit message 小步提交。
+- [x] 阶段完成后独立复核 `git diff --check`、目标测试和全量测试。
 - [ ] 最终验收通过后，分别本地合并回两个仓库的 `main`，在 `main` 重跑全量测试，再清理临时 worktree/分支。
-- [ ] 未经用户本轮另行要求，不 push GitHub。
+- [x] 未经用户本轮另行要求，不 push GitHub。
 
 ## 3. 永久安全约束
 
 ### 飞书
 
-- [ ] 所有自动化测试启动前显式删除子进程中的 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`。
-- [ ] 测试只使用 fake client 和仓库外临时配置；不得对真实飞书执行 create/update/search。
-- [ ] 首次识别到有效配置时不得扫描并同步历史库；仅新建/发生系统字段变化的记录自动排队。
-- [ ] `personal_thoughts`、`understanding_level`、`user_notes` 等用户字段永不进入更新 payload。
-- [ ] App Secret 不得写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应。
+- [x] 所有自动化测试启动前显式删除子进程中的 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`。
+- [x] 测试只使用 fake client 和仓库外临时配置；不得对真实飞书执行 create/update/search。
+- [x] 首次识别到有效配置时不得扫描并同步历史库；仅新建/发生系统字段变化的记录自动排队。
+- [x] `personal_thoughts`、`understanding_level`、`user_notes` 等用户字段永不进入更新 payload。
+- [x] App Secret 不得写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应。
 
 PowerShell 测试前置命令：
 
@@ -88,11 +88,11 @@ $env:PYTHONIOENCODING = 'utf-8'
 
 ### 用户数据与资产
 
-- [ ] 所有开发测试使用 `$env:TEMP\sr-two-stage-*` 数据根。
-- [ ] schema 迁移前用 SQLite backup API 创建可读备份；不通过复制正在使用的 WAL 数据库冒充备份。
-- [ ] 不删除或重命名已有 PDF、MinerU、旧浅读和 HTML；新索引只引用现有路径。
-- [ ] 无效 PDF 不得覆盖已校验原件；新 PDF 哈希改变时旧 HTML 标为 stale。
-- [ ] 测试样本使用虚构工科题录与本地小 PDF，不使用医学文献，不调用机构认证。
+- [x] 所有开发测试使用 `$env:TEMP\sr-two-stage-*` 数据根。
+- [x] schema 迁移前用 SQLite backup API 创建可读备份；不通过复制正在使用的 WAL 数据库冒充备份。
+- [x] 不删除或重命名已有 PDF、MinerU、旧浅读和 HTML；新索引只引用现有路径。
+- [x] 无效 PDF 不得覆盖已校验原件；新 PDF 哈希改变时旧 HTML 标为 stale。
+- [x] 测试样本使用虚构工科题录与本地小 PDF，不使用医学文献，不调用机构认证。
 
 ## 4. 跨阶段稳定契约
 
@@ -130,28 +130,28 @@ $env:PYTHONIOENCODING = 'utf-8'
 
 ### Phase 1：主库与轻量入库
 
-- [ ] DOI 骨架记录在隔离环境 3–5 秒内可查询，Abstract/XLSX/飞书在后台。
-- [ ] schema v1 数据可备份并迁移，现有路径与旧文件不变。
-- [ ] 文件夹单归属、标签多归属、分页搜索和批量归类撤销通过。
-- [ ] 新浅读不依赖 PDF/MinerU；无 Abstract 时明确 `missing`，不生成内容。
-- [ ] XLSX 锁定不回滚入库；释放后可重试。
-- [ ] 飞书自动启用、系统字段白名单、首次不回填历史记录均由 fake client 验证。
+- [x] DOI 骨架记录在隔离环境 3–5 秒内可查询，Abstract/XLSX/飞书在后台。
+- [x] schema v1 数据可备份并迁移，现有路径与旧文件不变。
+- [x] 文件夹单归属、标签多归属、分页搜索和批量归类撤销通过。
+- [x] 新浅读不依赖 PDF/MinerU；无 Abstract 时明确 `missing`，不生成内容。
+- [x] XLSX 锁定不回滚入库；释放后可重试。
+- [x] 飞书自动启用、系统字段白名单、首次不回填历史记录均由 fake client 验证。
 
 ### Phase 2：精读与资产
 
-- [ ] 一个父任务串联 PDF、校验、解析、逐块翻译、渲染，并可重启恢复。
-- [ ] 自动下载失败只把单篇置为【需要用户处理】。
-- [ ] HTML 与 PDF SHA 有可读 manifest 关系；PDF 改变会使 HTML stale。
-- [ ] Figure/Table 导出命名、caption、SHA、页码和可选 CSV 合同通过。
-- [ ] 不选择关键图，不用 AI 猜表格单元格。
+- [x] 一个父任务串联 PDF、校验、解析、逐块翻译、渲染，并可重启恢复。
+- [x] 自动下载失败只把单篇置为【需要用户处理】。
+- [x] HTML 与 PDF SHA 有可读 manifest 关系；PDF 改变会使 HTML stale。
+- [x] Figure/Table 导出命名、caption、SHA、页码和可选 CSV 合同通过。
+- [x] 不选择关键图，不用 AI 猜表格单元格。
 
 ### Phase 3：导航、批量与实机
 
-- [ ] 可收起文件夹树、宽列表、临时 Abstract 抽屉和快捷入口完成。
-- [ ] 【全部文献】【待归类】命名准确；标签与最近入库是筛选而非文件夹。
-- [ ] 批量内部按 100 分块，重任务串行，单篇失败不终止批次。
-- [ ] 旧资产/旧浅读仍可访问，Zotero UI/工具消失。
-- [ ] 隔离 Profile 的 tarball 安装、HTTP、浏览器布局和关闭清理通过。
+- [x] 可收起文件夹树、宽列表、临时 Abstract 抽屉和快捷入口完成。
+- [x] 【全部文献】【待归类】命名准确；标签与最近入库是筛选而非文件夹。
+- [x] 批量内部按 100 分块，重任务串行，单篇失败不终止批次。
+- [x] 旧资产/旧浅读仍可访问，Zotero UI/工具消失。
+- [x] 隔离 Profile 的 tarball 安装、HTTP、浏览器布局和关闭清理通过。
 
 ## 6. 全量验证命令
 
@@ -194,3 +194,11 @@ npm run verify:restart-recovery
 ## 8. 执行记录
 
 实现 agent 在这里追加每阶段的分支名、基线 commit、完成 commit、验证命令和结果摘要。不要记录密钥、Cookie、验证码或真实个人数据。
+
+### 三阶段隔离验收摘要（2026-08-25）
+
+- 两仓库均在 `feature/two-stage-workflow` 隔离 worktree 开发。Phase 1 基线为引擎 `c4700538`、插件 `aa6aed95`；Task 7 Step 4 更新前 HEAD 为引擎 `1621276`、插件 `edfeda4`。
+- Phase 1/2/3 计划中的产品任务与安全门已完成；最后一次引擎 worktree 全量为 `805 passed, 3 skipped`。插件 `build:ci`、`typecheck`、完整离线门禁、真实 Bundle/Profile verifier、导航 runtime 与 restart recovery 均已通过。
+- 隔离实机使用真实 DSH `0.1.0-rc.7` tarball、临时 `web` Profile、独立 3180 端口和 60 篇虚构工科题录；HTTP 读回覆盖分页、搜索、待归类、文件夹、Abstract、批量 parent、正式 generation reader/PDF 和 PNG/CSV exports。
+- 浏览器在 1440×900、1280×720、900×720 完成布局与交互 QA；关闭后验证宿主停止、端口释放、worker 无残留、临时根可清理。Windows 子进程无可见终端窗口。
+- 当前 persistent Profile/3080 尚未更新；两仓库尚未本地合并回 `main`。未执行真实飞书写入、机构认证、真实论文导入或 GitHub push。Task 7 Step 5–7 保持未完成，等待最终复核后的依赖顺序执行。
