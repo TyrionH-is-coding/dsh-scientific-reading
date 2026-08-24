@@ -35,7 +35,7 @@
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_library_migration_v2.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_library_service.py`
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 在测试中手工建立当前 v1 schema 和一个既有条目，外加 PDF/HTML/旧浅读路径。覆盖：
 
@@ -56,7 +56,7 @@ $env:PYTHONPATH = "$PWD\src"
 
 预期：因 `scientific_reading.library_schema` 不存在而失败。
 
-- [ ] **Step 2: 实现最小 schema v2**
+- [x] **Step 2: 实现最小 schema v2**
 
 `library_schema.py` 暴露：
 
@@ -88,12 +88,12 @@ def migrate_library(data_root: Path) -> MigrationResult: ...
 - 保留旧 `collections`/`collection_items` 表供只读审计，本阶段不删除。
 - 任一步失败：关闭连接、用已验证 backup 恢复，再抛出原错误；不删除 papers 目录。
 
-- [ ] **Step 3: 在 `LibraryService` 打开数据库前执行迁移**
+- [x] **Step 3: 在 `LibraryService` 打开数据库前执行迁移**
 
 `LibraryService.__init__` 先调用 `migrate_library(data_root)`，再连接并启用外键。重复打开 v2
 不得再次备份或执行 `ALTER TABLE`。
 
-- [ ] **Step 4: 运行测试并提交**
+- [x] **Step 4: 运行测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_library_migration_v2.py tests/test_library_service.py -q
@@ -114,7 +114,7 @@ git commit -m "主库：加入可恢复的SQLite v2迁移"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_identifiers.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_benchmark_fast_path.py`
 
-- [ ] **Step 1: 写身份与性能失败测试**
+- [x] **Step 1: 写身份与性能失败测试**
 
 覆盖：
 
@@ -129,7 +129,7 @@ def test_local_ingest_returns_under_five_seconds(...): ...
 
 基准测试必须通过 spy 证明返回前没有调用 provider、XLSX 或飞书，而不只测墙钟时间。
 
-- [ ] **Step 2: 扩展元数据契约**
+- [x] **Step 2: 扩展元数据契约**
 
 `PaperMetadata` 新增向后兼容字段：
 
@@ -144,7 +144,7 @@ zotero_key: str | None = None  # 仅用于读取旧 metadata.json
 `from_dict()` 使用 `library_key or zotero_key` 恢复旧数据；`to_dict()` 对新记录只写
 `library_key`，只有输入本身含旧值且处于迁移读回时才保留 `legacy_zotero_key` 审计信息。
 
-- [ ] **Step 3: 实现 `LibraryService.ingest()`**
+- [x] **Step 3: 实现 `LibraryService.ingest()`**
 
 接口：
 
@@ -170,12 +170,12 @@ def ingest(self, metadata: PaperMetadata) -> dict[str, Any]:
 只有 DOI 的骨架记录允许题名暂空；列表显示时由调用方回退为 DOI，并标记“补齐题录中”。
 不得把 DOI 字符串永久写成伪题名。
 
-- [ ] **Step 4: CLI 增加 `library-ingest`，保留旧 `library-ensure` 兼容入口**
+- [x] **Step 4: CLI 增加 `library-ingest`，保留旧 `library-ensure` 兼容入口**
 
 `library-ingest` 接受 metadata JSON 文件或 stdin，stdout 只输出一个 JSON。旧
 `library-ensure` 转调新服务并输出 deprecation 字段，不再写 `metadata.zotero_key`。
 
-- [ ] **Step 5: 运行测试并提交**
+- [x] **Step 5: 运行测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_library_ingest_v2.py tests/test_identifiers.py tests/test_benchmark_fast_path.py tests/test_cli.py -q
@@ -194,7 +194,7 @@ git commit -m "入库：先提交本地主库骨架记录"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\src\scientific_reading\__main__.py`
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_cli_library_navigation.py`
 
-- [ ] **Step 1: 写领域失败测试**
+- [x] **Step 1: 写领域失败测试**
 
 覆盖：主文件夹单归属、标签多归属、`folder_id=None` 对应待归类、全文搜索、稳定排序、分页、
 低置信度不移动、默认不得创建新文件夹、100 条分块和一次完整撤销。
@@ -214,7 +214,7 @@ service.list_items(
 # -> {"items": [...], "page": 1, "page_size": 50, "total": 1}
 ```
 
-- [ ] **Step 2: 实现最小文件夹/标签 API**
+- [x] **Step 2: 实现最小文件夹/标签 API**
 
 `LibraryService` 增加：
 
@@ -230,7 +230,7 @@ list_items(...) -> dict
 
 删除文件夹不在本阶段 UI 范围；若为测试提供底层删除，只能把条目置为待归类，不删条目/资产。
 
-- [ ] **Step 3: 实现确定性归类应用器和撤销**
+- [x] **Step 3: 实现确定性归类应用器和撤销**
 
 AI 只提交提案，服务只校验并应用：
 
@@ -254,7 +254,7 @@ ClassificationService.undo(operation_id: str) -> BatchOperationResult
 低于阈值或文件夹不存在时保持原值，并在结果列出 `skipped`；撤销使用数据库中保存的
 before/after JSON，在一个事务中还原整个 operation。一个内部 chunk 最多 100，父调用汇总。
 
-- [ ] **Step 4: 加入 CLI 并验证**
+- [x] **Step 4: 加入 CLI 并验证**
 
 增加 `library-list-v2`、`folder-list/create/rename`、`classification-apply/undo`。所有批量输入
 使用 JSON 文件/stdin，避免 PowerShell 转义中文路径和大 payload。
@@ -279,7 +279,7 @@ git commit -m "主库：加入文件夹标签与可撤销归类"
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_worker_abstract_read.py`
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_cli_abstract_read.py`
 
-- [ ] **Step 1: 写 provider 与翻译契约失败测试**
+- [x] **Step 1: 写 provider 与翻译契约失败测试**
 
 使用虚构工科题录和固定 Abstract，覆盖 DOI/PMID/arXiv provider 注入、超时、HTML 清理、
 Abstract 缺失、段落一一对应、源摘要哈希改变导致旧译文 stale、worker agent gate 与恢复。
@@ -296,7 +296,7 @@ Abstract 缺失、段落一一对应、源摘要哈希改变导致旧译文 stal
 }
 ```
 
-- [ ] **Step 2: 实现确定性题录 provider**
+- [x] **Step 2: 实现确定性题录 provider**
 
 定义可注入协议，不允许服务内部硬编码测试网络：
 
@@ -309,7 +309,7 @@ class MetadataProvider(Protocol):
 `urllib.request`、5 秒超时、明确 User-Agent。只取题录/Abstract，绝不下载 PDF。失败返回结构化
 错误并留待重试；只有题名时不搜索。
 
-- [ ] **Step 3: 实现 `AbstractReadService`**
+- [x] **Step 3: 实现 `AbstractReadService`**
 
 - 英文原文按空行和 HTML 段落规范化，保留顺序；不对内容做总结。
 - 无 Abstract：`abstract_status=missing`，不触发翻译 gate，不创建伪文本。
@@ -318,12 +318,12 @@ class MetadataProvider(Protocol):
   `papers/<paper_id>/reading/abstract_read.json` 并更新 SQLite。
 - 旧 `quick_read.json/md` 不修改、不覆盖；新入口只读 `abstract_read.json`。
 
-- [ ] **Step 4: 注册 `metadata_enrichment` 与 `abstract_read` worker/CLI**
+- [x] **Step 4: 注册 `metadata_enrichment` 与 `abstract_read` worker/CLI**
 
 重复提交返回现有完成结果；宿主重启后从已写入英文 Abstract 或已完成段落继续。不要让新
 handler 调用 `QuickReadService` 或要求 MinerU。
 
-- [ ] **Step 5: 运行测试并提交**
+- [x] **Step 5: 运行测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_metadata_enrichment.py tests/test_abstract_read.py tests/test_worker_abstract_read.py tests/test_cli_abstract_read.py -q
@@ -341,12 +341,12 @@ git commit -m "浅读：改为Abstract逐段英中对照"
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_xlsx_snapshot.py`
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_cli_xlsx.py`
 
-- [ ] **Step 1: 先写快照失败测试**
+- [x] **Step 1: 先写快照失败测试**
 
 覆盖列顺序、全部页数据、中文 UTF-8、只读说明 sheet、临时文件原子替换、`os.replace`
 抛 `PermissionError` 时保留旧文件并把 SQLite 标记 `pending`、释放后重试成功。
 
-- [ ] **Step 2: 添加最小依赖**
+- [x] **Step 2: 添加最小依赖**
 
 在 runtime dependencies 加：
 
@@ -356,7 +356,7 @@ git commit -m "浅读：改为Abstract逐段英中对照"
 
 不要引入 pandas。
 
-- [ ] **Step 3: 实现 `XlsxSnapshotService`**
+- [x] **Step 3: 实现 `XlsxSnapshotService`**
 
 输出固定为 `<data_root>/library/scientific-reading.xlsx`。系统字段列顺序：文献名、作者、主要
 研究单位、年份、期刊、影响因子、学科领域、主要内容、解决方法、实验假设、创新、不足之处、
@@ -369,7 +369,7 @@ sheet 为“文献”，第二个为“说明”，明确“只读派生快照�
 流程：查询 SQLite → 写同目录临时 `.xlsx` → `fsync` → `os.replace`。被占用时更新
 `library_meta.xlsx_pending=1` 和错误码，不抛到入库调用方。
 
-- [ ] **Step 4: 增加 `xlsx-refresh` CLI 并验证**
+- [x] **Step 4: 增加 `xlsx-refresh` CLI 并验证**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_xlsx_snapshot.py tests/test_cli_xlsx.py -q
@@ -392,7 +392,7 @@ git commit -m "快照：从SQLite原子生成只读XLSX"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_worker_feishu.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_cli_feishu_sync.py`
 
-- [ ] **Step 1: 清空真实凭证并写失败测试**
+- [x] **Step 1: 清空真实凭证并写失败测试**
 
 每个测试用 `monkeypatch.delenv` 清空两项凭证。fake client 记录调用但不联网。覆盖：
 
@@ -408,7 +408,7 @@ def test_sync_failure_leaves_local_item_complete_and_pending(...): ...
 def test_secret_is_absent_from_logs_jobs_database_and_result(...): ...
 ```
 
-- [ ] **Step 2: 固定字段所有权白名单**
+- [x] **Step 2: 固定字段所有权白名单**
 
 在 `feishu_models.py` 定义显式集合：
 
@@ -426,7 +426,7 @@ builder 只能遍历 `SYSTEM_MANAGED_FIELDS & config.field_map.keys()`；即使�
 新 Abstract 字段取 `abstract_read.json`/SQLite；旧九节式 `quick_read` 和 `key_figures` 不再写入
 新自动同步 payload。精读字段只有 `full_read_status=completed` 后才构建。
 
-- [ ] **Step 3: 实现启用策略与调度**
+- [x] **Step 3: 实现启用策略与调度**
 
 `derived_updates.py` 暴露：
 
@@ -445,12 +445,12 @@ system change 标为 pending。显式“同步所选/全部待同步”才扫描
 worker 不再要求逐篇 UI `confirm=true`；自动请求必须带引擎内部生成的
 `write_mode="configured_auto"` 和 activation revision。任意外部裸请求仍拒绝，防止绕过启用策略。
 
-- [ ] **Step 4: 保存同步结果而不污染本地主状态**
+- [x] **Step 4: 保存同步结果而不污染本地主状态**
 
 成功后写 `feishu_record_id`、可用 record URL、`feishu_sync_state=synced`；失败写 pending/error。
 不得修改 `full_read_status` 或本地完成状态。
 
-- [ ] **Step 5: 运行测试并提交**
+- [x] **Step 5: 运行测试并提交**
 
 ```powershell
 Remove-Item Env:FEISHU_APP_ID -ErrorAction SilentlyContinue
@@ -474,7 +474,7 @@ git commit -m "飞书：按环境配置自动同步系统字段"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\feishu-env-only.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\package.json`
 
-- [ ] **Step 1: 写插件失败合同**
+- [x] **Step 1: 写插件失败合同**
 
 用 fake engine executable 验证：
 
@@ -496,7 +496,7 @@ node tests/library-navigation-api.mjs
 
 预期：新工具/路由尚不存在而失败。
 
-- [ ] **Step 2: 实现最小 CLI 适配**
+- [x] **Step 2: 实现最小 CLI 适配**
 
 复用现有 Python 启动与 JSON 解析，不建立第二套 domain model。新增：
 
@@ -507,7 +507,7 @@ engineStartDetached(config, args, input?)
 
 stdin 用临时 UTF-8 JSON 文件或流，结束后清理；日志不得输出环境变量值。
 
-- [ ] **Step 3: 注册新工具**
+- [x] **Step 3: 注册新工具**
 
 普通 agent 工具：`sr_ingest`、`sr_library_list`、`sr_folder_manage`、
 `sr_classification_apply`、`sr_classification_undo`、`sr_feishu_resync`、`sr_job_status`。
@@ -515,17 +515,17 @@ stdin 用临时 UTF-8 JSON 文件或流，结束后清理；日志不得输出�
 保留旧底层工具供 Phase 2/迁移测试，但在 description 标为 legacy/internal，不让新 UI 调用。
 `sr_feishu_preview` 和逐篇 confirm 不进入新流程。
 
-- [ ] **Step 4: 实现轻量 JSON API**
+- [x] **Step 4: 实现轻量 JSON API**
 
 路由只做 method/body/path 校验和 engine 转发。写操作限制 JSON body 大小；批量最多接受一个
 用户父请求，引擎负责拆成 100。任何错误用稳定 `{error, detail?}`，不返回堆栈或 secret。
 
-- [ ] **Step 5: 把派生任务放到响应之后**
+- [x] **Step 5: 把派生任务放到响应之后**
 
 `sr_ingest`/POST route 先发送本地 ingest 结果，再排 metadata/abstract/XLSX；飞书先 probe。派生
 启动失败写日志/SQLite pending，但已经发送的本地成功不变。不得用 `await` 等待网络任务。
 
-- [ ] **Step 6: 运行插件测试并提交**
+- [x] **Step 6: 运行插件测试并提交**
 
 ```powershell
 npm run typecheck
@@ -548,23 +548,23 @@ git commit -m "插件：接入快速入库与轻量主库接口"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\README.md`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\README.md`
 
-- [ ] **Step 1: 写离线端到端 verifier**
+- [x] **Step 1: 写离线端到端 verifier**
 
 使用临时 data root、虚构论文《A Deterministic Scheduling Method for Small Workshops》、固定 Abstract、
 fake translation 和 fake Feishu。顺序验证：骨架出现 → 后台题录/Abstract → XLSX → fake 飞书 →
 移动文件夹/标签 → 批量撤销。输出一行 JSON 总结，并在 `finally` 清理临时进程/目录。
 
-- [ ] **Step 2: 验证飞书和当前 Profile 未被触碰**
+- [x] **Step 2: 验证飞书和当前 Profile 未被触碰**
 
 verifier 强制清空凭证并拒绝非 localhost/fake base URL。执行前后记录当前 Profile 插件 tarball SHA
 和 3080 健康状态；两者应不变。
 
-- [ ] **Step 3: 更新中文 README**
+- [x] **Step 3: 更新中文 README**
 
 只写已完成能力、运行方式、数据所有权和本阶段限制；不要把 Phase 2/3 写成已完成。明确 XLSX
 只读、飞书个人字段不回写、Zotero 新流程已停用。
 
-- [ ] **Step 4: 全量验证**
+- [x] **Step 4: 全量验证**
 
 引擎：
 
@@ -585,7 +585,7 @@ git diff --check
 
 预期：引擎全量无失败；插件全量无失败；没有真实网络写入；当前 3080 与安装包 SHA 不变。
 
-- [ ] **Step 5: 提交文档和 verifier**
+- [x] **Step 5: 提交文档和 verifier**
 
 ```powershell
 git add README.md scripts/verify_two_stage_foundation.py tests/foundation-integration.mjs package.json
@@ -607,3 +607,12 @@ git commit -m "验收：补全两段式入库离线验证"
 - 迁移备份读回：沿用 Phase 1 迁移测试结果；本 Task 未改迁移实现，未重复制造备份。
 - Profile/3080：verifier 前后均显式 `skipped`（未提供 tarball/健康探针），不注入、不重启、不写持久 Profile/3080；SHA/健康未伪称已验证。
 - 已知限制：离线 fake Feishu 只验证 payload、调用和读回，不代表真实飞书写入；全文获取、MinerU、全文翻译、精读 HTML 和机构认证仍留待后续阶段。未写入真实飞书 ID、个人文献或凭证。
+
+### Phase 1 最终执行记录（2026-08-24）
+
+- 完成提交：引擎 `edde59451e4ba600f044e10c77cedeed6cf2a0e7`；插件 `71eecaf40b94c17f798e37ef851d2ab7297038de`。本记录只更新计划勾选与验收证据，不改产品代码。
+- 最终验证：引擎全量测试 `566 passed, 1 skipped`；插件 `build:ci`、`typecheck`、`test:offline`、`test:foundation` 与 restart recovery 均通过。
+- 隔离边界：未提供 persistent Profile tarball SHA 或 3080 健康探针，因此两者记为“未验证且未触碰”，不把缺少探针伪写成“不变验证通过”。
+- 外部操作：未执行真实飞书 create/update/search，未触发机构认证，也未进行额外联网；飞书验证只使用已清空真实凭证后的 fake client。
+- Windows 判活事故：早期实现使用 `os.kill(pid, 0)` 探测 PID；该调用在 Windows 会终止目标进程，导致测试进程被误杀。现已改为 Win32 `OpenProcess`、`GetExitCodeProcess`、`CloseHandle` 的只读探测，并通过 restart recovery 验证。
+- 派生状态竞态：修复子任务完成后父任务错误地保留或覆盖 `last_error` 的竞态；现在 child job 状态与 `last_error` 持久化一致，失败/恢复均可从主库读取。
