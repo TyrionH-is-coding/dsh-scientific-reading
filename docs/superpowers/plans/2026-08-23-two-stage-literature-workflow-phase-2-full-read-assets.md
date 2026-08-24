@@ -320,13 +320,13 @@ git commit -m "资产：按原顺序导出全文图表包"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\harness.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\package.json`
 
-- [ ] **Step 1: 写插件失败合同**
+- [x] **Step 1: 写插件失败合同**
 
 验证：`sr_start_full_read` 只返回 parent job；重复调用同 job；scansci wrapper 仅由插件配置注入；
 provider 失败映射两种用户选项；本地 PDF 恢复；`sr_continue_full_read` 只接受当前 gate 合同；
 `sr_export_assets` 和 `/sr/api/paper/<id>/exports`；读取 reader 新路径并回退旧路径。
 
-- [ ] **Step 2: 收敛工具**
+- [x] **Step 2: 收敛工具**
 
 新增普通工具：
 
@@ -341,18 +341,18 @@ sr_job_status
 旧 `sr_parse`、`sr_quick_read`、`sr_full_read` 保留为 internal/legacy 到 Phase 3，但新 agent 提示和 UI
 不得调用它们。所有输入经过 paper/job ID 校验。
 
-- [ ] **Step 3: 把 scansci 包装为受信任 provider**
+- [x] **Step 3: 把 scansci 包装为受信任 provider**
 
 wrapper 接收结构化 JSON（稳定标识、目标 staging path、legal_only=true），stdout 仅 JSON。插件从自身
 已打包路径解析 wrapper，不接受浏览器/用户传入可执行路径。下载结果仍由 Python 引擎做 `%PDF`、
 页数和 SHA 二次验证。
 
-- [ ] **Step 4: 路由与错误映射**
+- [x] **Step 4: 路由与错误映射**
 
 新增 POST start/continue/attach/export，GET job/reader/assets。机构浏览器入口只在 parent
 `needs_user` 时显示；点击后复用现有 Chrome 授权下载流程，逐篇执行，插件不读取浏览器秘密。
 
-- [ ] **Step 5: 测试并提交**
+- [x] **Step 5: 测试并提交**
 
 ```powershell
 npm run typecheck
@@ -469,3 +469,13 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
   CSV 只接受显式可靠、路径受限且 SHA 匹配的 CSV/结构化 JSON，不从 HTML、截图或 AI 推断单元格。
 - staging 在完整读回 PNG、CSV、路径与 SHA 后原子发布；验证或发布失败保留旧 exports，重复导出
   字节幂等。执行期间未联网、未写飞书、未触碰当前 3080，也未进入 reader v2.1。
+
+### Task 6 执行记录
+
+- 插件提交链：`220284e`、`e68a7c8`、`e6c3d29`；引擎提交链：`16577ca`、`9fabc55`、
+  `fc52fab`、`587c6b0`、`05ab2ce`。
+- 最终审查：`APPROVED`。
+- 引擎全量测试：`729 passed, 1 skipped`；根级聚焦测试：`49 passed`；最终质量聚焦测试：
+  `75 passed`。
+- 插件 `build:ci`、`typecheck`、离线测试、动态路由测试与 wrapper 编译均为 `PASS`。
+- 本任务未涉及 HTML v2.1，未触碰当前 3080，也未推送远端。
