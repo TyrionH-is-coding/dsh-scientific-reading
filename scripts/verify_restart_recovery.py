@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import signal
@@ -15,6 +16,61 @@ from pathlib import Path
 PROBE_DOI = "10.5555/restart-recovery-probe"
 EXPECTED_LIBRARY_STATUS = "restart_probe_ready"
 TIMEOUT_SECONDS = 15.0
+
+
+def process_is_alive(pid: int) -> bool:
+    """只读探测进程；Windows 上不能使用会终止目标的 os.kill(pid, 0)。"""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+        except (OSError, OverflowError):
+            return False
+        return True
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    open_process.restype = ctypes.c_void_p
+    get_exit_code = kernel32.GetExitCodeProcess
+    get_exit_code.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    get_exit_code.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+
+    handle = open_process(0x1000, False, pid)
+    if not handle:
+        return False
+    try:
+        exit_code = ctypes.c_ulong()
+        return bool(get_exit_code(handle, ctypes.byref(exit_code))) and exit_code.value == 259
+    finally:
+        close_handle(handle)
+
+
+def terminate_process(pid: int) -> None:
+    if os.name != "nt":
+        os.kill(pid, signal.SIGTERM)
+        return
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    open_process.restype = ctypes.c_void_p
+    terminate = kernel32.TerminateProcess
+    terminate.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    terminate.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+
+    handle = open_process(0x0001, False, pid)
+    if not handle:
+        return
+    try:
+        terminate(handle, 1)
+    finally:
+        close_handle(handle)
 
 
 def resolve_python(explicit: str | None) -> Path:
@@ -219,18 +275,10 @@ def terminate_test_worker(data_root: Path, job_id: str) -> str:
         and pid > 0
         and worker_command_matches(pid, job_id, data_root)
     ):
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            pass
-        else:
-            os.kill(pid, signal.SIGTERM)
+        if process_is_alive(pid):
+            terminate_process(pid)
             deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
+            while time.monotonic() < deadline and process_is_alive(pid):
                 time.sleep(0.05)
     log_path = data_root / "jobs" / job_id / "worker.log"
     if log_path.is_file():
