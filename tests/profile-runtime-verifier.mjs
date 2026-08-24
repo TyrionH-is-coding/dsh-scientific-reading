@@ -9,6 +9,11 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const verifierSource = readFileSync(join(root, 'scripts', 'verify-profile-runtime.mjs'), 'utf8')
 const navigationSource = readFileSync(join(root, 'scripts', 'verify_navigation_runtime.mjs'), 'utf8')
 assert.match(verifierSource, /timeout: COMMAND_TIMEOUT_MS/, '前置同步命令必须设置超时')
+assert.match(verifierSource, /function run\([^]*?spawnSync\([^]*?windowsHide: true[^]*?\n\s*\}\)/, 'Profile runtime 的同步 run 必须隐藏 Windows 子进程')
+assert.doesNotMatch(verifierSource, /fullOutputDir|reading['"`]?\s*,\s*['"`]full['"`]?\s*,\s*['"`]output|reading\/full\/output\/reader_full\.html/, '不得再构造旧 guessed reader 路径')
+for (const marker of ['generations', 'reading', 'reader.html', 'reader-manifest.json', 'paper_parse_upgrade', 'record_pdf_attachment', 'publish_reader']) {
+  assert.match(verifierSource, new RegExp(marker.replace('.', '\\.')), `正式 generation reader fixture 缺少 ${marker}`)
+}
 assert.match(verifierSource, /dsh_shutdown_failed/, '验证器必须拒绝无法确认退出的 DSH 子进程')
 assert.match(navigationSource, /npm_pack_dry_run/, '导航验收必须先执行tarball dry-run')
 assert.match(navigationSource, /SR_EXTERNAL_PROVIDER: 'fake'/, '导航验收必须强制外部provider为fake')

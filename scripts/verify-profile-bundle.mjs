@@ -18,6 +18,7 @@ function run(label, command, args, env) {
     cwd: root,
     encoding: 'utf8',
     env,
+    windowsHide: true,
   })
   if (result.error) throw new Error(`${label}_failed error=${tail(result.error.message)}`)
   if (result.status !== 0) {
