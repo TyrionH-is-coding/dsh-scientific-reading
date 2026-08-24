@@ -25,7 +25,7 @@ const MAX_BUFFER = 64 * 1024 * 1024
 export function runCommand(
   exe: string,
   args: string[],
-  opts: { timeoutMs?: number; env?: Record<string, string>; input?: string } = {},
+  opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv; input?: string } = {},
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = execFile(
@@ -342,7 +342,7 @@ export async function resolveEnginePython(config: Config): Promise<string | null
 export async function runEngine(
   config: Config,
   args: string[],
-  opts: { timeoutMs?: number; env?: Record<string, string>; input?: string } = {},
+  opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv; input?: string } = {},
 ): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
   const python = await resolveEnginePython(config)
   if (!python) {
@@ -371,7 +371,7 @@ export async function engineJson(
   config: Config,
   args: string[],
   input?: unknown,
-  env?: Record<string, string>,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json: Record<string, unknown> | null }> {
   const encoded = input === undefined ? undefined : JSON.stringify(input)
   return runEngine(config, args, {
@@ -579,28 +579,35 @@ export async function engineJobStatus(config: Config, jobId: string): Promise<{ 
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
-async function trustedProviderEnv(config: Config): Promise<Record<string, string> | null> {
+async function trustedProviderEnv(config: Config): Promise<NodeJS.ProcessEnv> {
+  const sanitized: NodeJS.ProcessEnv = { FEISHU_APP_ID: undefined, FEISHU_APP_SECRET: undefined }
   const python = await resolveScansciPython(config)
-  if (!python) return null
+  if (!python) return sanitized
   const wrapper = wrapScriptPath()
-  try { await access(wrapper) } catch { return null }
-  return { SR_SCANSCI_PROVIDER_PYTHON: python, SR_SCANSCI_PROVIDER_WRAPPER: wrapper }
+  try { await access(wrapper) } catch { return sanitized }
+  await ensureScansciConfig({ ...config, legalOnly: true })
+  return {
+    ...sanitized,
+    SR_SCANSCI_PROVIDER_PYTHON: python,
+    SR_SCANSCI_PROVIDER_WRAPPER: wrapper,
+  }
 }
 
 export async function engineStartFullRead(config: Config, paperId: string) {
   const env = await trustedProviderEnv(config)
+  const providerProfile = env.SR_SCANSCI_PROVIDER_WRAPPER ? 'scansci' : 'none'
   const r = await engineJson(
     config,
-    ['full-read-pipeline-start', '--paper-id', paperId, '--provider-profile', env ? 'scansci' : 'none'],
+    ['full-read-pipeline-start', '--paper-id', paperId, '--provider-profile', providerProfile],
     undefined,
-    env ?? undefined,
+    env,
   )
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
 export async function engineContinueFullRead(config: Config, jobId: string, suppliedInput: Record<string, unknown>) {
   const env = await trustedProviderEnv(config)
-  const r = await engineJson(config, ['full-read-pipeline-resume', '--job-id', jobId, '--input', '-'], suppliedInput, env ?? undefined)
+  const r = await engineJson(config, ['full-read-pipeline-resume', '--job-id', jobId, '--input', '-'], suppliedInput, env)
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 

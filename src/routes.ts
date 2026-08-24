@@ -13,7 +13,7 @@ declare module 'cordis' {
   }
 }
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { mkdir, writeFile, readFile, access, rename } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, access, rename, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from './config.js'
@@ -24,7 +24,6 @@ import {
   engineJobStatus,
   engineParse,
   engineQuickRead,
-  engineAttachPdf,
   engineCheckItem,
   engineInit,
   engineFullRead,
@@ -95,6 +94,16 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+async function hasSymlink(root: string, target: string): Promise<boolean> {
+  const relative = target.slice(root.length).replace(/^[\\/]+/, '').split(/[\\/]+/).filter(Boolean)
+  let current = root
+  for (const part of relative) {
+    current = join(current, part)
+    if ((await lstat(current).catch(() => null))?.isSymbolicLink()) return true
+  }
+  return false
+}
+
 /**
  * 文献页 API 路由（只读数据 + 动作触发）。动作端点复用插件同一套引擎适配器。
  * 安全：paper_id / job_id 白名单校验；只读 dataRoot 内路径。
@@ -127,6 +136,24 @@ export function registerRoutes(ctx: Context, config: Config): void {
         if (!result.ok) ctx.logger?.('sr-derived pending: enqueue_failed')
       })().catch(() => { ctx.logger?.('sr-derived pending: enqueue_failed') })
     })
+  }
+
+  const requirePdfGate = async (paperId: string, jobId: string): Promise<boolean> => {
+    if (!JOB_ID_RE.test(jobId)) return false
+    const status = await engineJobStatus(config, jobId)
+    const detail = status.json?.detail as Record<string, unknown> | undefined
+    return status.ok && status.json?.paper_id === paperId && status.json?.status === 'waiting_user' && detail?.reason_code === 'pdf_required'
+  }
+
+  const safePdfResult = (paperId: string, jobId: string, attach: Record<string, unknown>, resumed: Record<string, unknown> | null) => {
+    const detail = attach.detail as Record<string, unknown> | undefined
+    return {
+      paper_id: paperId,
+      parent_job_id: jobId,
+      status: String(resumed?.state ?? resumed?.status ?? 'queued'),
+      sha256: typeof detail?.sha256 === 'string' ? detail.sha256 : undefined,
+      page_count: typeof detail?.page_count === 'number' ? detail.page_count : undefined,
+    }
   }
 
   // ── 轻量主库 API：只校验/转发，不在插件内实现筛选或批处理 ─────────────
@@ -299,18 +326,22 @@ export function registerRoutes(ctx: Context, config: Config): void {
       if (req.method === 'POST' && action === 'download') {
         const body = await readJsonBody(req)
         const identifier = String(body.identifier ?? '').trim()
-        if (!identifier) return sendJson(res, 400, { error: 'identifier_required' })
+        const jobId = String(body.job_id ?? '')
+        if (!identifier || !await requirePdfGate(id, jobId)) return sendJson(res, 409, { error: 'pdf_gate_required' })
         const outcome = await fetchPaper(config.scansciExe, identifier, resolveOutputDir(config), config)
-        let attach = null
-        if (outcome.status === 'success' && outcome.paper?.pdf_path) {
-          attach = await engineAttachPdf(config, metaPath, outcome.paper.pdf_path)
-        }
-        sendJson(res, 200, { download: outcome, attach })
+        if (outcome.status !== 'success' || !outcome.paper?.pdf_path) return sendJson(res, 502, { error: 'pdf_download_failed', options: ['institution_browser', 'local_pdf'] })
+        const attach = await engineAttachFullReadPdf(config, id, outcome.paper.pdf_path)
+        if (!attach.ok || !attach.json) return sendJson(res, 502, { error: 'pdf_attach_failed', options: ['institution_browser', 'local_pdf'] })
+        const resumed = await engineContinueFullRead(config, jobId, { pdf_attached: true })
+        if (!resumed.ok) return sendJson(res, 502, { error: 'pdf_resume_failed', options: ['institution_browser', 'local_pdf'] })
+        sendJson(res, 200, safePdfResult(id, jobId, attach.json, resumed.json))
         return
       }
 
       if (req.method === 'POST' && action === 'attach') {
         const body = await readJsonBody(req)
+        const jobId = String(body.job_id ?? '')
+        if (!await requirePdfGate(id, jobId)) return sendJson(res, 409, { error: 'pdf_gate_required' })
         const b64 = String(body.pdf_b64 ?? '')
         if (!b64) return sendJson(res, 400, { error: 'pdf_b64_required' })
         const bytes = Buffer.from(b64, 'base64')
@@ -321,7 +352,10 @@ export function registerRoutes(ctx: Context, config: Config): void {
         await writeFile(file, bytes)
         try {
           const r = await engineAttachFullReadPdf(config, id, file)
-          sendJson(res, r.ok ? 200 : 500, r.json ?? { error: r.stderr || 'attach_failed' })
+          if (!r.ok || !r.json) return sendJson(res, 502, { error: 'pdf_attach_failed' })
+          const resumed = await engineContinueFullRead(config, jobId, { pdf_attached: true })
+          if (!resumed.ok) return sendJson(res, 502, { error: 'pdf_resume_failed' })
+          sendJson(res, 200, safePdfResult(id, jobId, r.json, resumed.json))
         } finally {
           await import('node:fs/promises').then(({ unlink }) => unlink(file).catch(() => {}))
         }
@@ -344,6 +378,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const rel = typeof r.json?.rel_path === 'string' ? r.json.rel_path : ''
         const resolved = artifactPath(root, rel, 'reader')
         if (!r.ok || !resolved) return sendJson(res, 404, { error: 'reader_not_ready' })
+        if (await hasSymlink(root, resolved)) return sendJson(res, 409, { error: 'reader_invalid' })
         const bytes = await readFile(resolved).catch(() => null)
         const artifactJson = r.json ?? {}
         const manifest = artifactJson.manifest as Record<string, unknown> | undefined
@@ -357,7 +392,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const rel = typeof r.json?.rel_path === 'string' ? r.json.rel_path : ''
         const exportsRoot = artifactPath(root, rel, 'exports')
         const manifest = r.json?.manifest
-        if (!r.ok || !exportsRoot || !manifest || typeof manifest !== 'object') return sendJson(res, 404, { error: 'assets_not_ready' })
+        if (!r.ok || !exportsRoot || await hasSymlink(root, exportsRoot) || !manifest || typeof manifest !== 'object') return sendJson(res, 404, { error: 'assets_not_ready' })
         const requested = parts.slice(2).join('/')
         if (!requested) return sendJson(res, 200, manifest)
         const rows = Array.isArray((manifest as Record<string, unknown>).assets) ? (manifest as { assets: Array<Record<string, unknown>> }).assets : []
@@ -366,7 +401,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
           { path: row.csv_path, sha: row.csv_sha256 },
         ]).find((entry) => entry.path === requested)
         if (!match || typeof match.path !== 'string' || typeof match.sha !== 'string' || !/^[0-9a-f]{64}$/.test(match.sha) || !/^(?:figures|tables)\/[A-Za-z0-9_.-]+$/.test(match.path)) return sendJson(res, 404, { error: 'asset_not_found' })
-        const bytes = await readFile(join(exportsRoot, ...match.path.split('/')))
+        const assetPath = join(exportsRoot, ...match.path.split('/'))
+        if (await hasSymlink(exportsRoot, assetPath)) return sendJson(res, 409, { error: 'asset_invalid' })
+        const bytes = await readFile(assetPath)
         if (sha256(bytes) !== match.sha) return sendJson(res, 409, { error: 'asset_sha_mismatch' })
         res.writeHead(200, { 'Content-Type': match.path.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'image/png' })
         res.end(bytes)
@@ -434,6 +471,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
 
   // ── 精读 HTML（Phase 3 产物，存在即服务）──────────────────────────
   prefix('/sr/reader', async (_req, res) => {
+    if (_req.method !== 'GET' && _req.method !== 'HEAD') return sendText(res, 405, 'method not allowed')
     const id = decodeURIComponent((_req.url ?? '').slice('/sr/reader'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!isPaperId(id)) return sendText(res, 404, 'not found')
     try {
@@ -441,13 +479,14 @@ export function registerRoutes(ctx: Context, config: Config): void {
       const rel = typeof artifact.json?.rel_path === 'string' ? artifact.json.rel_path : ''
       const resolved = artifactPath(paperRoot(id), rel, 'reader')
       if (!artifact.ok || !resolved) throw new Error('reader_not_ready')
+      if (await hasSymlink(paperRoot(id), resolved)) throw new Error('reader_invalid')
       const bytes = await readFile(resolved)
       const artifactJson = artifact.json ?? {}
       const manifest = artifactJson.manifest as Record<string, unknown> | undefined
       const expectedSha = typeof artifactJson.sha256 === 'string' ? artifactJson.sha256 : typeof manifest?.reader_sha256 === 'string' ? manifest.reader_sha256 : ''
       if (!/^[0-9a-f]{64}$/.test(expectedSha) || sha256(bytes) !== expectedSha) throw new Error('reader_sha_mismatch')
       const html = bytes.toString('utf8')
-      sendText(res, 200, html, 'text/html; charset=utf-8')
+      sendText(res, 200, _req.method === 'HEAD' ? '' : html, 'text/html; charset=utf-8')
     } catch {
       sendText(res, 404, 'no full read yet')
     }
