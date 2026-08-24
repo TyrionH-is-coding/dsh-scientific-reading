@@ -27,6 +27,36 @@ assert.deepEqual(selection.values(), ['paper_a', 'paper_b'], '翻页不得丢失
 selection.toggle('paper_a', false)
 assert.deepEqual(selection.values(), ['paper_b'])
 
+let resolveMutation
+const guardedSelection = createSelectionStore()
+guardedSelection.toggle('paper_x', true)
+let guardedNotices = 0
+const guarded = createBatchController({
+  selection: guardedSelection,
+  api() { return new Promise((resolve) => { resolveMutation = resolve }) },
+  onSummary() { guardedNotices += 1 },
+})
+const firstMutation = guarded.submit('queue_full_read', {})
+await assert.rejects(guarded.submit('retry_failed', {}), /batch_action_in_progress/)
+guardedSelection.toggle('paper_x', false)
+guardedSelection.toggle('paper_x', true)
+resolveMutation({ summary: { total: 1, created: 1, reused: 0, needs_user: 0, failed: 0 }, children: [{ paper_id: 'paper_x', status: 'created' }] })
+await firstMutation
+assert.deepEqual(guardedSelection.values(), ['paper_x'], '旧响应不得清除响应前重新选择的同一 paper')
+assert.equal(guardedNotices, 1)
+
+let resolveDisposed
+const disposedSelection = createSelectionStore()
+disposedSelection.toggle('paper_z', true)
+let disposedNotices = 0
+const disposedController = createBatchController({ selection: disposedSelection, api() { return new Promise((resolve) => { resolveDisposed = resolve }) }, onSummary() { disposedNotices += 1 } })
+const disposedMutation = disposedController.submit('queue_full_read', {})
+disposedController.dispose()
+resolveDisposed({ summary: { total: 1, created: 1 }, children: [{ paper_id: 'paper_z', status: 'created' }] })
+await disposedMutation
+assert.deepEqual(disposedSelection.values(), ['paper_z'])
+assert.equal(disposedNotices, 0, 'dispose 后晚响应不得更新选择或汇总')
+
 const notices = []
 const calls = []
 const controller = createBatchController({
@@ -57,5 +87,7 @@ for (const label of ['已选 ', '移动文件夹', '添加标签', '移除标签
   assert.match(source, new RegExp(label), `缺少批量工具栏：${label}`)
 }
 assert.doesNotMatch(source, /批量删除/, '批量工具栏不得提供删除')
+assert.match(source, /aria-live[^\n]*polite|setAttribute\('aria-live', 'polite'\)/, '父汇总必须是独立可访问 live region')
+assert.match(source, /setAttribute\('role', 'status'\)/, '父汇总必须使用 status role')
 assert.doesNotMatch(source, /AI.*分类算法|classifyInBrowser/, '浏览器不得实现 AI 分类算法')
 console.log('PASS: 跨页选择、批量提交和单条父汇总合同')

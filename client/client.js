@@ -78,36 +78,40 @@ window.__ModuleLoader__.load({
       };
     }
     function createSelectionStore() {
-      var selected = new Set();
+      var selected = new Set(); var revisions = new Map();
       return {
-        toggle: function (paperId, checked) { if (checked) selected.add(paperId); else selected.delete(paperId); },
+        toggle: function (paperId, checked) { revisions.set(paperId, (revisions.get(paperId) || 0) + 1); if (checked) selected.add(paperId); else selected.delete(paperId); },
         replacePage: function () {},
         remove: function (paperIds) { paperIds.forEach(function (paperId) { selected.delete(paperId); }); },
+        snapshot: function () { return Array.from(selected).map(function (paperId) { return { paper_id: paperId, revision: revisions.get(paperId) || 0 }; }); },
+        removeSnapshot: function (snapshot, paperIds) { var successful = new Set(paperIds); snapshot.forEach(function (entry) { if (successful.has(entry.paper_id) && selected.has(entry.paper_id) && revisions.get(entry.paper_id) === entry.revision) selected.delete(entry.paper_id); }); },
         values: function () { return Array.from(selected); },
         size: function () { return selected.size; },
         clear: function () { selected.clear(); },
       };
     }
     function createBatchController(deps) {
-      var active = null;
+      var active = null; var sequence = 0; var disposed = false;
       return {
         submit: function (action, payload) {
-          var selected = deps.selection.values();
+          if (disposed) return Promise.reject(new Error('batch_controller_disposed'));
+          if (active) return Promise.reject(new Error('batch_action_in_progress'));
+          var snapshot = deps.selection.snapshot(); var selected = snapshot.map(function (entry) { return entry.paper_id; });
           if (!selected.length) return Promise.resolve(null);
-          if (active) active.abort();
-          var controller = new AbortController(); active = controller;
+          var current = ++sequence; var controller = new AbortController(); active = controller;
           return deps.api('/sr/api/batch', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
             body: JSON.stringify({ action: action, selection: selected, payload: payload || {} }),
           }).then(function (result) {
+            if (disposed || current !== sequence) return result;
             var children = Array.isArray(result.children) ? result.children : [];
-            deps.selection.remove(children.filter(function (child) { return child.status === 'created' || child.status === 'reused'; }).map(function (child) { return child.paper_id; }));
+            deps.selection.removeSnapshot(snapshot, children.filter(function (child) { return child.status === 'created' || child.status === 'reused'; }).map(function (child) { return child.paper_id; }));
             var summary = result.summary || {};
             deps.onSummary('批量完成：成功 ' + ((summary.created || 0) + (summary.reused || 0)) + '｜待处理 ' + (summary.needs_user || 0) + '｜失败 ' + (summary.failed || 0), result);
             return result;
           }).finally(function () { if (active === controller) active = null; });
         },
-        dispose: function () { if (active) active.abort(); active = null; },
+        dispose: function () { disposed = true; sequence += 1; if (active) active.abort(); active = null; },
       };
     }
     function isSafeHttpUrl(value) {
@@ -484,7 +488,8 @@ window.__ModuleLoader__.load({
       controls.batchBar.appendChild(btn('加入精读队列', function () { submitBatch('queue_full_read', {}); }, 'sr-btn'));
       controls.batchBar.appendChild(btn('重试失败任务', function () { submitBatch('retry_failed', {}); }, 'sr-btn'));
       controls.batchBar.appendChild(btn('重新同步飞书', function () { submitBatch('feishu_resync', { explicit: true }); }, 'sr-btn'));
-      controls.batchNotice = el('span', 'sr-batch-notice'); controls.batchBar.appendChild(controls.batchNotice); main.appendChild(controls.batchBar);
+      main.appendChild(controls.batchBar);
+      controls.batchNotice = el('div', 'sr-batch-notice'); controls.batchNotice.setAttribute('role', 'status'); controls.batchNotice.setAttribute('aria-live', 'polite'); main.appendChild(controls.batchNotice);
       function renderBatchToolbar() { var count = selections.size(); controls.batchBar.hidden = count === 0; controls.batchCount.textContent = '已选 ' + count + ' 篇'; }
       var tableWrap = el('div', 'sr-table-wrap');
       var table = el('table', 'sr-table');
