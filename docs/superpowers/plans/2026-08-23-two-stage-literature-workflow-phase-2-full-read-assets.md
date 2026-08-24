@@ -171,12 +171,12 @@ git commit -m "精读：串联PDF校验与用户处理入口"
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_full_read_service.py`
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_worker_full_read.py`
 
-- [ ] **Step 1: 写恢复与来源失败测试**
+- [x] **Step 1: 写恢复与来源失败测试**
 
 覆盖：fast parse 后 MinerU 升级、MinerU 失败保留 PDF、翻译第 N 批中断从 N 恢复、块 source id/page
 保留、图注翻译、参考文献不翻译、旧 quick_read 不存在仍可精读、旧 quick_read 高亮不再是必需输入。
 
-- [ ] **Step 2: 扩展全文翻译合同**
+- [x] **Step 2: 扩展全文翻译合同**
 
 每个块的 agent 返回：
 
@@ -192,7 +192,7 @@ git commit -m "精读：串联PDF校验与用户处理入口"
 `highlight` 只允许 `primary`（黄色）、`secondary`（亮蓝）或 `none`。模型必须按全文重新判断重点；
 可以参考 Abstract，但不能读取旧九节浅读作为事实。参考文献块只保留 `source_text`，不要求中文。
 
-- [ ] **Step 3: 复用现有服务推进父任务**
+- [x] **Step 3: 复用现有服务推进父任务**
 
 `ReadingPipeline` 调用现有 `ParseService`、`MineruService`、`FullReadService`。只补适配层：
 
@@ -202,7 +202,7 @@ git commit -m "精读：串联PDF校验与用户处理入口"
 - agent 提交 source_text 不匹配或 source SHA 改变时拒绝该批，不丢已完成批；
 - 解析/翻译失败只更新当前 parent，其他 queued paper 继续。
 
-- [ ] **Step 4: 测试并提交**
+- [x] **Step 4: 测试并提交**
 
 ```powershell
 & "$env:USERPROFILE\scientific-reading-data\.venv\Scripts\python.exe" -m pytest tests/test_pipeline_parse_translate.py tests/test_full_read_models.py tests/test_full_read_service.py tests/test_worker_full_read.py tests/test_mineru_service.py -q
@@ -435,3 +435,12 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
 - 已完成受信任 `PdfProvider`、合法 fallback、本地 PDF 挂接与恢复、SHA-256 生成、OS advisory lock、SQLite O(1) 父任务索引，以及 reader stale manifest 标记。
 - scansci 的实际适配仍留在 Task 6，当前状态为 unavailable；本任务未提前接入。
 - 验证期间未联网、未触发机构认证、未写飞书，也未触碰 persistent Profile 或当前 3080。
+
+### Task 3 执行记录
+
+- 引擎最终 HEAD：`c0ddb5167c4469e61a211a5e0590fdfded5803dd`。
+- 主代理引擎全量测试：`672 passed, 1 skipped in 64.81s`。
+- 规范与质量低思考强度 Sol 审查：`APPROVED`。
+- 已完成显式 `paper_id`、按 source SHA 分代及 `active_workspace` 指针、v2 逐块翻译合同、参考文献仅保留英文且禁止高亮、严格 CLI resume 白名单、翻译批 checkpoint 幂等与 gap 防护，以及 mutable metadata 兼容。
+- 验证期间未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile 或当前 3080。
+- `render_reader` 仍保持明确 gate，留待 Task 4 接入。
