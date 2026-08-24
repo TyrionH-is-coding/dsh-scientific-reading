@@ -39,7 +39,7 @@
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_reading_pipeline.py`
 - Create: `D:\Vibe Coding\Scientific-Reading-for-Newbies\tests\test_worker_reading_pipeline.py`
 
-- [ ] **Step 1: 写状态机失败测试**
+- [x] **Step 1: 写状态机失败测试**
 
 覆盖：初始 parent job、每阶段单调转换、重复 start 返回同一 job、完成缓存、失败边界、同一文献锁、
 跨文献重任务串行、宿主中断恢复、XLSX/飞书失败不改变 `精读完成`。
@@ -73,13 +73,13 @@ USER_STATUS = {
 }
 ```
 
-- [ ] **Step 2: 实现父任务模型**
+- [x] **Step 2: 实现父任务模型**
 
 `ReadingPipelineState` 至少包含：`paper_id`、`parent_job_id`、`current_stage`、各阶段 job/output、
 `source_pdf_sha256`、`reader_source_sha256`、`required_action`、`last_error`、时间戳。序列化使用明确
 contract version，不把 secret/provider command 写入 state。
 
-- [ ] **Step 3: 实现幂等调度器**
+- [x] **Step 3: 实现幂等调度器**
 
 ```python
 class ReadingPipeline:
@@ -92,12 +92,12 @@ class ReadingPipeline:
 MinerU 和全文翻译，轻量校验不占锁。状态同时写 job store 和 SQLite 的 `active_job_id`/
 `full_read_status`，两者读回不一致时以可验证的 job artifact 修复 SQLite，不反向伪造产物。
 
-- [ ] **Step 4: worker 注册 `full_read_pipeline`**
+- [x] **Step 4: worker 注册 `full_read_pipeline`**
 
 父 handler 调用既有服务，不复制 parse/full-read 实现。遇到 AI 输入返回 `AgentRequired`；遇到 PDF
 用户动作返回新的 `UserActionRequired`（或等价稳定 state），不得混成翻译 gate。
 
-- [ ] **Step 5: 测试并提交**
+- [x] **Step 5: 测试并提交**
 
 ```powershell
 $env:PYTHONPATH = "$PWD\src"
@@ -418,3 +418,11 @@ git commit -m "验收：覆盖精读全链路与中断恢复"
 
 实现 agent 追加 parent job 样例状态、每个中断点恢复结果、reader/manifest SHA 校验、导出数量和
 尚未进入 UI 阶段的限制。不得附真实论文、机构认证信息或真实飞书响应。
+
+### Task 1 执行记录
+
+- 引擎提交链最终 HEAD：`da3a11905f9033a7c916ffafdd19dfc4a6059ec7`。
+- 聚焦测试：`50 passed`；引擎全量测试：`602 passed, 1 skipped`。
+- 双低思考强度 Sol 阶段审查：`APPROVED`。
+- 本任务只建立并验证精读父任务状态机；PDF 获取、MinerU 解析和全文翻译尚未接入。
+- 验证期间未联网、未写飞书、未触发机构认证，也未触碰 persistent Profile 或当前 3080。
