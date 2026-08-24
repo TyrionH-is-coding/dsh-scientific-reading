@@ -84,6 +84,7 @@ assert.match(source, /ingestCancel\.disabled = ingestSubmitting/, '提交期间�
 assert.match(source, /ingestCancel\.type = 'button'/, '取消按钮不得误触发表单提交')
 assert.match(source, /height:calc\(100vh - 76px\);min-height:0;max-height:100%/, '根布局必须限制在宿主 viewport 内并由表格区内部滚动')
 assert.match(source, /\.sr-main\{min-height:0;overflow:hidden\}/, 'grid 主区必须允许收缩，避免长表格把分页挤出根容器')
+assert.match(source, /\.sr-main\{padding-bottom:126px\}/, '主栏必须为宿主固定输入框预留底部安全区')
 assert.match(source, /\.sr-table-wrap\{flex:1;min-height:0;overflow:auto/, '长列表必须由表格区域内部滚动')
 for (const label of ['题名', '作者 / 年份', '归类', '状态', '快捷入口']) {
   assert.match(source, new RegExp(label), `缺少表头：${label}`)
