@@ -7,8 +7,12 @@ import { spawnSync } from 'node:child_process'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const verifierSource = readFileSync(join(root, 'scripts', 'verify-profile-runtime.mjs'), 'utf8')
+const navigationSource = readFileSync(join(root, 'scripts', 'verify_navigation_runtime.mjs'), 'utf8')
 assert.match(verifierSource, /timeout: COMMAND_TIMEOUT_MS/, '前置同步命令必须设置超时')
 assert.match(verifierSource, /dsh_shutdown_failed/, '验证器必须拒绝无法确认退出的 DSH 子进程')
+assert.match(navigationSource, /npm_pack_dry_run/, '导航验收必须先执行tarball dry-run')
+assert.match(navigationSource, /SR_EXTERNAL_PROVIDER: 'fake'/, '导航验收必须强制外部provider为fake')
+assert.match(navigationSource, /delete env\.FEISHU_APP_ID; delete env\.FEISHU_APP_SECRET/, '导航验收必须清空飞书凭证')
 const fixture = mkdtempSync(join(tmpdir(), 'sr-runtime-fixture-'))
 const fakeDsh = join(fixture, 'fake-dsh.mjs')
 
