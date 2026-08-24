@@ -212,6 +212,9 @@ git commit -m "精读：按来源块恢复全文翻译与重点"
 
 ## Task 4：生成可追溯 `reader.html`
 
+> **2026-08-24 已批准修订：** 当前 Task 4 的完整性实现必须保留；用户可见语义与新增交互继续执行
+> `docs/superpowers/plans/2026-08-24-reader-html-v2-1.md`，并在进入 Task 5 前通过该计划的目标测试。
+
 **Files:**
 
 - Modify: `D:\Vibe Coding\Scientific-Reading-for-Newbies\src\scientific_reading\full_read_renderer.py`
