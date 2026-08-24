@@ -22,8 +22,16 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   `marker_path = ${JSON.stringify(responseMarker)}`,
   'payload = sys.stdin.read()',
   'with open(log_path, "a", encoding="utf-8") as log: log.write(json.dumps({"args": args, "response_ended": os.path.exists(marker_path)}) + "\\n")',
-  'command = next((x for x in args if x in {"library-list-v2", "folder-list", "library-ingest", "derived-enqueue"}), "")',
+  'command = next((x for x in args if x in {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue"}), "")',
   'if command == "library-list-v2": print(json.dumps({"items": [{"paper_id": "library_demo"}], "page": 2, "page_size": 7}))',
+  'elif command == "library-item-v2":',
+  '  paper_id = args[args.index("--paper-id") + 1]',
+  '  items = {',
+  '    "library_missing": {"paper_id": paper_id, "abstract_en": None, "abstract_zh": None, "abstract_status": "missing", "active_job_id": None, "last_error": None},',
+  '    "library_completed": {"paper_id": paper_id, "abstract_en": "English abstract", "abstract_zh": "中文摘要", "abstract_status": "completed", "active_job_id": None, "last_error": None},',
+  '    "library_stale": {"paper_id": paper_id, "abstract_en": "Changed abstract", "abstract_zh": "旧译文", "abstract_status": "stale", "active_job_id": "job_0123456789abcdef", "last_error": "source_changed"},',
+  '  }',
+  '  print(json.dumps(items[paper_id])) if paper_id in items else sys.exit(2)',
   'elif command == "folder-list": print(json.dumps([{"folder_id": "f1", "name": "Inbox"}]))',
   'elif command == "library-ingest": print(json.dumps({"status": "ingested", "paper_id": "library_demo"}))',
   'else: print(json.dumps({"status": "queued"}))',
@@ -66,6 +74,22 @@ try {
   await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: '/sr/api/abstract/../../secret' }, bad)
   assert.equal(bad.statusCode, 404)
   assert.deepEqual(JSON.parse(bad.body), { error: 'bad_paper_id' })
+
+  for (const expected of [
+    { paper_id: 'library_missing', abstract_en: null, abstract_zh: null, status: 'missing', active_job_id: null, last_error: null },
+    { paper_id: 'library_completed', abstract_en: 'English abstract', abstract_zh: '中文摘要', status: 'completed', active_job_id: null, last_error: null },
+    { paper_id: 'library_stale', abstract_en: 'Changed abstract', abstract_zh: '旧译文', status: 'stale', active_job_id: 'job_0123456789abcdef', last_error: 'source_changed' },
+  ]) {
+    const abstract = response()
+    await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: `/sr/api/abstract/${expected.paper_id}` }, abstract)
+    assert.equal(abstract.statusCode, 200)
+    assert.deepEqual(JSON.parse(abstract.body), expected)
+  }
+
+  const absent = response()
+  await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: '/sr/api/abstract/library_absent' }, absent)
+  assert.equal(absent.statusCode, 502)
+  assert.deepEqual(JSON.parse(absent.body), { error: 'abstract_unavailable', detail: 'library_item_failed' })
 
   rmSync(responseMarker, { force: true })
   const ingest = response()

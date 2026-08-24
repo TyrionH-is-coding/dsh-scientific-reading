@@ -459,6 +459,12 @@ export async function engineLibraryList(config: Config, options: {
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
+/** library-item-v2：按主库 paper_id 读取摘要与派生状态。 */
+export async function engineLibraryItem(config: Config, paperId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
+  const r = await engineJson(config, ['library-item-v2', '--paper-id', paperId])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
 export async function engineFolderManage(config: Config, args: string[]): Promise<{ ok: boolean; json: unknown; stderr: string }> {
   const r = await engineJson(config, args)
   return { ok: r.ok, json: r.json, stderr: r.stderr }

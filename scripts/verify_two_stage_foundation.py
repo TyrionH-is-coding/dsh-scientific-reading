@@ -235,6 +235,9 @@ def _run_real_derived_pipeline(root: Path, metadata) -> list[str]:
 
 
 def main() -> int:
+    # fake-only verifier 不继承宿主真实或占位凭据，也不读取或记录其值。
+    os.environ.pop("FEISHU_APP_ID", None)
+    os.environ.pop("FEISHU_APP_SECRET", None)
     before = {"profile": _runtime_snapshot(), "3080": _health_snapshot()}
     root = Path(tempfile.mkdtemp(prefix="sr-foundation-"))
     steps = {}
@@ -267,10 +270,6 @@ def main() -> int:
             raise RuntimeError("plugin_detached_dispatch_contract_failed")
         steps["plugin_dispatch"] = "passed"
 
-        if os.environ.get("FEISHU_APP_ID") or os.environ.get("FEISHU_APP_SECRET"):
-            raise RuntimeError("real_feishu_credentials_forbidden")
-        os.environ.pop("FEISHU_APP_ID", None)
-        os.environ.pop("FEISHU_APP_SECRET", None)
         metadata = PaperMetadata(title=TITLE, authors=["Offline Author"], doi=None, year=2024, abstract_en=ABSTRACT)
         library = LibraryService(root)
         try:

@@ -12,13 +12,16 @@ const python = process.env.PYTHON || join(process.env.USERPROFILE || '', 'scient
 const tempPrefix = 'sr-foundation-'
 const beforeTemp = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith(tempPrefix)))
 
+delete process.env.FEISHU_APP_ID
+delete process.env.FEISHU_APP_SECRET
+
 const output = execFileSync(python, [script], {
   cwd: root,
   encoding: 'utf8',
   env: {
     ...process.env,
-    FEISHU_APP_ID: '',
-    FEISHU_APP_SECRET: '',
+    FEISHU_APP_ID: 'placeholder-must-be-ignored',
+    FEISHU_APP_SECRET: 'placeholder-must-be-ignored',
     SR_ENGINE_ROOT: engine,
   },
 })

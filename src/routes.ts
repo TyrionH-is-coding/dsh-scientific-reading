@@ -29,6 +29,7 @@ import {
   engineInit,
   engineFullRead,
   engineLibraryList,
+  engineLibraryItem,
   engineLibraryIngest,
   engineFolderManage,
   engineDerivedEnqueue,
@@ -179,12 +180,21 @@ export function registerRoutes(ctx: Context, config: Config): void {
     if (!isPaperId(id)) return sendJson(res, 404, { error: 'bad_paper_id' })
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     try {
-      const raw = await readOrNull(join(paperRoot(id), 'metadata.json'))
-      if (!raw) return sendJson(res, 404, { error: 'not_found' })
-      const item = JSON.parse(raw) as Record<string, unknown>
-      sendJson(res, 200, { paper_id: id, abstract_en: item.abstract_en ?? null, abstract_zh: item.abstract_zh ?? null, status: item.abstract_status ?? 'pending' })
+      const r = await engineLibraryItem(config, id)
+      const item = r.json
+      if (!r.ok || !item || typeof item.abstract_status !== 'string') {
+        return sendJson(res, 502, { error: 'abstract_unavailable', detail: 'library_item_failed' })
+      }
+      sendJson(res, 200, {
+        paper_id: id,
+        abstract_en: item.abstract_en ?? null,
+        abstract_zh: item.abstract_zh ?? null,
+        status: item.abstract_status,
+        active_job_id: item.active_job_id ?? null,
+        last_error: item.last_error ?? null,
+      })
     } catch {
-      sendJson(res, 500, { error: 'abstract_unavailable' })
+      sendJson(res, 502, { error: 'abstract_unavailable', detail: 'library_item_failed' })
     }
   })
 
