@@ -37,7 +37,7 @@
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\batch-contract.mjs`
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\reading-routes.mjs`
 
-- [ ] **Step 1: 写 HTTP 失败合同**
+- [x] **Step 1: 写 HTTP 失败合同**
 
 固定端点：
 
@@ -59,7 +59,7 @@ GET  /sr/reader/<paper_id>
 测试 method 405、非法 page/size、路径穿越、body 超限、未知 action、批量空选择、超过 100 时引擎
 父请求仍只收到一份完整 selection、错误无 stack/secret。
 
-- [ ] **Step 2: 固定列表响应**
+- [x] **Step 2: 固定列表响应**
 
 ```json
 {
@@ -87,12 +87,12 @@ GET  /sr/reader/<paper_id>
 
 不要把 Abstract 全文或 job 内部 required_input 塞进列表；详情按需读取。
 
-- [ ] **Step 3: 固定批量 action 白名单**
+- [x] **Step 3: 固定批量 action 白名单**
 
 只允许：`move_folder`、`add_tags`、`remove_tags`、`queue_full_read`、`retry_failed`、
 `feishu_resync`。明确拒绝 `delete`。响应统一为 parent summary/job id；单篇错误保留在 children 中。
 
-- [ ] **Step 4: 实现路由并验证**
+- [x] **Step 4: 实现路由并验证**
 
 路由只做验证/转发。PDF 和 reader 使用已解析的 workspace 路径并校验必须位于 data root；飞书 URL
 只从 SQLite 返回，不接受客户端注入。
@@ -445,3 +445,5 @@ README 只描述真实完成的两段式流程、启动、数据目录、飞书/
 实现 agent 追加隔离 Profile 路径/端口、tarball SHA、HTTP 与视觉 QA 结果、两仓库 main merge commit、
 main 全量测试结果、persistent Profile 版本和未执行的外部写入项。不得记录飞书 secret、Cookie、
 验证码或个人文献内容。
+
+- Task 1 已完成（commits `7134c23`、`672521e`、`5b6130f`）：固定导航/批量 HTTP 合同、严格字段类型与脱敏、1 MiB body 上限与 405；六种 action 白名单，101 篇选择由路由完整单次转发，批量分块仍留给 Task 4。generation 资产路由覆盖 PDF、reader、assets，并校验 SHA 与 symlink 边界。最终规范审核与质量审核均为 `APPROVED`。`build:ci`、`typecheck`、计划指定 3 项测试、library、full-read、assets、Phase 1 与 harness 全部 `PASS`。本任务未改引擎/UI/v2.1，未操作 3080、网络或飞书。
