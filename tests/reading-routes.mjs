@@ -14,6 +14,8 @@ const fullOutputDir = join(generationDir, 'output')
 const canonicalDir = join(generationDir, 'reading')
 const rootLegacyPath = join(fixture, 'papers', paperId, 'reader_full.html')
 const auditFlagPath = join(fixture, 'audit-root-reader.flag')
+const rootPdfPath = join(fixture, 'papers', paperId, 'source.pdf')
+const pdfAuditFlagPath = join(fixture, 'audit-root-pdf.flag')
 const exportsDir = join(generationDir, 'exports')
 const fakeRoot = join(fixture, 'fake')
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).find((line) => line.trim().toLowerCase().endsWith('.exe')).trim()
@@ -27,11 +29,13 @@ const legacyHtml = '<!doctype html><p>fixture full reader</p>'
 writeFileSync(join(fullOutputDir, 'reader_full.html'), legacyHtml, 'utf8')
 const rootLegacyHtml = '<!doctype html><p>fixture audited root reader</p>'
 writeFileSync(rootLegacyPath, rootLegacyHtml, 'utf8')
+const rootPdf = '%PDF-1.4\nfixture audited root PDF\n%%EOF\n'
+writeFileSync(rootPdfPath, rootPdf, 'utf8')
 const canonicalHtml = '<!doctype html><p>fixture canonical reader</p>'
 writeFileSync(join(canonicalDir, 'reader.html'), canonicalHtml, 'utf8')
 mkdirSync(join(fakeRoot, 'scientific_reading'), { recursive: true })
 writeFileSync(join(fakeRoot, 'scientific_reading', '__init__.py'), '', 'utf8')
-writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), `import json, os, sys\ncanonical='generations/${'a'.repeat(16)}/reading/reader.html'\ncanonical_abs=${JSON.stringify(join(canonicalDir, 'reader.html'))}\nlegacy='generations/${'a'.repeat(16)}/output/reader_full.html'\nlegacy_abs=${JSON.stringify(join(fullOutputDir, 'reader_full.html'))}\naudit_flag=${JSON.stringify(auditFlagPath)}\nroot_legacy='reader_full.html'\nif '--kind' in sys.argv and sys.argv[sys.argv.index('--kind')+1]=='exports': print(json.dumps({'paper_id':'${paperId}','kind':'exports','rel_path':'generations/${'a'.repeat(16)}/exports','manifest':{'assets':[{'kind':'figure'},{'kind':'figure'},{'kind':'table'}]}}))\nelif os.path.exists(canonical_abs): print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':canonical,'legacy':False,'sha256':'${createHash('sha256').update(canonicalHtml).digest('hex')}'}))\nelif os.path.exists(legacy_abs): print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':legacy,'legacy':True,'sha256':'${createHash('sha256').update(legacyHtml).digest('hex')}'}))\nelse: print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':root_legacy,'legacy':True,'legacy_audited':os.path.exists(audit_flag),'sha256':'${createHash('sha256').update(rootLegacyHtml).digest('hex')}'}))\n`, 'utf8')
+writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), `import json, os, sys\ncanonical='generations/${'a'.repeat(16)}/reading/reader.html'\ncanonical_abs=${JSON.stringify(join(canonicalDir, 'reader.html'))}\nlegacy='generations/${'a'.repeat(16)}/output/reader_full.html'\nlegacy_abs=${JSON.stringify(join(fullOutputDir, 'reader_full.html'))}\naudit_flag=${JSON.stringify(auditFlagPath)}\npdf_audit_flag=${JSON.stringify(pdfAuditFlagPath)}\nroot_legacy='reader_full.html'\nkind=sys.argv[sys.argv.index('--kind')+1] if '--kind' in sys.argv else ''\nif kind=='exports': print(json.dumps({'paper_id':'${paperId}','kind':'exports','rel_path':'generations/${'a'.repeat(16)}/exports','manifest':{'assets':[{'kind':'figure'},{'kind':'figure'},{'kind':'table'}]}}))\nelif kind=='pdf': print(json.dumps({'paper_id':'${paperId}','kind':'pdf','rel_path':'source.pdf','legacy':True,'legacy_audited':os.path.exists(pdf_audit_flag),'sha256':'${createHash('sha256').update(rootPdf).digest('hex')}'}))\nelif os.path.exists(canonical_abs): print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':canonical,'legacy':False,'sha256':'${createHash('sha256').update(canonicalHtml).digest('hex')}'}))\nelif os.path.exists(legacy_abs): print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':legacy,'legacy':True,'sha256':'${createHash('sha256').update(legacyHtml).digest('hex')}'}))\nelse: print(json.dumps({'paper_id':'${paperId}','kind':'reader','rel_path':root_legacy,'legacy':True,'legacy_audited':os.path.exists(audit_flag),'sha256':'${createHash('sha256').update(rootLegacyHtml).digest('hex')}'}))\n`, 'utf8')
 const previousPythonPath = process.env.PYTHONPATH
 process.env.PYTHONPATH = previousPythonPath ? fakeRoot + delimiter + previousPythonPath : fakeRoot
 
@@ -105,6 +109,13 @@ try {
   const auditedRootReader = await request('/sr/reader', `/sr/reader/${paperId}`)
   assert.equal(auditedRootReader.statusCode, 200)
   assert.match(auditedRootReader.body, /fixture audited root reader/)
+
+  assert.equal((await request('/sr/api/paper', `/sr/api/paper/${paperId}/pdf`)).statusCode, 404, '根级 PDF 没有审计标志时必须拒绝')
+  writeFileSync(pdfAuditFlagPath, 'audited', 'utf8')
+  const auditedRootPdf = await request('/sr/api/paper', `/sr/api/paper/${paperId}/pdf`)
+  assert.equal(auditedRootPdf.statusCode, 200)
+  assert.match(auditedRootPdf.headers['Content-Type'], /^application\/pdf/)
+  assert.equal(auditedRootPdf.body, rootPdf)
 
   const assets = await request('/sr/api/paper', `/sr/api/paper/${paperId}/assets`)
   assert.equal(assets.statusCode, 200)

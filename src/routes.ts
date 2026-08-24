@@ -81,7 +81,7 @@ function artifactPath(root: string, rel: string, kind: 'reader' | 'exports' | 'p
   const allowed = kind === 'reader'
     ? (legacyAudited && normalized === 'reader_full.html') || /^generations\/[0-9a-f]{16}\/(?:reading\/reader\.html|output\/reader_full\.html)$/.test(normalized)
     : kind === 'pdf'
-      ? /^generations\/[0-9a-f]{16}\/source\.pdf$/.test(normalized)
+      ? (legacyAudited && normalized === 'source.pdf') || /^generations\/[0-9a-f]{16}\/source\.pdf$/.test(normalized)
       : /^generations\/[0-9a-f]{16}\/exports$/.test(normalized)
   if (!allowed || normalized !== rel) return null
   return join(root, ...normalized.split('/'))
@@ -419,7 +419,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
       if (req.method === 'GET' && action === 'pdf') {
         const result = await resolveNavigationArtifact(config, id, 'pdf')
         const rel = typeof result.json?.rel_path === 'string' ? result.json.rel_path : ''
-        const resolved = artifactPath(root, rel, 'pdf')
+        const resolved = artifactPath(root, rel, 'pdf', result.json?.legacy_audited === true)
         if (!result.ok || !resolved) return sendJson(res, 404, { error: 'pdf_not_ready' })
         if (await hasSymlink(root, resolved)) return sendJson(res, 409, { error: 'pdf_invalid' })
         const bytes = await readFile(resolved).catch(() => null)
