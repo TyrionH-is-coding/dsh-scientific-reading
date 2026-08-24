@@ -221,13 +221,13 @@ git commit -m "界面：加入Abstract抽屉与资产快捷入口"
 - Modify: `D:\Vibe Coding\dsh-scientific-reading\tests\batch-contract.mjs`
 - Create: `D:\Vibe Coding\dsh-scientific-reading\tests\client-batch-actions.mjs`
 
-- [ ] **Step 1: 写引擎批量失败测试**
+- [x] **Step 1: 写引擎批量失败测试**
 
 覆盖 0/1/100/101/250 篇，断言 101→2 chunks、250→3 chunks；重复/失败/needs_user 不终止其他；
 queue_full_read 只排队不并行；retry 只选失败项；飞书 resync 只选 pending/用户指定项；父 summary
 计数相加准确；无 delete action。
 
-- [ ] **Step 2: 实现 `BatchService`**
+- [x] **Step 2: 实现 `BatchService`**
 
 ```python
 ALLOWED_ACTIONS = {
@@ -244,7 +244,7 @@ class BatchService:
 父任务保存原选择顺序、chunks 和 children；逐条保存 created/reused/needs_user/failed。事务型移动/标签
 操作可整体撤销；队列/重试不承诺撤销已开始的任务。
 
-- [ ] **Step 3: 写前端选择失败合同并实现**
+- [x] **Step 3: 写前端选择失败合同并实现**
 
 选择集合以 paper_id 保存，翻页不丢；顶部只显示“已选 N 篇”和允许动作。批量工具栏不含删除。
 提交后清空已成功项，保留失败项供重试；父 summary 用一条提示，不弹 N 个 toast。
@@ -252,7 +252,7 @@ class BatchService:
 AI 批量归类仍由对话工具发提案：默认只用现有 folders，低置信度留待归类；UI 只应用/撤销结果，
 不在浏览器里实现分类算法。
 
-- [ ] **Step 4: 测试并分别提交**
+- [x] **Step 4: 测试并分别提交**
 
 引擎：
 
@@ -451,3 +451,5 @@ main 全量测试结果、persistent Profile 版本和未执行的外部写入�
 - Task 2 已完成（commits `4a1063d`、`1be8e0e`、`997377b`）：实现可收起 sidebar、宽主列表与隐藏 overlay drawer 骨架，接入服务器分页、搜索和筛选；folders 顶层数组使用 `folder_id`，待归类使用 `__unclassified__`。无 DOM 依赖的 mount-controller 生命周期 harness 覆盖稳定 ref 重渲染、卸载清理与同节点重挂。规范审核与质量审核均为 `APPROVED`；`build:ci`、`typecheck`、`client-ui`、`client-build`、完整 `offline` 与 `git diff --check` 均通过。未提前实现 Task 3，未联网、未操作 3080，也未启动真实 worker。
 
 - Task 3 已完成（engine commits `7bfed70`、`18156d5`；plugin commits `a1e3adb`、`b0297ae`、`52b39fd`、`80efa93`）：实现文献行、按需单次详情读取的 Abstract overlay drawer、安全 PDF/reader/飞书/历史浅读入口、资产目录与图表导出反馈，以及相互隔离的行级精读轮询和 drawer 生命周期。规范审核与质量审核均为 `APPROVED`；root 在清空 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后重跑完整 `npm run test:offline` 全部 `PASS`，engine targeted tests 为 `48 passed`。最小计划偏差：为满足固定导航合同，engine 使用单条 set-based SQLite 查询补齐列表字段，未在插件逐行启动子进程；未开放根目录 legacy `reader_full.html`，正式 reader 仍只允许同 generation 的 `reading/reader.html`，并回退同 generation 的 `output/reader_full.html`，根旧资产留给 Task 5 migration audit 建立只读索引。本任务未执行外部写入、3080 操作、网络访问或真实飞书同步。
+
+- Task 4 已完成（engine commits `9bbfe2a`、`e10bc95`、`a38952c`、`0a240e3`、`f30a211`、`93134d4`；plugin commits `f4d14c1`、`5018067`、`89e4c0a`）：实现批量选择稳定去重与按 100 篇分块、逐篇独立结果、父任务增量持久化与脱敏失败收束、事务型文件夹/标签操作及完整撤销句柄；精读与飞书动作只创建或复用持久队列，不在批量调用中启动重 worker。前端按 `paper_id` 跨页保留选择，以选择 revision 隔离晚响应，同一时刻只允许一个副作用提交；仅移除 `created/reused`，并用独立 `aria-live` 父汇总区分完成、失败和处理中状态。Windows 越界门禁实际创建 directory junction 并验证拒绝，且子进程使用 `CREATE_NO_WINDOW`。最终规范审核与质量审核均为 `APPROVED`；engine worktree 全量为 `778 passed, 1 skipped`，root 独立定向复核为 `70 passed`，plugin 完整 `npm run test:offline` 全部 `PASS`。最小计划偏差：未修改 `reading_pipeline.py`，而是复用既有 `start`/resume 合同，并以真实 worker 回归证明失败阶段可恢复且不重复已完成重阶段。本任务未操作 3080/persistent Profile，未联网，未执行真实飞书写入、机构认证或其他外部操作。
