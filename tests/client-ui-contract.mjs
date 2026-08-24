@@ -21,6 +21,10 @@ function loadNamedFunction(name) {
 }
 
 const createMountController = loadNamedFunction('createMountController')
+const normalizeIngestTitles = loadNamedFunction('normalizeIngestTitles')
+assert.deepEqual(normalizeIngestTitles('  A paper  ', false), ['A paper'], '单篇录入必须去除首尾空白')
+assert.deepEqual(normalizeIngestTitles(' A\n\n B \nA ', true), ['A', 'B'], '批量录入必须逐行去空、去重并忽略空行')
+assert.deepEqual(normalizeIngestTitles('  \n ', true), [], '空白批量输入不得产生请求')
 let created = 0
 let disposed = 0
 const roots = []
@@ -70,6 +74,15 @@ assert.match(source, /--sr-sidebar-width-collapsed:56px/, 'sidebar 收起后必�
 for (const label of ['搜索题名、作者或 DOI', '添加文献', '批量粘贴', '状态', '标签', '最近入库']) {
   assert.match(source, new RegExp(label), `缺少顶部控件：${label}`)
 }
+assert.match(source, /\/sr\/api\/library[^]*method:\s*'POST'/, '添加文献必须调用本地主库 POST 接口')
+assert.match(source, /aria-label', '添加文献'|aria-label', mode === 'batch' \? '批量粘贴文献' : '添加文献'/, '录入面板必须声明可访问名称')
+assert.match(source, /录入成功|添加成功/, '录入完成必须显示中文成功反馈')
+assert.match(source, /录入失败|添加失败/, '录入失败必须显示中文失败反馈')
+assert.match(source, /ingestSubmit\.disabled =[^]*!titles\.length/, '空输入必须禁用提交')
+assert.match(source, /ingestSubmitting[^]*Escape/, '提交期间不得被 Escape 中断')
+assert.match(source, /ingestCancel\.disabled = ingestSubmitting/, '提交期间必须禁用取消')
+assert.match(source, /ingestCancel\.type = 'button'/, '取消按钮不得误触发表单提交')
+assert.match(source, /height:calc\(100vh - 76px\);min-height:0;max-height:100%/, '根布局必须限制在宿主 viewport 内并由表格区内部滚动')
 for (const label of ['题名', '作者 / 年份', '归类', '状态', '快捷入口']) {
   assert.match(source, new RegExp(label), `缺少表头：${label}`)
 }
