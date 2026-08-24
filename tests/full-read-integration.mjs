@@ -17,6 +17,7 @@ delete isolatedEnv.FEISHU_APP_SECRET
 const stdout = execFileSync(python, [join(root, 'scripts', 'verify_full_read_pipeline.py')], {
   cwd: root,
   encoding: 'utf8',
+  windowsHide: true,
   env: isolatedEnv,
 })
 const lines = stdout.trim().split(/\r?\n/)
@@ -43,7 +44,14 @@ assert.equal(result.formal_parent?.all_completed, true)
 assert.equal(result.formal_parent?.stable_parent_ids, true)
 assert.equal(result.formal_parent?.unique_active_parent, true)
 assert.equal(result.formal_parent?.all_stage_counts_once, true)
-assert.deepEqual(result.tamper_negative, { reader: true, export: true })
+assert.deepEqual(result.tamper_negative, {
+  source_pdf: true,
+  parser: true,
+  translation: true,
+  reader_html: true,
+  reader_asset: true,
+  export_asset: true,
+})
 assert.equal(result.fixture.pages, 4)
 assert.equal(result.fixture.translation_batches, 2)
 
@@ -54,6 +62,7 @@ delete defaultEnv.SR_ENGINE_ROOT
 const defaultResult = JSON.parse(execFileSync(python, [join(root, 'scripts', 'verify_full_read_pipeline.py'), '--resolve-engine-only'], {
   cwd: root,
   encoding: 'utf8',
+  windowsHide: true,
   env: defaultEnv,
 }))
 assert.equal(defaultResult.engine_root, engine)

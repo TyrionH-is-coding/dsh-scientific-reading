@@ -90,7 +90,7 @@ dev_build_plugin / dev_inject_plugin / dev_reload_package
 
 正式 reader 只发布到 `papers/<paper_id>/generations/<source_sha16>/reading/reader.html`；兼容读取仅回退同一 generation 的 `output/reader_full.html`，不接受论文根级 `reading/reader.html` 或 `reading/full/output`。`sr_export_assets` 只整理 active MinerU 明确标记的正文 Figure/Table，输出 `exports/figures`、`exports/tables`、`captions.md` 与 `manifest.json`；CSV 仅复制可靠结构化源。
 
-离线验收使用四页虚构工程论文、fake MinerU 和两批 fake agent 翻译，在 PDF 发布后、MinerU 后、第一批翻译后及 reader staging 后分别终止子进程并重启。运行 `npm run test:full-read-integration`；`npm run verify:restart-recovery` 同时覆盖原后台 worker 恢复与上述四个产物边界。测试使用临时 data root，不联网、不写飞书、不调用机构认证，也不启动或修改当前 Profile/3080。HTML v2.1、真实 Profile 注入、飞书真实写入与 Zotero 迁移不在本阶段。
+离线验收使用四页虚构工程论文、fake MinerU 和两批 fake agent 翻译，在 PDF 发布后、MinerU 后、第一批翻译后及 reader staging 后分别终止子进程并重启。运行 `npm run test:full-read-integration`；`npm run verify:restart-recovery` 同时覆盖原后台 worker 恢复与上述四个产物边界。测试使用临时 data root，不联网、不写飞书、不调用机构认证，也不启动或修改当前 Profile/3080。HTML v2.1、真实 Profile 注入、飞书真实写入与 Zotero 迁移不在本阶段；验收仅在未来 manifest 已存在可选字段时兼容核验，不在本分支新增 review、guide 或 highlights 必填 SHA 合同。
 
 ## Legacy/internal 兼容入口
 

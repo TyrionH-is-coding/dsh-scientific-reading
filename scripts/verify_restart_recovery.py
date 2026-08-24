@@ -18,6 +18,14 @@ EXPECTED_LIBRARY_STATUS = "restart_probe_ready"
 TIMEOUT_SECONDS = 15.0
 
 
+def run_hidden(*args, **kwargs):
+    kwargs.setdefault(
+        "creationflags",
+        getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+    )
+    return subprocess.run(*args, **kwargs)
+
+
 def process_is_alive(pid: int) -> bool:
     """只读探测进程；Windows 上不能使用会终止目标的 os.kill(pid, 0)。"""
     if os.name != "nt":
@@ -91,7 +99,7 @@ def resolve_python(explicit: str | None) -> Path:
 
 
 def run_json(python: Path, args: list[str], *, env: dict[str, str]) -> tuple[int, object, str]:
-    result = subprocess.run(
+    result = run_hidden(
         [str(python), *args],
         capture_output=True,
         text=True,
@@ -115,7 +123,7 @@ def run_json(python: Path, args: list[str], *, env: dict[str, str]) -> tuple[int
 
 def real_package_directory(python: Path) -> Path:
     code = "import scientific_reading; print(scientific_reading.__path__[0])"
-    result = subprocess.run(
+    result = run_hidden(
         [str(python), "-c", code],
         capture_output=True,
         text=True,
@@ -229,7 +237,7 @@ def write_launch_parent(path: Path) -> None:
 def worker_command_matches(pid: int, job_id: str, data_root: Path) -> bool:
     try:
         if os.name == "nt":
-            result = subprocess.run(
+            result = run_hidden(
                 [
                     "powershell",
                     "-NoProfile",
@@ -300,7 +308,7 @@ def verify(python: Path) -> dict[str, object]:
         env["PYTHONPATH"] = str(overlay)
         cli_env = os.environ.copy()
         cli_env["PYTHONPATH"] = str(real_package.parent)
-        parent = subprocess.run(
+        parent = run_hidden(
             [str(python), str(launch_parent), str(data_root)],
             capture_output=True,
             text=True,
@@ -393,7 +401,7 @@ def main() -> None:
         full_read_env = os.environ.copy()
         full_read_env.pop("FEISHU_APP_ID", None)
         full_read_env.pop("FEISHU_APP_SECRET", None)
-        full_read = subprocess.run(
+        full_read = run_hidden(
             [str(python), str(Path(__file__).with_name("verify_full_read_pipeline.py"))],
             capture_output=True,
             text=True,

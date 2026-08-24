@@ -19,6 +19,14 @@ INTERRUPTIONS = (
 )
 
 
+def _run_hidden(*args, **kwargs):
+    kwargs.setdefault(
+        "creationflags",
+        getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+    )
+    return subprocess.run(*args, **kwargs)
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -255,7 +263,7 @@ if __name__=="__main__": main()
 
 
 def _run_cli(python: Path, env: dict[str, str], data_root: Path, *args: str) -> dict:
-    result = subprocess.run(
+    result = _run_hidden(
         [str(python), "-m", "scientific_reading", "--data-root", str(data_root), *args],
         capture_output=True, text=True, encoding="utf-8", env=env, timeout=20, check=False,
     )
@@ -352,6 +360,7 @@ def _contained(root: Path, relative: str) -> Path:
 
 
 def _verify_integrity(data_root: Path, paper_id: str) -> dict:
+    import csv
     import pymupdf
 
     paper = data_root / "papers" / paper_id
@@ -362,6 +371,8 @@ def _verify_integrity(data_root: Path, paper_id: str) -> dict:
     generation = reader.parents[1]
     manifest_path = generation / "reading" / "reader-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("contract") != "reader-manifest-v1" or manifest.get("paper_id") != paper_id:
+        raise ValueError("reader_identity_invalid")
     source = generation / "source.pdf"
     parser = generation / "parsed" / "mineru" / "source_map.json"
     translation = generation / "reading" / "full" / "translations.json"
@@ -394,9 +405,28 @@ def _verify_integrity(data_root: Path, paper_id: str) -> dict:
             csv_path = _contained(exports, asset["csv_path"])
             if csv_path.suffix.lower() not in {".csv", ".json"}:
                 raise ValueError("export_structured_extension_invalid")
-            csv_path.read_text(encoding="utf-8")
-    (exports / "captions.md").read_text(encoding="utf-8")
-    return {"reader": reader, "generation": generation, "reader_manifest": manifest_path, "exports_manifest": export_manifest_path, "exports": exports, "sha_alignment": True}
+            if csv_path.suffix.lower() == ".json":
+                json.loads(csv_path.read_text(encoding="utf-8"))
+            else:
+                list(csv.reader(csv_path.read_text(encoding="utf-8").splitlines()))
+    captions_path = exports / "captions.md"
+    captions_path.read_text(encoding="utf-8")
+    kinds = [asset.get("kind") for asset in export_manifest["assets"]]
+    return {
+        "reader": reader,
+        "generation": generation,
+        "reader_manifest": manifest_path,
+        "exports_manifest": export_manifest_path,
+        "exports": exports,
+        "active_reader_count": len(readers),
+        "export_counts": {
+            "figures": kinds.count("figure"),
+            "tables": kinds.count("table"),
+            "captions": captions_path.is_file(),
+            "manifest": export_manifest_path.is_file(),
+        },
+        "sha_alignment": True,
+    }
 
 
 def _snapshot(root: Path) -> dict[str, str]:
@@ -421,7 +451,7 @@ def verify() -> dict:
         root = Path(temporary)
         for scenario_index, interruption in enumerate(INTERRUPTIONS):
             formal_root = root / f"f{scenario_index}"
-            formal = subprocess.run(
+            formal = _run_hidden(
                 [sys.executable, __file__, "--formal-debug", str(formal_root), "--crashpoint", interruption],
                 capture_output=True, text=True, encoding="utf-8",
                 env={**child_env, "SR_ENGINE_ROOT": str(engine)}, timeout=60, check=False,
@@ -433,25 +463,29 @@ def verify() -> dict:
             time.sleep(0.5)
         final = formal_results[-1]
         integrity = _verify_integrity(Path(final["data_root"]), final["paper_id"])
-        reader_bytes = integrity["reader"].read_bytes()
-        integrity["reader"].write_bytes(b"tampered-reader")
-        try:
-            _verify_integrity(Path(final["data_root"]), final["paper_id"])
-            raise RuntimeError("reader_tamper_not_detected")
-        except ValueError:
-            reader_tamper_detected = True
-        finally:
-            integrity["reader"].write_bytes(reader_bytes)
+        def tamper_detected(path: Path, replacement: bytes) -> bool:
+            original = path.read_bytes()
+            path.write_bytes(replacement)
+            try:
+                _verify_integrity(Path(final["data_root"]), final["paper_id"])
+                raise RuntimeError(f"tamper_not_detected:{path}")
+            except ValueError:
+                return True
+            finally:
+                path.write_bytes(original)
+
+        generation = integrity["generation"]
+        reader_manifest = json.loads(integrity["reader_manifest"].read_text(encoding="utf-8"))
+        reader_asset = generation / reader_manifest["assets"][0]["path"]
         export_path = next(integrity["exports"].rglob("*.png"))
-        export_bytes = export_path.read_bytes()
-        export_path.write_bytes(b"tampered-export")
-        try:
-            _verify_integrity(Path(final["data_root"]), final["paper_id"])
-            raise RuntimeError("export_tamper_not_detected")
-        except ValueError:
-            export_tamper_detected = True
-        finally:
-            export_path.write_bytes(export_bytes)
+        tamper_negative = {
+            "source_pdf": tamper_detected(generation / "source.pdf", b"tampered-source"),
+            "parser": tamper_detected(generation / "parsed" / "mineru" / "source_map.json", b"{}"),
+            "translation": tamper_detected(generation / "reading" / "full" / "translations.json", b"{}"),
+            "reader_html": tamper_detected(integrity["reader"], b"tampered-reader"),
+            "reader_asset": tamper_detected(reader_asset, b"tampered-reader-asset"),
+            "export_asset": tamper_detected(export_path, b"tampered-export"),
+        }
         expected_counts = {"ensure_pdf", "parse_fast", "parse_mineru", "translation:batch-0001", "translation:batch-0002", "render_reader", "schedule_derived_updates", "export"}
         repeated = sum(value - 1 for row in formal_results for key, value in row["counts"].items() if key in expected_counts and value > 1)
         counts_complete = all(expected_counts == set(row["counts"]) and all(value == 1 for value in row["counts"].values()) for row in formal_results)
@@ -462,15 +496,15 @@ def verify() -> dict:
             "status": "full_read_pipeline_verified",
             "interruptions": list(INTERRUPTIONS),
             "completed_stages_repeated": repeated,
-            "active_reader_count": 1,
+            "active_reader_count": integrity["active_reader_count"],
             "reader_path": relative_reader,
             "sha_alignment": integrity["sha_alignment"],
-            "exports": {"figures": 2, "tables": 1, "captions": True, "manifest": True},
+            "exports": integrity["export_counts"],
             "fixture": {"pages": 4, "translation_batches": 2},
             "external_writes": not all(row["external_blocked"] for row in formal_results),
             "network_used": not all(row["external_blocked"] for row in formal_results),
             "profile_isolated": all(Path(row["data_root"]).is_relative_to(root) and Path(row["profile"]).is_relative_to(root) for row in formal_results),
-            "tamper_negative": {"reader": reader_tamper_detected, "export": export_tamper_detected},
+            "tamper_negative": tamper_negative,
             "formal_parent": {
                 "all_completed": all(row["state"] == "completed" for row in formal_results),
                 "stable_parent_ids": all(len(row["parent_ids"]) == 1 for row in formal_results),
