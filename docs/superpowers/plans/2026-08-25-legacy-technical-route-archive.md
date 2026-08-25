@@ -200,7 +200,7 @@ root = Path.cwd()
 broken = []
 for md in root.rglob("*.md"):
     rel = md.relative_to(root)
-    if any(part in {".git", "node_modules", ".venv"} for part in rel.parts):
+    if any(part in {".git", ".worktrees", "node_modules", ".venv"} for part in rel.parts):
         continue
     text = md.read_text(encoding="utf-8")
     for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
@@ -222,7 +222,7 @@ print("markdown_links_ok")
 - [x] **Step 2: 检查当前/归档分界**
 
 ```powershell
-rg -l "Zotero Desktop|九节式|zotero-migrate|sr_zotero_migrate" docs `
+rg -l --glob '*.md' "Zotero Desktop|九节式|zotero-migrate|sr_zotero_migrate" docs `
   | Where-Object { $_ -notmatch "docs[\\/]archive" -and $_ -notmatch "two-stage-literature-workflow" }
 ```
 
@@ -245,15 +245,15 @@ git diff main --check
 - Preserve: `D:\Vibe Coding\dsh-scientific-reading\docs\survey.html`
 - Preserve: reader v2.1 独立 worktree/branch
 
-- [ ] **Step 1: 先合并引擎，再合并插件**
+- [x] **Step 1: 先合并引擎，再合并插件**
 
 在各自 main 仓库使用 `--no-ff` 合并 `docs/archive-legacy-route`，中文 merge commit；不 stash、不删除用户文件。
 
-- [ ] **Step 2: 在 main 重跑文档门禁**
+- [x] **Step 2: 在 main 重跑文档门禁**
 
 重复 Task 2 Step 7、Task 3 Step 4 和 Task 4 的链接检查。确认两仓库 `git diff --check` 通过；插件 `git status --short` 仍只允许 `?? docs/survey.html`。
 
-- [ ] **Step 3: 清理本任务工作树与分支**
+- [x] **Step 3: 清理本任务工作树与分支**
 
 ```powershell
 git -C "D:\Vibe Coding\Scientific-Reading-for-Newbies" worktree remove ".worktrees\archive-legacy-docs"
@@ -263,3 +263,11 @@ git -C "D:\Vibe Coding\dsh-scientific-reading" branch -d docs/archive-legacy-rou
 ```
 
 预期：本任务 worktree/branch 消失；reader v2.1 工作树仍存在；3080、飞书、机构认证和 GitHub 均未操作。
+
+## 执行记录（2026-08-25）
+
+- 插件归档提交为 `b4bb5e6`、验证记录提交为 `f6f6b88`，本地合并 `main` 为 `0e499c3`；引擎归档提交为 `d14848b`，本地合并 `main` 为 `6738953`。
+- 插件保留 19 个归档 Markdown，引擎保留 28 个归档 Markdown；旧文件正文只做末尾空行和一处归档相对链接修正。
+- 两仓库在 worktree 和合并后的 `main` 均输出 `markdown_links_ok`；当前非归档 Markdown 的旧路线关键词命中均为 0，合并范围 `git diff --check` 均通过。
+- 本任务两个 worktree/branch 已删除，reader v2.1 的既有 worktree 保留；插件用户文件 `docs/survey.html` 仍为未跟踪状态且未改动。
+- 本轮只修改文档；未操作 persistent Profile/3080、飞书、机构认证、网络下载或 GitHub。
