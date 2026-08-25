@@ -147,15 +147,15 @@ git commit -m "文档：归档插件旧技术路线"
 - Move: `docs/superpowers/plans/*.md`
 - Move: `docs/superpowers/specs/*.md`
 
-- [ ] **Step 1: 移动引擎旧阶段文档**
+- [x] **Step 1: 移动引擎旧阶段文档**
 
 把当前 `docs/superpowers/plans/*.md` 移到 `docs/archive/legacy-zotero-workflow/plans/`，把 `docs/superpowers/specs/*.md` 移到 `docs/archive/legacy-zotero-workflow/specs/`。把旧 `docs/scansci-pdf-integration.md` 移到 `docs/archive/legacy-zotero-workflow/scansci-pdf-integration-zotero-era.md`，不改写归档正文。
 
-- [ ] **Step 2: 写引擎归档说明和索引**
+- [x] **Step 2: 写引擎归档说明和索引**
 
 `docs/README.md` 链接根 README、当前 ScanSci 集成、`reader/README.md` 和 archive README。归档说明必须指出这些文件记录 2026-07/08 的 Zotero 主库与九节浅读路线，不得作为当前 CLI 或 worker 指令。
 
-- [ ] **Step 3: 重写当前 ScanSci 集成文档**
+- [x] **Step 3: 重写当前 ScanSci 集成文档**
 
 当前链路固定为：
 
@@ -170,7 +170,7 @@ git commit -m "文档：归档插件旧技术路线"
 
 明确 ScanSci 不是引擎必选依赖；失败转 `needs_user`；机构浏览器必须逐篇显式授权；不读取凭据/Cookie；不调用 Zotero；不把 provider 成功直接等同于 `pdf_ready`。
 
-- [ ] **Step 4: 运行引擎文档门禁并提交**
+- [x] **Step 4: 运行引擎文档门禁并提交**
 
 ```powershell
 rg -n "默认仍优先复用 Zotero|回挂 Zotero|Zotero 读回闭环|reading/full/output/reader_full.html" `
@@ -188,7 +188,7 @@ git commit -m "文档：归档引擎旧技术路线"
 
 - Verify: 两个 worktree 中的全部 tracked Markdown
 
-- [ ] **Step 1: 检查 Markdown 相对链接**
+- [x] **Step 1: 检查 Markdown 相对链接**
 
 在每个 worktree 根目录运行以下 Python 标准库脚本；它忽略 HTTP、锚点和绝对路径，只检查仓库内相对文件链接：
 
@@ -199,7 +199,8 @@ import re, sys
 root = Path.cwd()
 broken = []
 for md in root.rglob("*.md"):
-    if any(part in {".git", ".worktrees", "node_modules", ".venv"} for part in md.parts):
+    rel = md.relative_to(root)
+    if any(part in {".git", "node_modules", ".venv"} for part in rel.parts):
         continue
     text = md.read_text(encoding="utf-8")
     for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
@@ -208,7 +209,7 @@ for md in root.rglob("*.md"):
             continue
         candidate = (md.parent / target).resolve()
         if not candidate.exists():
-            broken.append(f"{md.relative_to(root)} -> {target}")
+            broken.append(f"{rel} -> {target}")
 if broken:
     print("\n".join(broken))
     sys.exit(1)
@@ -218,7 +219,7 @@ print("markdown_links_ok")
 
 预期：两个仓库都输出 `markdown_links_ok`。
 
-- [ ] **Step 2: 检查当前/归档分界**
+- [x] **Step 2: 检查当前/归档分界**
 
 ```powershell
 rg -l "Zotero Desktop|九节式|zotero-migrate|sr_zotero_migrate" docs `
@@ -227,7 +228,7 @@ rg -l "Zotero Desktop|九节式|zotero-migrate|sr_zotero_migrate" docs `
 
 预期：插件最多命中说明“明确不恢复旧路线”的当前设计/roadmap；引擎当前入口不命中。逐个解释任何剩余项，不为追求零命中而改写已完成的两阶段迁移证据。
 
-- [ ] **Step 3: 检查只改文档**
+- [x] **Step 3: 检查只改文档**
 
 ```powershell
 git diff main --name-only | Where-Object { $_ -notmatch '^(README\.md|docs/|reader/README\.md)' }
