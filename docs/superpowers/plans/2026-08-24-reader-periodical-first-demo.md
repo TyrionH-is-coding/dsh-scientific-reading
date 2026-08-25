@@ -11,6 +11,11 @@
 
 **Tech Stack:** 静态 HTML、原生 CSS、原生 JavaScript、Node.js 内置断言、Codex in-app Browser。
 
+**执行状态（2026-08-25）：** Task 1–4 已完成。后续修订已统一学术字体体系（标题黑体、
+正文宋体系、西文 Times），为局限性与参考文献补充 `focus-heading`，并在图表 dialog 打开时
+暂停保存阅读位置。四档真实浏览器验收确认首屏、响应式、交互、离线与恢复行为符合合同；
+验收中发现并修复语言状态未写入 `body.dataset`、导读跳转藏入折叠详情两项偏差。
+
 ---
 
 ### Task 1: 建立期刊式结构合同
@@ -19,7 +24,7 @@
 - Create: `D:\Vibe Coding\reader-v21-demo\verify_periodical_layout.mjs`
 - Test: `D:\Vibe Coding\reader-v21-demo\reader.html`
 
-- [ ] **Step 1: 写入失败的静态合同测试**
+- [x] **Step 1: 写入失败的静态合同测试**
 
 ```js
 import assert from "node:assert/strict";
@@ -39,7 +44,7 @@ assert.match(html, /sidebar-guide/);
 assert.match(html, /periodical-first-ready/);
 ```
 
-- [ ] **Step 2: 运行测试并确认旧演示页失败**
+- [x] **Step 2: 运行测试并确认旧演示页失败**
 
 Run:
 
@@ -55,7 +60,7 @@ Expected: FAIL，第一条失败为缺少 `body.periodical-first` 或新的控�
 - Modify: `D:\Vibe Coding\reader-v21-demo\reader.html`
 - Test: `D:\Vibe Coding\reader-v21-demo\verify_periodical_layout.mjs`
 
-- [ ] **Step 1: 在现有 IIFE 顶部重排 DOM**
+- [x] **Step 1: 在现有 IIFE 顶部重排 DOM**
 
 在查询按钮之前执行以下确定性转换：
 
@@ -94,7 +99,7 @@ sidebar.insertBefore(guide, toc);
 实现时不得使用 `innerHTML` 插入 guide 文本；上例的 summary 应改成 `createElement` + `textContent`，
 保证演示实现与生产安全边界一致。
 
-- [ ] **Step 2: 将工具条收缩为三个控制组**
+- [x] **Step 2: 将工具条收缩为三个控制组**
 
 使用不包含数据插值的固定 HTML 字符串构造；该字符串只包含阅读器自身按钮，不接触题录、导读或
 论文文本：
@@ -114,7 +119,7 @@ sidebar.insertBefore(guide, toc);
 
 将“回到上次位置”按钮移动到侧栏底部，禁用时通过 `hidden` 隐藏；删除工具条中的状态 chip 和计数。
 
-- [ ] **Step 3: 用状态函数替换三个旧开关监听器**
+- [x] **Step 3: 用状态函数替换三个旧开关监听器**
 
 ```js
 const setLanguage = (mode) => {
@@ -138,7 +143,7 @@ const setReadingMode = (mode) => {
 初始调用 `setLanguage('zh')` 和 `setReadingMode('full')`。保留 sidebar、progress、localStorage、TOC、
 dialog 的既有处理。
 
-- [ ] **Step 4: 给重点标签增加非视觉可访问名称**
+- [x] **Step 4: 给重点标签增加非视觉可访问名称**
 
 ```js
 for (const label of document.querySelectorAll('.highlight-label')) {
@@ -149,7 +154,7 @@ for (const label of document.querySelectorAll('.highlight-label')) {
 }
 ```
 
-- [ ] **Step 5: 运行静态合同测试**
+- [x] **Step 5: 运行静态合同测试**
 
 Run:
 
@@ -165,7 +170,7 @@ Expected: PASS，无输出且退出码为 0。
 - Modify: `D:\Vibe Coding\reader-v21-demo\reader.html`
 - Test: `D:\Vibe Coding\reader-v21-demo\verify_periodical_layout.mjs`
 
-- [ ] **Step 1: 添加作用域 CSS token 与阅读画布**
+- [x] **Step 1: 添加作用域 CSS token 与阅读画布**
 
 ```css
 body.periodical-first {
@@ -196,23 +201,23 @@ body.periodical-first article > .paper-asset {
 }
 ```
 
-- [ ] **Step 2: 收紧题录并让摘要进入首屏**
+- [x] **Step 2: 收紧题录并让摘要进入首屏**
 
 隐藏 `.paper-kicker`、`.paper-facts`；移除 hero 背景装饰；题目使用 38–42px、`1.25` 行高；题录改成
 横向自然换行；hero 底部与 article 顶部总留白不超过 54px。不得隐藏摘要或改变 article 顺序。
 
-- [ ] **Step 3: 样式化侧栏导读与三组控制器**
+- [x] **Step 3: 样式化侧栏导读与三组控制器**
 
 侧栏导读使用无卡片的一行预览、细分隔线和独立“跳到正文”链接；工具条使用透明背景分段按钮，
 激活态只用深绿文字、浅绿底和 1px 边框。移动端保持相同状态标签，不显示旧 chip。
 
-- [ ] **Step 4: 降低重点和英文入口的视觉噪声**
+- [x] **Step 4: 降低重点和英文入口的视觉噪声**
 
 重点底色作用于正文文本，不给 `.reading-block` 添加卡片边框；`.highlight-label` 缩成页边 8px 点，
 hover/focus 时用 `data-label` 显示提示。`details.source-text > summary` 改为段末小型 `EN 原文` 入口，
 英文展开后使用细左线，不加卡片背景。
 
-- [ ] **Step 5: 加入运行完成标记并复跑合同**
+- [x] **Step 5: 加入运行完成标记并复跑合同**
 
 初始化结束时执行：
 
@@ -233,27 +238,35 @@ Expected: PASS。
 **Files:**
 - Verify: `D:\Vibe Coding\reader-v21-demo\reader.html`
 
-- [ ] **Step 1: 在现有本地服务器重新加载演示页**
+- [x] **Step 1: 在现有本地服务器重新加载演示页**
 
 Open: `http://127.0.0.1:8765/reader.html?v=periodical-first`
 
 Expected: 页面标题和摘要在首屏，正文主流中没有导读卡片墙。
 
-- [ ] **Step 2: 检查四个 viewport**
+- [x] **Step 2: 检查四个 viewport**
 
 依次检查 1440×900、1280×720、900×720、390×844。桌面首屏必须出现摘要文本；900×720 至少出现
 “摘要”标题；390×844 允许题录换行，但导读不得插回正文。
 
-- [ ] **Step 3: 检查交互矩阵**
+- [x] **Step 3: 检查交互矩阵**
 
 验证目录展开/收起、中文/中英、全文/无标记/重点、导读跳转、英文列表合并、Figure/Table dialog、
 URL hash 和阅读位置恢复。每次切换只改变对应状态，不产生控制器互相覆盖。
 
-- [ ] **Step 4: 检查离线和控制台**
+- [x] **Step 4: 检查离线和控制台**
 
 确认页面没有 HTTP(S) 请求、没有 console error、关闭 dialog 后焦点返回触发元素。
 
-- [ ] **Step 5: 记录交付边界**
+- [x] **Step 5: 记录交付边界**
 
 交付演示页、合同脚本和浏览器验收结果。明确生产构建器尚未迁移，后续迁移必须复用本演示页的
 DOM 语义、视觉 token 和交互状态，不重新设计。
+
+**浏览器验收记录（2026-08-25）：**
+
+- 1440×900、1280×720：摘要正文首段顶边均为 351px，可在首屏阅读；
+- 900×720：摘要标题顶边 314px，侧栏切换为顶部抽屉；
+- 390×844：摘要标题顶边 363px，工具条单行 45px，无横向溢出；
+- 中英模式展开 9/9 个英文组，全文/无标记/重点状态可逆，导读 hash、图表 dialog、焦点归还、
+  阅读位置自动恢复均通过；页面无 HTTP(S) 资源，控制台无 warning/error。
