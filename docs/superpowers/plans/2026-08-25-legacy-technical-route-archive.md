@@ -18,7 +18,7 @@
 - Read: `D:\Vibe Coding\dsh-scientific-reading\README.md`
 - Read: `D:\Vibe Coding\Scientific-Reading-for-Newbies\README.md`
 
-- [ ] **Step 1: 检查 main 和用户改动**
+- [x] **Step 1: 检查 main 和用户改动**
 
 ```powershell
 git -C "D:\Vibe Coding\dsh-scientific-reading" status --short
@@ -27,7 +27,7 @@ git -C "D:\Vibe Coding\Scientific-Reading-for-Newbies" status --short
 
 预期：插件只允许已有用户文件 `?? docs/survey.html`；引擎 clean。若出现其他改动，保留并避开，不使用 reset 或 checkout 清除。
 
-- [ ] **Step 2: 创建本任务 worktree**
+- [x] **Step 2: 创建本任务 worktree**
 
 ```powershell
 git -C "D:\Vibe Coding\dsh-scientific-reading" worktree add ".worktrees\archive-legacy-docs" -b docs/archive-legacy-route main
@@ -36,7 +36,7 @@ git -C "D:\Vibe Coding\Scientific-Reading-for-Newbies" worktree add ".worktrees\
 
 预期：两个 worktree 分别位于各仓库 `.worktrees/archive-legacy-docs`，不接触 reader v2.1 的现有独立 worktree。
 
-- [ ] **Step 3: 运行旧路线失败基线**
+- [x] **Step 3: 运行旧路线失败基线**
 
 在插件 worktree 的当前入口中运行：
 
@@ -72,7 +72,7 @@ rg -n "默认仍优先复用 Zotero|回挂 Zotero|Zotero 读回闭环" README.md
 - Move: `docs/superpowers/specs/2026-08-22-*.md`
 - Move: `docs/superpowers/specs/2026-08-23-live-qa-repair-design.md`
 
-- [ ] **Step 1: 移动旧文件且保留原内容**
+- [x] **Step 1: 移动旧文件且保留原内容**
 
 建立 `docs/archive/pre-two-stage-plugin/{entry-snapshots,plans,specs}`。把四个旧入口移动到 `entry-snapshots/`，把借鉴清单移到归档根，把列出的 plans/specs 移到对应目录。不得移动：
 
@@ -87,13 +87,13 @@ rg -n "默认仍优先复用 Zotero|回挂 Zotero|Zotero 读回闭环" README.md
 
 使用 `git diff --summary` 确认 Git 识别为 rename；归档快照正文不做批量替换。
 
-- [ ] **Step 2: 写归档说明和当前文档索引**
+- [x] **Step 2: 写归档说明和当前文档索引**
 
 `docs/archive/README.md` 必须包含：归档日期 2026-08-25、归档内容不定义当前行为、当前入口是根 README 与 `docs/README.md`、可用 Git 历史追溯原路径。
 
 `docs/README.md` 只链接：根 README、design、features、roadmap、handoff、两阶段/三阶段总索引、reader v2.1 和期刊正文优先设计、archive README。
 
-- [ ] **Step 3: 重写 `docs/design.md`**
+- [x] **Step 3: 重写 `docs/design.md`**
 
 正文使用以下固定架构：
 
@@ -106,11 +106,11 @@ DSH 文献页/工具
 
 明确：SQLite 是唯一事实来源；快速入库不等待 PDF/MinerU；全文精读使用持久 parent job；正式 reader 位于 `papers/<paper_id>/generations/<sha16>/reading/reader.html`；无 Zotero 运行入口；旧字段和旧资产只读兼容。
 
-- [ ] **Step 4: 重写 `docs/features.md`**
+- [x] **Step 4: 重写 `docs/features.md`**
 
 只保留四节：快速入库、文献导航、按需精读与资产、飞书/XLSX 派生。每项只用“已完成”或“当前限制”，不使用旧 Phase 编号，不宣传九节式笔记、关键图 AI 判断、批量机构下载或双向同步。
 
-- [ ] **Step 5: 重写 `docs/roadmap.md`**
+- [x] **Step 5: 重写 `docs/roadmap.md`**
 
 写成完成基线与后续独立范围：
 
@@ -120,11 +120,11 @@ DSH 文献页/工具
 明确不做：Zotero 运行链恢复、九节浅读恢复、AI 关键图挑选、批量机构下载、飞书双向同步。
 ```
 
-- [ ] **Step 6: 重写 `docs/handoff-dsh-native.md`**
+- [x] **Step 6: 重写 `docs/handoff-dsh-native.md`**
 
 保留当前职责、数据根、构建命令、测试门禁、真实 Bundle 三层验证、飞书/机构认证边界和本地合并规则。删除固定 commit、工具数量、测试数量、表格记录数、旧论文状态和旧路由数量。
 
-- [ ] **Step 7: 运行插件文档门禁并提交**
+- [x] **Step 7: 运行插件文档门禁并提交**
 
 ```powershell
 rg -n "Zotero Desktop|九节式|Phase 0|下一步|reading/full/output/reader_full.html|zotero-migrate|sr_zotero_migrate" `
