@@ -21,7 +21,6 @@ import { resolveDataRoot, resolveOutputDir } from './config.js'
 import { isPaperId, parsePaperRoute } from './papers.js'
 import { BATCH_ACTIONS, listNavigation, resolveNavigationArtifact, submitBatch } from './library_tools.js'
 import {
-  engineList,
   engineJobStatus,
   engineLibraryItem,
   engineLibraryIngest,
@@ -335,27 +334,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
     }
   })
 
-  // ── 文献库列表（富化：每篇并入 job.json 实时状态）────────────────────
-  exact('/sr/api/papers', async (_req, res) => {
-    const r = await engineList(config)
-    if (!r.ok) return sendJson(res, 500, { error: r.stderr || 'list_failed' })
-    const papers = (r.json as Array<Record<string, unknown>> | null) ?? []
-    const enriched = []
-    for (const p of papers) {
-      const pid = String(p.paper_id ?? '')
-      const jobRaw = await readOrNull(join(paperRoot(pid), 'job.json'))
-      if (jobRaw) {
-        try {
-          const job = JSON.parse(jobRaw)
-          p.status = job.status ?? p.status
-          p.job_status = job.status ?? null
-        } catch { /* 保留库状态 */ }
-      }
-      enriched.push(p)
-    }
-    sendJson(res, 200, { papers: enriched })
-  })
-
   // ── 论文详情与动作 ──────────────────────────────────────────────────
   prefix('/sr/api/paper', async (req, res) => {
     const parts = parsePaperRoute(req.url ?? '', '/sr/api/paper')
@@ -376,12 +354,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const item = engineItem ? { ...metadata, ...engineItem } : metadata
         const activeJobId = typeof item?.active_job_id === 'string' && JOB_ID_RE.test(item.active_job_id) ? item.active_job_id : ''
         const activeJob = activeJobId ? await engineJobStatus(config, activeJobId) : null
-        const reading = await readOrNull(join(root, 'reading', 'quick_read.md'))
-        const outputs: string[] = []
-        for (const p of ['reading/quick_read.md']) {
-          try { await access(join(root, p)); outputs.push(p) } catch { /* 不存在 */ }
-        }
-        sendJson(res, 200, { paper_id: id, item, job: activeJob?.json ? withoutSensitiveFields(activeJob.json) : null, reading, outputs })
+        sendJson(res, 200, { paper_id: id, item, job: activeJob?.json ? withoutSensitiveFields(activeJob.json) : null })
         return
       }
 
@@ -565,16 +538,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const r = await engineJobStatus(config, id)
     sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? withoutSensitiveFields(r.json) : { error: 'job_unavailable', detail: 'engine_rejected_request' })
-  })
-
-  // ── 浅读笔记（HTML 呈现）───────────────────────────────────────────
-  prefix('/sr/reading', async (_req, res) => {
-    const id = decodeURIComponent((_req.url ?? '').slice('/sr/reading'.length)).split('/').filter(Boolean)[0] ?? ''
-    if (!isPaperId(id)) return sendText(res, 404, 'not found')
-    const text = await readOrNull(join(paperRoot(id), 'reading', 'quick_read.md'))
-    if (text === null) return sendText(res, 404, 'no quick read yet')
-    const html = '<!doctype html><meta charset="utf-8"><title>' + id + '</title><body style="max-width:860px;margin:24px auto;font-family:system-ui;line-height:1.7"><pre style="white-space:pre-wrap">' + escapeHtml(text) + '</pre></body>'
-    sendText(res, 200, html, 'text/html; charset=utf-8')
   })
 
   // ── 精读 HTML（Phase 3 产物，存在即服务）──────────────────────────

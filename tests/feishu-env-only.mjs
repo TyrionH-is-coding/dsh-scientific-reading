@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { engineFeishuSync } from '../lib/cli.js'
+import { engineFeishuProbe } from '../lib/cli.js'
 import { Config } from '../lib/config.js'
 
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' })
@@ -57,7 +57,7 @@ try {
     feishuAppSecret: 'settings-secret',
   }
 
-  const result = await engineFeishuSync(config, join(root, 'metadata.json'))
+  const result = await engineFeishuProbe(config)
   assert.equal(result.ok, true)
   assert.equal(result.json?.app_id, null)
   assert.equal(result.json?.app_secret, null)

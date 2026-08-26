@@ -6,6 +6,11 @@ __pycache__/
 *.py[cod]
 _scratch/
 .worktrees/
+/dist/
+/engine/build/
+/engine/*.egg-info/
+/.pytest_cache/
+/engine/.pytest_cache/
 .DS_Store
 Thumbs.db
 desktop.ini

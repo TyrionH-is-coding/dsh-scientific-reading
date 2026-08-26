@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -322,19 +322,45 @@ export async function defaultDownloadDir(): Promise<string> {
 }
 // ── scientific-reading 引擎适配器（Phase 1：本地文献库）───────────────
 
-/** 解析装有 scientific-reading 引擎的 Python：显式配置 → env → 复用 scansci 环境 */
+function engineVenvPython(dataRoot: string): string {
+  return process.platform === 'win32'
+    ? join(dataRoot, '.venv', 'Scripts', 'python.exe')
+    : join(dataRoot, '.venv', 'bin', 'python')
+}
+
+export async function ensureBundledEngine(config: Config): Promise<{ ok: boolean; python: string; detail: string }> {
+  const dataRoot = resolveDataRoot(config)
+  const venvPython = engineVenvPython(dataRoot)
+  const wheelDir = fileURLToPath(new URL('../dist/python/', import.meta.url))
+  let wheels: string[] = []
+  try { wheels = (await readdir(wheelDir)).filter((name) => name.endsWith('.whl')) } catch { /* handled below */ }
+  if (wheels.length !== 1) return { ok: false, python: venvPython, detail: 'bundled_engine_wheel_missing' }
+  try { await access(venvPython) } catch {
+    await mkdir(dataRoot, { recursive: true })
+    const created = await runCommand(config.python, ['-m', 'venv', join(dataRoot, '.venv')], { timeoutMs: 120_000 })
+    if (created.exitCode !== 0) return { ok: false, python: venvPython, detail: created.stderr || 'engine_venv_failed' }
+  }
+  const installed = await runCommand(
+    venvPython,
+    ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', join(wheelDir, wheels[0])],
+    { timeoutMs: 180_000 },
+  )
+  if (installed.exitCode !== 0) return { ok: false, python: venvPython, detail: installed.stderr || 'engine_install_failed' }
+  const probe = await runCommand(venvPython, ['-c', 'import scientific_reading'], { timeoutMs: 15_000 })
+  return { ok: probe.exitCode === 0, python: venvPython, detail: probe.stderr || (probe.exitCode === 0 ? 'ready' : 'engine_probe_failed') }
+}
+
+/** 解析内置引擎 Python：显式开发覆盖 → 数据目录虚拟环境。 */
 export async function resolveEnginePython(config: Config): Promise<string | null> {
   if (config.enginePython.trim()) {
     try { await access(config.enginePython.trim()); return config.enginePython.trim() } catch { /* fallthrough */ }
   }
-  if (process.env.SCIENTIFIC_READING_PYTHON) {
-    try { await access(process.env.SCIENTIFIC_READING_PYTHON); return process.env.SCIENTIFIC_READING_PYTHON } catch { /* fallthrough */ }
-  }
-  const scansci = await resolveScansciPython(config)
-  if (scansci) {
-    const probe = await runCommand(scansci, ['-c', 'import scientific_reading'], { timeoutMs: 15_000 })
-    if (probe.exitCode === 0) return scansci
-  }
+  const bundled = engineVenvPython(resolveDataRoot(config))
+  try {
+    await access(bundled)
+    const probe = await runCommand(bundled, ['-c', 'import scientific_reading'], { timeoutMs: 15_000 })
+    if (probe.exitCode === 0) return bundled
+  } catch { /* setup 尚未执行 */ }
   return null
 }
 
@@ -499,74 +525,6 @@ export async function engineFeishuResync(config: Config, paperIds: string[] = []
 }
 
 /** library-ensure：写入本地文献库条目（查重+读回） */
-export async function engineEnsureItem(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['library-ensure', '--metadata', metadataPath])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** pdf-attach：本地 PDF 登记到文献库附件（校验+复制+读回） */
-export async function engineAttachPdf(config: Config, metadataPath: string, pdfPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['pdf-attach', '--metadata', metadataPath, '--pdf', pdfPath])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** library-list：列出文献库条目 */
-export async function engineList(config: Config): Promise<{ ok: boolean; json: unknown; stderr: string }> {
-  const r = await runEngine(config, ['library-list'])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** library-search：全文搜索 */
-export async function engineSearch(config: Config, query: string): Promise<{ ok: boolean; json: unknown; stderr: string }> {
-  const r = await runEngine(config, ['library-search', '--query', query])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** init：初始化论文工作区 */
-export async function engineInit(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['init', '--metadata', metadataPath])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** parse-paper：后台快速解析 */
-export async function engineParse(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['parse-paper', '--metadata', metadataPath, '--mode', 'auto'])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** quick-read：后台准备默认中文浅读 */
-export async function engineQuickRead(config: Config, metadataPath: string, projectContext?: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const args = ['quick-read', '--metadata', metadataPath]
-  if (projectContext) args.push('--project-context', projectContext)
-  const r = await runEngine(config, args)
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** full-read：后台准备按需全文精读（到达 produce_full_read gate 时 agent 提交批次） */
-export async function engineFullRead(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['full-read', '--metadata', metadataPath])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** feishu-preview：零网络生成飞书多维表格同步预览（需 feishuConfig JSON） */
-export async function engineFeishuPreview(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const cfg = config.feishuConfig.trim()
-  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
-  const r = await runEngine(config, ['feishu-preview', '--metadata', metadataPath, '--config', cfg])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** feishu-sync：显式授权后后台同步飞书多维表格。
- * 注意：sync 由独立 worker 进程执行（继承宿主环境变量），FEISHU_APP_ID/SECRET
- * 必须在启动 DSH 前设于宿主环境；插件设置与配置文件均不接收凭证。 */
-export async function engineFeishuSync(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const cfg = config.feishuConfig.trim()
-  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
-  const r = await runEngine(config, ['feishu-sync', '--metadata', metadataPath, '--config', cfg, '--confirm-write'])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-/** job-status：查询后台任务状态 */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])
   return { ok: r.ok, json: r.json, stderr: r.stderr }
@@ -604,11 +562,6 @@ export async function engineContinueFullRead(config: Config, jobId: string, supp
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
-export async function engineAttachFullReadPdf(config: Config, paperId: string, pdfPath: string) {
-  const r = await engineJson(config, ['pdf-attach', '--paper-id', paperId, '--pdf', pdfPath])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
 export async function engineAttachAndResumeFullReadPdf(config: Config, paperId: string, jobId: string, pdfPath: string) {
   const env = await trustedProviderEnv(config)
   const r = await engineJson(config, ['full-read-pdf-attach-resume', '--paper-id', paperId, '--job-id', jobId, '--pdf', pdfPath], undefined, env)
@@ -625,7 +578,3 @@ export async function engineResolveArtifact(config: Config, paperId: string, kin
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 /** library-ensure --check：只读查重 */
-export async function engineCheckItem(config: Config, metadataPath: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const r = await runEngine(config, ['library-ensure', '--metadata', metadataPath, '--check'])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}

@@ -8,7 +8,6 @@ import { registerRoutes } from '../lib/routes.js'
 
 const fixture = mkdtempSync(join(tmpdir(), 'sr-reading-routes-'))
 const paperId = 'doi_10.48550_arxiv.1706.03762'
-const readingDir = join(fixture, 'papers', paperId, 'reading')
 const generationDir = join(fixture, 'papers', paperId, 'generations', 'a'.repeat(16))
 const fullOutputDir = join(generationDir, 'output')
 const canonicalDir = join(generationDir, 'reading')
@@ -23,8 +22,6 @@ const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split
 mkdirSync(fullOutputDir, { recursive: true })
 mkdirSync(canonicalDir, { recursive: true })
 mkdirSync(exportsDir, { recursive: true })
-mkdirSync(readingDir, { recursive: true })
-writeFileSync(join(readingDir, 'quick_read.md'), '# fixture quick read', 'utf8')
 const legacyHtml = '<!doctype html><p>fixture full reader</p>'
 writeFileSync(join(fullOutputDir, 'reader_full.html'), legacyHtml, 'utf8')
 const rootLegacyHtml = '<!doctype html><p>fixture audited root reader</p>'
@@ -89,11 +86,6 @@ async function request(path, url) {
 try {
   registerRoutes(ctx, config)
 
-  const reading = await request('/sr/reading', `/sr/reading/${paperId}`)
-  assert.equal(reading.statusCode, 200)
-  assert.match(reading.headers['Content-Type'], /^text\/html/)
-  assert.match(reading.body, /fixture quick read/)
-
   const reader = await request('/sr/reader', `/sr/reader/${paperId}`)
   assert.equal(reader.statusCode, 200)
   assert.match(reader.headers['Content-Type'], /^text\/html/)
@@ -130,14 +122,12 @@ try {
   rmSync(exportsDir, { recursive: true, force: true })
   rmSync(outsideExports, { recursive: true, force: true })
 
-  assert.equal((await request('/sr/reading', '/sr/reading/not-a-paper')).statusCode, 404)
   assert.equal((await request('/sr/reader', '/sr/reader/not-a-paper')).statusCode, 404)
   assert.equal((await request('/sr/reader', `/sr/reader/${paperId}/extra`)).statusCode, 404)
   assert.equal((await request('/sr/reader', `/sr/reader/${paperId}/../secret`)).statusCode, 404)
-  assert.equal((await request('/sr/reading', '/sr/reading/title_missing')).statusCode, 404)
   assert.equal((await request('/sr/reader', '/sr/reader/title_missing')).statusCode, 404)
 
-  console.log('PASS: 浅读与精读页面路由回归测试')
+  console.log('PASS: 精读页面与资产路由回归测试')
 } finally {
   if (previousPythonPath === undefined) delete process.env.PYTHONPATH
   else process.env.PYTHONPATH = previousPythonPath

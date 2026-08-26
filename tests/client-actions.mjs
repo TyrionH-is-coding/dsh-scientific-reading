@@ -72,12 +72,11 @@ const controller = createPaperActionController({
 })
 const first = controller.loadDetail('library_one')
 const second = controller.loadDetail('library_one')
-assert.equal(first, second, '题名与浅读必须共用一次详情加载')
-detailResolve({ item: { title: 'Paper', abstract_en: 'EN', abstract_zh: '中', abstract_status: 'ready' }, outputs: ['reading/quick_read.md'] })
+assert.equal(first, second, '题名与摘要必须共用一次详情加载')
+detailResolve({ item: { title: 'Paper', abstract_en: 'EN', abstract_zh: '中', abstract_status: 'ready' }, outputs: [] })
 assert.equal((await first).abstract.abstract_en, 'EN')
 assert.equal(calls.filter(([path]) => path === '/sr/api/paper/library_one').length, 1)
 assert.equal(calls.filter(([path]) => path.endsWith('/abstract')).length, 0, '详情不得额外启动 abstract 子进程')
-assert.equal((await first).detail.outputs.includes('reading/quick_read.md'), true, '历史浅读只由 detail outputs 证明')
 
 await controller.startFullRead('library_one')
 assert.deepEqual(patches[0], ['library_one', { full_read_status: 'queued', active_job_id: 'job_0123456789abcdef' }])
@@ -169,7 +168,6 @@ assert.equal(exportFailurePatches.length, 0, '资产导出失败不得误标精�
 const invalidJob = createPaperActionController({ api() { return Promise.resolve({ parent_job_id: 'job_ABCDEF0123456789' }) }, schedule() { throw new Error('不得轮询') }, cancel() {}, onPatch() { throw new Error('不得更新') }, onRefresh() {} })
 await assert.rejects(invalidJob.startFullRead('library_invalid_job'), /任务编号无效/)
 
-assert.match(source, /outputs \|\| \[\]\)\.includes\('reading\/quick_read\.md'\)/, '仅 detail 证明旧浅读存在时才显示入口')
 assert.match(source, /job\.status === 'waiting_user'[^]*jobDetail\.reason_code === 'pdf_required'/, '持久重载必须从 detail job 恢复 PDF gate')
 assert.match(source, /reader\.onload[^]*drawerSessions\.guard/, 'FileReader 晚回调必须经过 drawer session 门控')
 

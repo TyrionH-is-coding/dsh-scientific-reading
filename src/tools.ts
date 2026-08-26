@@ -11,6 +11,7 @@ import {
   loginScansci,
   setSchoolScansci,
   readScansciConfig,
+  ensureBundledEngine,
   type FetchOutcome,
 } from './cli.js'
 
@@ -52,6 +53,19 @@ export function registerTools(ctx: Context, config: Config): void {
       },
     },
     async execute(args: { force?: boolean }) {
+      const engine = await ensureBundledEngine(config)
+      if (!engine.ok) {
+        return {
+          engine_ok: false,
+          exe: config.scansciExe,
+          legal_only: config.legalOnly,
+          school: config.school,
+          output_dir: resolveOutputDir(config),
+          config_path: '',
+          installed: false,
+          message: `内置引擎安装失败：${engine.detail.slice(-800)}`,
+        }
+      }
       const exe = config.scansciExe
       const ok = await probeScansci(exe)
       let installed = false
@@ -74,7 +88,7 @@ export function registerTools(ctx: Context, config: Config): void {
       const state = await ensureScansciConfig(config)
       const reProbe = ok || installed
       return {
-        engine_ok: reProbe,
+        engine_ok: engine.ok,
         exe,
         legal_only: state.legalOnly,
         school: state.school,

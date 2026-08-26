@@ -24,9 +24,12 @@ assert.deepEqual(uses, [
 assert.deepEqual(runs, [
   'npm ci --ignore-scripts --legacy-peer-deps',
   'npm run build:ci',
+  'npm run test:engine',
   'npm run test:offline',
-], 'workflow 只能执行离线命令')
-assert.equal(manifest.scripts?.['build:ci'], 'tsc -p tsconfig.json && node scripts/build-client.mjs')
-assert.equal(manifest.scripts?.['test:offline'], 'node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/client-actions.mjs && node tests/client-batch-actions.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/profile-bundle-verifier.mjs && node tests/profile-runtime-verifier.mjs && node tests/navigation-runtime.mjs && node tests/reading-routes.mjs && node tests/batch-contract.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/task7-hidden-subprocess.mjs && node tests/legacy-write-routes.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/no-zotero-runtime.mjs && node tests/feishu-env-only.mjs && node tests/mineru-env-only.mjs && node scripts/plugin-check.mjs')
+], 'workflow 必须构建单仓库包并运行引擎与插件测试')
+assert.match(manifest.scripts?.['build:ci'] ?? '', /build-engine\.mjs/)
+assert.match(manifest.scripts?.['test:engine'] ?? '', /pytest -q engine\/tests/)
+assert.match(manifest.scripts?.['test:offline'] ?? '', /tests\/bundled-engine\.mjs/)
+assert.doesNotMatch(manifest.scripts?.['test:offline'] ?? '', /profile|foundation-integration|full-read-integration/)
 
-console.log('PASS: CI workflow 仅执行离线门禁')
+console.log('PASS: CI workflow 构建内置 wheel 并执行单仓库门禁')

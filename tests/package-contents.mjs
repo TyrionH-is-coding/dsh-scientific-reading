@@ -39,6 +39,9 @@ const requiredFiles = [
   'lib/client.js',
   'lib/types/index.d.ts',
   'scripts/scansci_wrap.py',
+  'LICENSE',
+  'THIRD_PARTY_NOTICES.md',
+  'MIGRATION.md',
 ]
 
 const exportPaths = Object.values(pkg.exports).flatMap((entry) => (
@@ -62,6 +65,8 @@ for (const file of files) {
   }
   if (/\.(?:pdf|tif|tiff)$/i.test(file)) violations.push(`禁止打包文档或图像: ${file}`)
 }
+const wheels = files.filter((file) => /^dist\/python\/dsh_scientific_reading_engine-.+\.whl$/.test(file))
+if (wheels.length !== 1) violations.push(`内置 Python wheel 数量必须为 1，实际为 ${wheels.length}`)
 
 assert.deepEqual(violations, [], violations.join('\n'))
 

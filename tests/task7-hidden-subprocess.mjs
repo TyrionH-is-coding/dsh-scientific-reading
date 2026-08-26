@@ -10,7 +10,7 @@ const probe = String.raw`
 import ctypes, importlib.util, json, pathlib, types
 root = pathlib.Path.cwd()
 observed = {"console_window": ctypes.windll.kernel32.GetConsoleWindow() if hasattr(ctypes, "windll") else 0}
-for name in ("verify_full_read_pipeline", "verify_restart_recovery"):
+for name in ("verify_restart_recovery",):
     path = root / "scripts" / (name + ".py")
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -21,8 +21,7 @@ for name in ("verify_full_read_pipeline", "verify_restart_recovery"):
         observed[_name] = kwargs
         return None
     module.subprocess.run = capture
-    helper = module._run_hidden if name == "verify_full_read_pipeline" else module.run_hidden
-    helper(["probe"])
+    module.run_hidden(["probe"])
 print(json.dumps(observed))
 `
 
@@ -31,14 +30,14 @@ const observed = JSON.parse(execFileSync(python, ['-c', probe], {
   encoding: 'utf8',
   windowsHide: true,
 }))
-assert.equal(observed.verify_full_read_pipeline.creationflags, 0x08000000)
 assert.equal(observed.verify_restart_recovery.creationflags, 0x08000000)
 if (process.platform === 'win32') assert.equal(observed.console_window, 0)
 
-const integration = readFileSync(join(root, 'tests', 'full-read-integration.mjs'), 'utf8')
-assert.equal((integration.match(/windowsHide:\s*true/g) || []).length, 2)
+const cli = readFileSync(join(root, 'src', 'cli.ts'), 'utf8')
+assert.match(cli, /execFile\([\s\S]*windowsHide:\s*true/)
+assert.match(cli, /spawn\([\s\S]*windowsHide:\s*true/)
 
-for (const script of ['verify_full_read_pipeline.py', 'verify_restart_recovery.py']) {
+for (const script of ['verify_restart_recovery.py']) {
   const source = readFileSync(join(root, 'scripts', script), 'utf8')
   assert.equal((source.match(/subprocess\.run\(/g) || []).length, 1)
 }

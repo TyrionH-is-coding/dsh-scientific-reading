@@ -20,4 +20,5 @@ jobs:
           python-version: "3.11"
       - run: npm ci --ignore-scripts --legacy-peer-deps
       - run: npm run build:ci
+      - run: npm run test:engine
       - run: npm run test:offline
