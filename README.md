@@ -56,31 +56,170 @@
 
 ## 安装与启动
 
-### 1. 安装 Python 引擎
+下面是从一台只有 Codex 的全新 Windows 10/11 x64 机器开始的完整流程。首次安装通常需要 10–20 分钟，最终访问地址是 `http://127.0.0.1:3080`。
 
-先在 `Scientific-Reading-for-Newbies` 仓库安装引擎：
+- 本地题录入库和 Abstract 浅读不要求 MinerU 或飞书凭据。
+- 生成全文精读 reader 需要有效的 `MINERU_API_TOKEN`。
+- 飞书同步是可选功能，需要飞书自建应用凭据和仓库外配置文件。
+- DSH 模型凭据在首次启动后的【设置 → 模型】中配置，不要写进仓库。
+
+### 1. 安装基础依赖
+
+在 PowerShell 中执行：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+winget install --id Git.Git -e --accept-package-agreements --accept-source-agreements
+winget install --id OpenJS.NodeJS.22 -e --accept-package-agreements --accept-source-agreements
+winget install --id Python.Python.3.11 -e --accept-package-agreements --accept-source-agreements
 ```
 
-在 DSH 插件设置中把 `enginePython` 指向该 `.venv\Scripts\python.exe`。留空时插件会尝试从环境变量或 ScanSci 环境中探测已安装的引擎。
-
-### 2. 构建并安装真实 Bundle
-
-已测试宿主为 `@deepseek-ai/dsh@0.1.0-rc.7`，Node 22、Python 3.11。
+安装完成后关闭并重新打开 PowerShell，检查版本：
 
 ```powershell
+git --version
+node --version       # 应为 v22.x
+npm.cmd --version
+py -3.11 --version  # 应为 Python 3.11.x
+```
+
+### 2. 安装 DSH
+
+当前插件实机验证的宿主是 `@deepseek-ai/dsh@0.1.0-rc.7`。首次安装固定这个版本，不要直接换成最新 RC：
+
+```powershell
+npm.cmd install --global pnpm@11 @deepseek-ai/dsh@0.1.0-rc.7
+dsh --version
+```
+
+预期版本为 `0.1.0-rc.7`。以后升级 DSH 时，应重新构建插件并运行本文末尾的 Bundle/Profile 验收。
+
+### 3. 克隆两个仓库
+
+下面把源码放在 `%USERPROFILE%\scientific-reading-src`，文献数据仍放在独立的 `%USERPROFILE%\scientific-reading-data`：
+
+```powershell
+$src = Join-Path $env:USERPROFILE 'scientific-reading-src'
+New-Item -ItemType Directory -Force -Path $src | Out-Null
+
+git clone https://github.com/TyrionH-is-coding/Scientific-Reading-for-Newbies.git (Join-Path $src 'Scientific-Reading-for-Newbies')
+git clone https://github.com/TyrionH-is-coding/dsh-scientific-reading.git (Join-Path $src 'dsh-scientific-reading')
+```
+
+如果目录已经存在，不要重复 `clone`；进入对应目录执行 `git pull --ff-only` 即可更新。
+
+### 4. 安装 Python 引擎
+
+引擎使用独立 Python 3.11 虚拟环境：
+
+```powershell
+$engine = Join-Path $src 'Scientific-Reading-for-Newbies'
+py -3.11 -m venv (Join-Path $engine '.venv')
+$enginePython = Join-Path $engine '.venv\Scripts\python.exe'
+
+& $enginePython -m pip install --upgrade pip
+& $enginePython -m pip install -e $engine
+& $enginePython -m scientific_reading --help
+```
+
+最后一条命令应显示 CLI 帮助且不报导入错误。
+
+### 5. 构建并安装插件
+
+必须安装构建后的真实 tarball；开发目录注入不能代替正式安装验收：
+
+```powershell
+$plugin = Join-Path $src 'dsh-scientific-reading'
+Set-Location $plugin
+
 npm.cmd ci --ignore-scripts --legacy-peer-deps
 npm.cmd run build:ci
-npm.cmd pack --ignore-scripts
-dsh plugin --profile web add .\dsh-external-dsh-scientific-reading-0.0.1.tgz --offline --ignore-scripts
-dsh --profile web --dump-config
+$pack = npm.cmd pack --json --ignore-scripts | ConvertFrom-Json
+$tarball = Join-Path $plugin $pack[0].filename
+
+dsh plugin --profile web add $tarball --ignore-scripts
+dsh --profile web --dump-config | Select-String '@dsh-external/dsh-scientific-reading'
+```
+
+最后一条命令应至少命中一次插件包名。`web` 与 `headless` 是独立 Profile，本插件默认安装到 `web`。
+
+### 6. 配置引擎路径和可选凭据
+
+先让当前 PowerShell 立即获得引擎路径，再写入用户级环境变量供以后启动使用：
+
+```powershell
+$env:SCIENTIFIC_READING_PYTHON = $enginePython
+[Environment]::SetEnvironmentVariable('SCIENTIFIC_READING_PYTHON', $enginePython, 'User')
+```
+
+需要全文精读时，在当前 PowerShell 中设置 MinerU Token，并单独持久化到用户环境。以下命令会交互读取，不把 Token 写进仓库或命令历史：
+
+```powershell
+$env:MINERU_API_TOKEN = Read-Host '请输入 MinerU API Token'
+[Environment]::SetEnvironmentVariable('MINERU_API_TOKEN', $env:MINERU_API_TOKEN, 'User')
+```
+
+飞书同步是可选项；需要时用同样方式设置：
+
+```powershell
+$env:FEISHU_APP_ID = Read-Host '请输入飞书 App ID'
+$env:FEISHU_APP_SECRET = Read-Host '请输入飞书 App Secret'
+[Environment]::SetEnvironmentVariable('FEISHU_APP_ID', $env:FEISHU_APP_ID, 'User')
+[Environment]::SetEnvironmentVariable('FEISHU_APP_SECRET', $env:FEISHU_APP_SECRET, 'User')
+```
+
+用户级环境变量只会自动出现在之后新开的进程中；上面的 `$env:` 赋值保证本次启动立即生效。插件设置中的 `enginePython` 也可以显式指向 `$enginePython`，但通常不需要。
+
+### 7. 首次启动
+
+在希望作为默认工作区的目录中启动 DSH：
+
+```powershell
 dsh --profile web --host 127.0.0.1 --port 3080
 ```
 
-`client/client.js` 是唯一前端源码，`lib/client.js` 由 `npm run build:client` 生成；不要直接修改生成文件。`web` 与 `headless` 是独立 Profile。若同名插件仍由开发注入注册，注入会覆盖 tarball，持久安装前需先注销该开发目录。
+DSH 默认打开 `http://127.0.0.1:3080`。首次进入后：
+
+1. 打开【设置 → 模型】，配置 DeepSeek 或其他兼容模型；
+2. 选择或添加工作区；
+3. 检查左侧是否出现【文献】入口；
+4. 先录入一篇只有题名/DOI 的非敏感测试文献，确认本地主库可用；
+5. 只有准备好 MinerU Token 后，再启动全文精读。
+
+按 `Ctrl+C` 可正常停止 DSH。新增、移除或更新插件 Bundle 后必须重启 Profile。
+
+### 8. 更新、卸载与常见问题
+
+更新引擎和插件源码后，重新安装引擎并重建 tarball：
+
+```powershell
+git -C $engine pull --ff-only
+& $enginePython -m pip install -e $engine
+
+git -C $plugin pull --ff-only
+Set-Location $plugin
+npm.cmd ci --ignore-scripts --legacy-peer-deps
+npm.cmd run build:ci
+$pack = npm.cmd pack --json --ignore-scripts | ConvertFrom-Json
+$tarball = Join-Path $plugin $pack[0].filename
+dsh plugin --profile web add $tarball --ignore-scripts
+```
+
+卸载插件：
+
+```powershell
+dsh plugin --profile web remove @dsh-external/dsh-scientific-reading
+```
+
+常见问题：
+
+- **找不到 `git`、`node`、`dsh` 或 `pnpm`**：关闭所有旧 PowerShell 窗口，重新打开后再检查版本。
+- **插件没有出现在界面**：确认 `--dump-config` 能找到包名，并在安装 Bundle 后彻底重启 DSH。
+- **提示找不到 Python 引擎**：运行 `Test-Path $enginePython`，并检查 `$env:SCIENTIFIC_READING_PYTHON` 是否等于该绝对路径。
+- **环境变量没有生效**：`[Environment]::SetEnvironmentVariable(..., 'User')` 不会反向修改已经运行的 DSH；重启 DSH，必要时重新打开 PowerShell。
+- **升级 DSH 后启动失败**：先退回已验证的 `npm.cmd install --global @deepseek-ai/dsh@0.1.0-rc.7`，再重新构建和安装插件。
+- **端口 3080 已占用**：先关闭旧 DSH；不要同时运行两个写同一 `web` Profile 和数据根的实例。
+
+`client/client.js` 是唯一前端源码，`lib/client.js` 由 `npm run build:client` 生成；不要直接修改生成文件。若同名插件仍由开发注入注册，注入会覆盖 tarball，持久安装前需先注销该开发目录。
 
 ## 常用入口
 

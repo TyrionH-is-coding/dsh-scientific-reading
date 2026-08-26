@@ -69,7 +69,7 @@ npm.cmd ci --ignore-scripts --legacy-peer-deps
 npm.cmd run build:ci
 $pack = npm.cmd pack --json --ignore-scripts | ConvertFrom-Json
 $tarball = Join-Path $plugin $pack[0].filename
-dsh plugin --profile web add $tarball --offline --ignore-scripts
+dsh plugin --profile web add $tarball --ignore-scripts
 dsh --profile web --dump-config | Select-String '@dsh-external/dsh-scientific-reading'
 ```
 
@@ -145,10 +145,10 @@ Expected: npm 返回 `0.1.0-rc.7`；两个仓库均返回一个 HEAD SHA。
 
 ```powershell
 git diff --check
-rg -n "(sk-|Bearer )[A-Za-z0-9_-]{12,}|FEISHU_APP_SECRET=\S+|MINERU_API_TOKEN=\S+" README.md docs/roadmap.md
+rg -n "(sk-[A-Za-z0-9_-]{12,}|Bearer [A-Za-z0-9_-]{12,})" README.md docs/roadmap.md
 ```
 
-Expected: `git diff --check` 无输出；凭据扫描无真实值命中。
+Expected: `git diff --check` 无输出；常见真实密钥形态无命中。`你的AppSecret`、`你的MinerU_API_Token` 等中文占位符不属于泄漏。
 
 - [ ] **Step 3: 确认提交范围**
 
