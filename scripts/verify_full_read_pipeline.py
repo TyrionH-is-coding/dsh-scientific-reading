@@ -56,6 +56,10 @@ def _fixture_pdf(path: Path) -> None:
 
 
 def _translation(batch: dict) -> dict:
+    from scientific_reading.full_read_models import (
+        FULL_TRANSLATION_CONTRACT_VERSION,
+    )
+
     rows = []
     for index, block in enumerate(batch["blocks"]):
         reference = block.get("source_type") == "reference"
@@ -64,14 +68,53 @@ def _translation(batch: dict) -> dict:
                 "block_id": block["block_id"],
                 "source_text": block["english"],
                 "translation_zh": "" if reference else f"工程译文：{block['english']}",
-                "highlight": "none" if reference else ("primary" if index == 0 else "secondary" if index == 1 else "none"),
+                "highlight": "none" if reference else ("result" if index == 0 else "method" if index == 1 else "none"),
             }
         )
     return {
-        "contract_version": "full-translation-v2",
+        "contract_version": FULL_TRANSLATION_CONTRACT_VERSION,
         "batch_id": batch["batch_id"],
         "source_sha256": batch["source_sha256"],
         "translations": rows,
+    }
+
+
+def _review(required: dict) -> dict:
+    from scientific_reading.full_read_models import (
+        FULL_REVIEW_CONTRACT_VERSION,
+    )
+
+    block_ids = required["available_source_block_ids"]
+    if len(block_ids) < 4:
+        raise RuntimeError("review_fixture_blocks_insufficient")
+    return {
+        "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+        "highlights": [
+            {
+                "block_id": block_ids[0],
+                "kind": "result",
+                "reason": "验收用核心结果。",
+            },
+            {
+                "block_id": block_ids[1],
+                "kind": "method",
+                "reason": "验收用关键方法。",
+            },
+        ],
+        "guide": {
+            "research_question": [
+                {"text": "验收研究问题。", "source_block_ids": [block_ids[0]]}
+            ],
+            "key_methods": [
+                {"text": "验收关键方法。", "source_block_ids": [block_ids[1]]}
+            ],
+            "core_results": [
+                {"text": "验收核心结果。", "source_block_ids": [block_ids[2]]}
+            ],
+            "limitations": [
+                {"text": "验收局限性。", "source_block_ids": [block_ids[3]]}
+            ],
+        },
     }
 
 
@@ -143,7 +186,12 @@ class AcceptanceMineruService:
             if not selected.source_pdf.is_file():
                 selected.source_pdf.write_bytes(workspace.source_pdf.read_bytes())
         if (selected.parsed_dir / "mineru" / "source_map.json").is_file():
-            return SimpleNamespace(status="parsed_mineru", source_sha256=source_sha)
+            return SimpleNamespace(
+                status="parsed_mineru",
+                source_sha256=source_sha,
+                provider="acceptance-fixture",
+                model_version="fixture-1",
+            )
         _populate_mineru(selected, metadata, source_sha)
         from scientific_reading.models import StageRecord
 
@@ -153,17 +201,31 @@ class AcceptanceMineruService:
         state = workspace.load_job()
         state.stages["paper_parse_upgrade"] = StageRecord(status="completed", result={"source_sha256": source_sha, "method": "auto", "mineru_version": "fixture-1", "active_parsed_dir": "parsed/mineru", "active_workspace": f"generations/{source_sha[:16]}"})
         workspace.save_job(state)
-        return SimpleNamespace(status="parsed_mineru", source_sha256=source_sha)
+        return SimpleNamespace(
+            status="parsed_mineru",
+            source_sha256=source_sha,
+            provider="acceptance-fixture",
+            model_version="fixture-1",
+        )
 
 
 def _engine_root() -> Path:
     value = os.environ.get("SR_ENGINE_ROOT")
-    root = Path(value).resolve() if value else (
-        Path(__file__).resolve().parents[4]
-        / "Scientific-Reading-for-Newbies"
-        / ".worktrees"
-        / "two-stage-workflow"
-    ).resolve()
+    if value:
+        root = Path(value).resolve()
+    else:
+        root = next(
+            (
+                (parent / "Scientific-Reading-for-Newbies").resolve()
+                for parent in Path(__file__).resolve().parents
+                if (
+                    parent / "Scientific-Reading-for-Newbies"
+                    / "src"
+                    / "scientific_reading"
+                ).is_dir()
+            ),
+            Path(),
+        )
     if not (root / "src" / "scientific_reading").is_dir():
         raise RuntimeError("SR_ENGINE_ROOT_invalid")
     return root
@@ -301,6 +363,7 @@ def _formal_scenario(root: Path, engine: Path, interruption: str) -> dict:
     parent = first["parent_job_id"]
     parent_ids = {parent}
     submitted_batches: set[str] = set()
+    submitted_review = False
     def wait_previous_worker_exit():
         import time
         from scientific_reading.background_store import BackgroundJobStore
@@ -331,16 +394,24 @@ def _formal_scenario(root: Path, engine: Path, interruption: str) -> dict:
             continue
         if status["state"] == "waiting_agent":
             required = status["required_input"]
-            if status.get("reason_code") != "translate_full_read":
-                raise RuntimeError(f"unexpected_agent_gate:{required}")
-            batch = json.loads(Path(required["source_manifest_path"]).read_text(encoding="utf-8"))
-            if batch["batch_id"] in submitted_batches:
-                import time
-                time.sleep(0.05)
-                continue
             supplied = root / "resume.json"
-            _atomic_json(supplied, {"full_translation": _translation(batch)})
-            submitted_batches.add(batch["batch_id"])
+            if status.get("reason_code") == "translate_full_read":
+                batch = json.loads(Path(required["source_manifest_path"]).read_text(encoding="utf-8"))
+                if batch["batch_id"] in submitted_batches:
+                    import time
+                    time.sleep(0.05)
+                    continue
+                _atomic_json(supplied, {"full_translation": _translation(batch)})
+                submitted_batches.add(batch["batch_id"])
+            elif status.get("reason_code") == "review_full_read":
+                if submitted_review:
+                    import time
+                    time.sleep(0.05)
+                    continue
+                _atomic_json(supplied, {"full_review": _review(required)})
+                submitted_review = True
+            else:
+                raise RuntimeError(f"unexpected_agent_gate:{required}")
             resumed = _run_cli(Path(sys.executable), env, data_root, "full-read-pipeline-resume", "--job-id", parent, "--input", str(supplied.resolve()))
             parent_ids.add(resumed["parent_job_id"])
             continue
