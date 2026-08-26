@@ -680,7 +680,15 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       render: (_args: unknown, value: unknown) => {
         const v = value as Record<string, unknown>
         const d = (v.detail ?? {}) as Record<string, unknown>
-        const reason = d.reason_code ? '（' + String(d.reason_code) + '）' : ''
+        const reasonCode = d.reason_code ? String(d.reason_code) : ''
+        const mineruHints: Record<string, string> = {
+          mineru_api_token_required: '未配置 MINERU_API_TOKEN，请设置宿主环境变量并重启 DSH',
+          mineru_api_auth_failed: 'MinerU API 凭证无效或已过期',
+          mineru_api_quota_exceeded: 'MinerU API 今日额度或任务数已达上限',
+          mineru_api_timeout: 'MinerU 解析仍未完成，可稍后继续',
+          mineru_api_unavailable: 'MinerU 服务或网络暂时不可用，可稍后重试',
+        }
+        const reason = reasonCode ? '（' + (mineruHints[reasonCode] || reasonCode) + '）' : ''
         return text('任务 ' + String(v.job_id) + '：' + String(v.status) + '，next_action=' + String(v.next_action) + reason)
       },
     },

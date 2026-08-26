@@ -101,6 +101,16 @@ dsh --profile web --host 127.0.0.1 --port 3080
 
 ScanSci 相关工具只负责合法来源和逐篇用户操作：`sr_setup`、`sr_scansci_status`、`sr_scansci_fetch`、`sr_scansci_login`、`sr_scansci_set_school`。默认 `legalOnly=true`，不会启用 Sci-Hub/LibGen。
 
+## MinerU API 配置
+
+正式精读解析使用 MinerU 精准解析 API，不依赖本机 MinerU。把 Token 设置在启动 DSH 的宿主环境中，然后重启 DSH：
+
+```ini
+MINERU_API_TOKEN=你的MinerU_API_Token
+```
+
+插件不会保存或显示 Token，也不会把它写入命令参数、任务状态或日志。解析本地 PDF 时，文件会上传至 MinerU 官方服务器；含敏感内容的文档应先确认符合你的数据与隐私要求。缺少或失效凭证时任务会保留 PDF 和断点信息，并给出可恢复错误，不会静默改用本机 MinerU。
+
 ## 飞书配置与字段所有权
 
 插件设置只保存仓库外 `feishu-config-v1` JSON 路径，文件包含 `app_token`、`table_id` 和 `field_map`。凭据只从启动 DSH 的宿主环境继承：
@@ -126,11 +136,12 @@ App Secret 不写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应�
 
 ## 验证
 
-所有自动测试应先清空真实飞书凭据，仅使用临时 data root、虚构工科题录、本地 PDF、fake MinerU/飞书；不会触发机构认证。
+所有自动测试应先清空真实 MinerU/飞书凭据，仅使用临时 data root、虚构工科题录、本地 PDF、fake MinerU/飞书；不会触发机构认证。
 
 ```powershell
 Remove-Item Env:FEISHU_APP_ID -ErrorAction SilentlyContinue
 Remove-Item Env:FEISHU_APP_SECRET -ErrorAction SilentlyContinue
+Remove-Item Env:MINERU_API_TOKEN -ErrorAction SilentlyContinue
 npm.cmd run typecheck
 npm.cmd run test:offline
 npm.cmd run verify:profile-bundle -- --dsh-bin "<DSH bin.js 绝对路径>"
