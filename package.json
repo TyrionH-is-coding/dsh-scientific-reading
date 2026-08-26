@@ -55,7 +55,7 @@
     "typescript": "5.9.3"
   },
   "scripts": {
-    "build": "bash scripts/build.sh",
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "build:ci": "tsc -p tsconfig.json && node scripts/build-client.mjs",
     "build:client": "node scripts/build-client.mjs",
     "check:client": "node scripts/build-client.mjs --check",
@@ -80,6 +80,7 @@
     "verify:navigation-runtime": "node scripts/verify_navigation_runtime.mjs",
     "verify:restart-recovery": "python scripts/verify_restart_recovery.py --full-read",
     "test:foundation": "node tests/foundation-integration.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && npm run test:offline"
   }
 }
