@@ -20,6 +20,7 @@ function loadNamedFunction(name) {
 const isSafeHttpUrl = loadNamedFunction('isSafeHttpUrl')
 const pairAbstractParagraphs = loadNamedFunction('pairAbstractParagraphs')
 const paperEntryModel = loadNamedFunction('paperEntryModel')
+const updateMineruKey = loadNamedFunction('updateMineruKey')
 const createPaperActionController = loadNamedFunction('createPaperActionController')
 const createDrawerSessionController = loadNamedFunction('createDrawerSessionController')
 const nextDialogFocus = loadNamedFunction('nextDialogFocus')
@@ -40,8 +41,28 @@ assert.equal(disabled.html.disabledReason, '尚未生成精读 HTML')
 assert.equal(disabled.excel.action, 'locate')
 const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true }, isSafeHttpUrl)
 assert.equal(ready.pdf.href, '/sr/api/paper/')
+assert.equal(ready.pdf.external, true)
 assert.equal(ready.html.href, '/sr/reader/')
 assert.equal(ready.excel.label, '定位 Excel')
+
+const keyCalls = []
+const refreshed = { mineru: { api: { status: 'configured' } } }
+const savedSnapshot = await updateMineruKey(async (path, options) => {
+  keyCalls.push([path, options])
+  return path.endsWith('/recheck') ? refreshed : { status: 'configured' }
+}, 'fictional-key')
+assert.equal(savedSnapshot, refreshed)
+assert.deepEqual(keyCalls.map(([path]) => path), [
+  '/sr/api/settings/mineru-key', '/sr/api/settings/recheck',
+])
+assert.deepEqual(JSON.parse(keyCalls[0][1].body), { api_key: 'fictional-key' })
+assert.deepEqual(JSON.parse(keyCalls[1][1].body), { targets: ['mineru_api'] })
+assert.equal(keyCalls[0][1].headers['x-sr-csrf'], '1')
+
+keyCalls.length = 0
+await updateMineruKey(async (path, options) => { keyCalls.push([path, options]); return {} }, null)
+assert.equal(keyCalls[0][1].method, 'DELETE')
+assert.equal(keyCalls[0][1].body, undefined)
 
 const calls = []
 const scheduled = []

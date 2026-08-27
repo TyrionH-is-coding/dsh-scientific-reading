@@ -11,5 +11,6 @@ assert.match(source, /进入文献库/, '首次设置覆盖层必须提供返回
 assert.match(source, /type = 'password'/, 'MinerU Key 输入必须使用 password')
 assert.match(source, /keyInput\.value = ''/, '提交后必须清空 Key 输入')
 assert.match(source, /x-sr-csrf[^]*'1'/, '设置写操作必须发送 CSRF header')
+assert.match(source, /settings\/mineru-key[^]*settings\/recheck[^]*mineru_api/, '保存或删除 Key 后必须立即刷新 MinerU API 状态快照')
 assert.doesNotMatch(source, /MINERU_API_TOKEN；插件不保存密钥/, '不得保留环境变量唯一入口旧文案')
 console.log('PASS: 独立设置页、首次展示与 MinerU Key UI 合同')

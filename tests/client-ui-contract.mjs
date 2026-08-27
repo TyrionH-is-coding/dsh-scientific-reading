@@ -92,6 +92,8 @@ assert.doesNotMatch(source, /min-width:1080px/, '文献页不得依赖宽表格�
 for (const label of ['获取 PDF', '打开 PDF', '打开 HTML', '定位 Excel']) {
   assert.match(source, new RegExp(label), `缺少行快捷入口：${label}`)
 }
+assert.match(source, /entryLink\('PDF',[^\n]*true\)/, '详情抽屉 PDF 必须新开标签页')
+assert.match(source, /entryLink\(model\.pdf\.label,[^\n]*model\.pdf\.external\)/, '列表 PDF 必须按模型要求新开标签页')
 const rowStart = source.indexOf('function renderPaperRow(')
 const rowEnd = source.indexOf('function loadLibrary(', rowStart)
 assert.ok(rowStart > 0 && rowEnd > rowStart, '必须有独立两行条目渲染器')
