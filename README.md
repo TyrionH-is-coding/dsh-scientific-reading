@@ -1,23 +1,25 @@
 # DSH Scientific Reading
 
-面向 DSH 的两段式个人文献工作流：先把题录快速写入本地文献库，再按需生成可追溯的全文精读产物。
+面向 DSH 的个人文献库：通过对话快速入库，按需单篇或批量取得 PDF，生成可追溯的精读 HTML，并用 SQLite 与美观 Excel 长期维护。
 
-## 当前能力
+## 首个发布版范围
+
+当前仓库已有入库、全文任务、导航和资产基线；以下是首个正式发布版的收敛目标。尚未完成的调整以“发布目标”标记，不能视为当前已经交付。
 
 ### 1. 快速入库与 Abstract 浅读
 
-- `sr_ingest` 或文献页录入框先完成 SQLite 本地事务并返回；题录补全、Abstract 翻译、XLSX 和可选飞书同步在后台继续。
+- 用户主要在对话中入库；SQLite 本地事务先返回，题录补全、Abstract 翻译和 Excel 刷新在后台继续。
 - DOI、PMID、arXiv ID 优先查重；没有稳定标识时只在题名、年份和作者组合明确时合并，歧义记录不会强行去重。
 - 新文献未指定文件夹时进入【待归类】；文件夹为单归属，标签可多归属。
 - 浅读只显示英文 Abstract 与逐段中文对照。找不到 Abstract 时明确标记【待补摘要】，不会根据题名生成内容。
-- 文献页支持服务端搜索、筛选、分页、跨页选择、批量移动/标签/精读排队/失败重试/飞书重同步，以及一次完整归类撤销；没有批量删除。
+- 文献页主要负责搜索、筛选、分页、文件夹/标签和打开已有资产；发布目标允许为缺失 PDF 的单篇或所选文献发起下载，但不把页面扩展为通用任务控制台。
 
 ### 2. 按需全文精读与资产
 
 - `sr_start_full_read` 为一篇文献创建或复用唯一 parent job；PDF 校验、MinerU 解析、逐块翻译、reader 发布和派生更新按持久阶段推进。
-- 已校验的同一 PDF 会直接复用。自动合法获取失败时，该文献进入【需要用户处理】，用户可逐篇选择机构浏览器或挂接本地 PDF。
+- 已校验的同一 PDF 会直接复用。自动合法获取失败时，单篇任务进入【需要用户处理】；批量任务先完成其他项目，再集中处理机构浏览器、可选增强包或本地 PDF。
 - 机构浏览器是显式 user gate：插件不读取或保存账号、Cookie、验证码、MFA 或浏览器 Profile。
-- 全文翻译和重点识别是 AI gate；agent 按来源块提交后继续原 parent job。确定性校验、文件整理、渲染、XLSX 和飞书不依赖 agent。
+- 全文翻译和重点识别是 AI gate；agent 按来源块提交后继续原 parent job。确定性校验、文件整理、渲染和 Excel 刷新不依赖 agent。
 - Windows 上由插件启动的 Python/worker 子进程使用隐藏窗口方式，不应周期性弹出终端。
 
 正式 generation 路径：
@@ -48,19 +50,18 @@
 %USERPROFILE%\scientific-reading-data
 ```
 
-可在插件设置的 `dataRoot` 改为其他绝对路径。SQLite 是唯一事实来源；`metadata.json`、manifest、XLSX 和飞书都是派生或资产索引，不能反向覆盖主库。
+可在插件设置的 `dataRoot` 改为其他绝对路径。SQLite 是系统事实来源；`metadata.json`、manifest 和 Excel 是派生视图或资产索引。
 
-- XLSX 固定生成到 `<data-root>/library/scientific-reading.xlsx`，是只读快照。文件被 Excel 占用时记录 pending，稍后重试，不回滚入库或精读。
-- 飞书直接读取 SQLite，不经过 XLSX。
-- PDF、全文翻译、解析图表、飞书配置和浏览器会话必须留在仓库外，不提交到 Git。
+- Excel 固定生成到 `<data-root>/library/scientific-reading.xlsx`。发布目标只允许个人思考、个人理解程度和用户笔记从 Excel 白名单回写；系统字段不得覆盖 SQLite。
+- 文件被 Excel 占用时记录 pending，稍后重试，不回滚入库、下载或精读。
+- PDF、全文翻译、解析图表、Excel 和浏览器会话必须留在仓库外，不提交到 Git。
 
 ## 安装与启动
 
 下面是从一台只有 Codex 的全新 Windows 10/11 x64 机器开始的完整流程。首次安装通常需要 10–20 分钟，最终访问地址是 `http://127.0.0.1:3080`。
 
-- 本地题录入库和 Abstract 浅读不要求 MinerU 或飞书凭据。
+- 本地题录入库和 Abstract 浅读不要求 MinerU 凭据。
 - 生成全文精读 reader 需要有效的 `MINERU_API_TOKEN`。
-- 飞书同步是可选功能，需要飞书自建应用凭据和仓库外配置文件。
 - DSH 模型凭据在首次启动后的【设置 → 模型】中配置，不要写进仓库。
 
 ### 1. 安装基础依赖
@@ -134,15 +135,6 @@ $env:MINERU_API_TOKEN = Read-Host '请输入 MinerU API Token'
 [Environment]::SetEnvironmentVariable('MINERU_API_TOKEN', $env:MINERU_API_TOKEN, 'User')
 ```
 
-飞书同步是可选项；需要时用同样方式设置：
-
-```powershell
-$env:FEISHU_APP_ID = Read-Host '请输入飞书 App ID'
-$env:FEISHU_APP_SECRET = Read-Host '请输入飞书 App Secret'
-[Environment]::SetEnvironmentVariable('FEISHU_APP_ID', $env:FEISHU_APP_ID, 'User')
-[Environment]::SetEnvironmentVariable('FEISHU_APP_SECRET', $env:FEISHU_APP_SECRET, 'User')
-```
-
 用户级环境变量只会自动出现在之后新开的进程中；上面的 `$env:` 赋值保证本次启动立即生效。首次运行 `sr_setup` 时，插件会把随 tarball 提供的 wheel 安装到 `<dataRoot>\.venv`；`enginePython` 只保留为开发调试覆盖项，普通安装不需要填写。
 
 ### 6. 首次启动
@@ -209,9 +201,8 @@ dsh plugin --profile web remove @dsh-external/dsh-scientific-reading
 | `sr_attach_pdf` | 校验并挂接本地 PDF 后继续精读 |
 | `sr_export_assets` | 生成 Figure/Table 导出包 |
 | `sr_job_status` | 查询持久后台任务 |
-| `sr_feishu_resync` | 把所选或待同步记录重新排入飞书队列 |
 
-ScanSci 相关工具只负责合法来源和逐篇用户操作：`sr_setup`、`sr_scansci_status`、`sr_scansci_fetch`、`sr_scansci_login`、`sr_scansci_set_school`。默认 `legalOnly=true`，不会启用 Sci-Hub/LibGen。
+ScanSci 相关工具只负责合法来源下载和需要用户参与的机构认证：`sr_setup`、`sr_scansci_status`、`sr_scansci_fetch`、`sr_scansci_login`、`sr_scansci_set_school`。默认 `legalOnly=true`，不会启用 Sci-Hub/LibGen；批量编排由文献工作流统一负责。
 
 ## MinerU API 配置
 
@@ -223,20 +214,13 @@ MINERU_API_TOKEN=你的MinerU_API_Token
 
 插件不会保存或显示 Token，也不会把它写入命令参数、任务状态或日志。解析本地 PDF 时，文件会上传至 MinerU 官方服务器；含敏感内容的文档应先确认符合你的数据与隐私要求。缺少或失效凭证时任务会保留 PDF 和断点信息，并给出可恢复错误，不会静默改用本机 MinerU。
 
-## 飞书配置与字段所有权
+## Excel 字段所有权
 
-插件设置只保存仓库外 `feishu-config-v1` JSON 路径，文件包含 `app_token`、`table_id` 和 `field_map`。凭据只从启动 DSH 的宿主环境继承：
+系统字段包括题名、作者、主要研究单位、期刊、年份、DOI/PMID/arXiv ID、来源链接、Abstract 英中、PDF/精读状态与路径、更新时间和错误状态。它们从 SQLite 生成，Excel 中的修改不得覆盖主库。
 
-```ini
-FEISHU_APP_ID=你的AppID
-FEISHU_APP_SECRET=你的AppSecret
-```
+首个发布版只允许 `personal_thoughts`、`understanding_level` 和 `user_notes` 三类用户字段从 Excel 回写。每行使用稳定 `paper_id` 关联；身份缺失、重复或被修改时停止该行回写并报告。文件夹和标签继续通过文献页或对话维护。
 
-设置后需要重启 DSH。缺少任一凭据或有效配置时仅显示【飞书未配置】，不会联网。首次启用只记录 activation epoch，不自动回填全部历史库；历史记录需显式重新同步。
-
-系统拥有字段包括题名、作者、期刊、年份、DOI/PMID/library key、来源链接、Abstract 英中、PDF/精读状态与路径、精读要点、更新时间和错误状态。`personal_thoughts`、`understanding_level`、`user_notes` 属于用户字段，永不进入更新 payload，也不回写 SQLite。旧配置中的稳定标识列只读兼容既有表结构，新流程统一使用本地 `library_key`。
-
-App Secret 不写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应。飞书失败只把该派生状态设为待同步，不改变本地入库/精读完成状态。
+飞书退出产品路线。仓库中的现存飞书实现属于迁移期遗留代码，后续会连同入口、配置和测试依赖一起删除，不属于首个发布版能力。
 
 ## 失败与恢复
 
@@ -244,15 +228,13 @@ App Secret 不写入配置、SQLite、XLSX、日志、job JSON 或 HTTP 响应�
 - MinerU 与全文翻译重任务默认串行；批量请求按每组最多 100 篇分块，单篇失败不终止其他文献。
 - 无效 PDF 不覆盖已校验原件；PDF SHA 改变时旧 reader 标为 stale。
 - MinerU 失败保留 PDF；翻译从已发布批次继续；reader 渲染失败保留解析和翻译产物。
-- XLSX/飞书失败不回滚 SQLite。关闭或重启 DSH 后可从已完成阶段恢复。
+- Excel 刷新或回写失败不回滚 SQLite。关闭或重启 DSH 后可从已完成阶段恢复。
 
 ## 验证
 
-所有自动测试应先清空真实 MinerU/飞书凭据，仅使用临时 data root、虚构工科题录、本地 PDF、fake MinerU/飞书；不会触发机构认证。
+所有自动测试应先清空真实 MinerU 凭据，仅使用临时 data root、虚构工科题录、本地 PDF 和 fake MinerU；不会触发机构认证。
 
 ```powershell
-Remove-Item Env:FEISHU_APP_ID -ErrorAction SilentlyContinue
-Remove-Item Env:FEISHU_APP_SECRET -ErrorAction SilentlyContinue
 Remove-Item Env:MINERU_API_TOKEN -ErrorAction SilentlyContinue
 npm.cmd run typecheck
 npm.cmd test
@@ -263,6 +245,6 @@ npm.cmd run verify:restart-recovery
 
 ## 旧数据与当前限制
 
-既有 PDF、MinerU 结果与 reader 保留在数据根中；升级不会移动、删除或无故重算用户资产。运行包只包含当前本地库、MinerU API、精读 HTML、资产导出和飞书同步链路。
+既有 PDF、MinerU 结果与 reader 保留在数据根中；升级不会移动、删除或无故重算用户资产。首个发布版只围绕本地库、合法 PDF 下载、MinerU API、精读 HTML、资产导出和 Excel 维护交付。
 
-当前不实现：SQLite/XLSX/飞书双向同步、飞书个人字段回写、批量删除、多个 MinerU/全文翻译任务并行、AI 自动挑选关键图、批量机构浏览器下载、在 DSH 页面内嵌整篇 reader、自动修改用户飞书表结构，以及推荐/引用网络/知识图谱。
+首个发布版不实现：任意字段双向同步、批量删除、多个 MinerU/全文翻译任务并行、AI 自动挑选关键图、在 DSH 页面内嵌整篇 reader、文献推荐、引用网络、知识图谱或逐篇 JSON 证据卡。上游发现/推荐和下游证据卡留到下一版本。

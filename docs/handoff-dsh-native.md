@@ -3,7 +3,7 @@
 ## 当前职责
 
 - `dsh-scientific-reading`：DSH 工具、参数校验、HTTP/文件路由、文献导航 UI、合法 PDF provider 和真实 Bundle 验收。
-- `Scientific-Reading-for-Newbies`：SQLite、查重、文件夹/标签、持久任务、PDF 校验、MinerU、翻译、reader、资产、XLSX 与飞书领域合同。
+- 内置 `engine/`：SQLite、查重、文件夹/标签、持久任务、PDF 校验、MinerU、翻译、reader、资产和 Excel 领域合同。
 - `%USERPROFILE%\scientific-reading-data`：默认数据根；论文、数据库、任务、配置和所有资产与仓库分离。
 
 `client/client.js` 是前端规范源，`lib/client.js` 由构建生成，不直接编辑。两个仓库都可能存在其他任务 worktree；开发前先检查 `git status` 和 `git worktree list`。
@@ -24,8 +24,6 @@ Python 引擎：
 ```powershell
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-Remove-Item Env:FEISHU_APP_ID -ErrorAction SilentlyContinue
-Remove-Item Env:FEISHU_APP_SECRET -ErrorAction SilentlyContinue
 $env:PYTHONPATH = (Join-Path (Get-Location) 'src')
 & '.\.venv\Scripts\python.exe' -m pytest -q
 git diff --check
@@ -45,7 +43,7 @@ npm.cmd run verify:restart-recovery
 git diff --check
 ```
 
-离线测试必须清空真实飞书凭据。Windows 生产子进程启动边界必须保持无窗口参数，避免 worker/CLI 重启时弹出终端。
+Windows 生产子进程启动边界必须保持无窗口参数，避免 worker/CLI 重启时弹出终端。
 
 ## 三层 Bundle 门禁
 
@@ -57,9 +55,9 @@ git diff --check
 
 ## 安全和所有权
 
-- 测试只用 fake 飞书 client；真实写入必须获得针对当次操作的明确授权并写后读回。
-- 机构访问必须由用户逐篇选择；插件不保存账号、Cookie、验证码、MFA 或浏览器 Profile。
-- App Secret 只存在于启动 DSH 的宿主环境，不进入配置、SQLite、XLSX、日志或 HTTP 响应。
+- 机构访问只在轻量来源失败后启动；批量任务共用一次专用浏览器会话并集中提示，插件不保存账号、验证码或 MFA，也不读取用户日常浏览器 Profile。
+- Excel 只允许白名单用户字段回写；系统字段、稳定身份、资产路径和任务状态仍由 SQLite 管理。
+- 飞书退出发布路线；删除遗留实现时不得迁移、上传或损坏用户现有飞书数据。
 - 旧 PDF、MinerU、reader 和历史浅读只读索引，不移动、不删除、不无故重算。
 - 不 push GitHub，除非用户另行要求。
 
