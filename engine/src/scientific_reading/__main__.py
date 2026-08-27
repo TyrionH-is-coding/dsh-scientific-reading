@@ -873,6 +873,9 @@ def _build_parser() -> argparse.ArgumentParser:
     environment_presented.add_argument("--version", required=True)
     commands.add_parser("mineru-secret-save")
     commands.add_parser("mineru-secret-delete")
+    xlsx_locate = commands.add_parser("xlsx-locate")
+    xlsx_locate.add_argument("--paper-id", required=True)
+    commands.add_parser("xlsx-import-user-fields")
 
     batch = commands.add_parser("batch-submit")
     return parser
@@ -963,6 +966,19 @@ def _run_mineru_secret(args) -> int:
     }, ensure_ascii=False))
     return 0
 
+
+def _run_xlsx(args) -> int:
+    from .xlsx_snapshot import XlsxSnapshotService
+
+    service = XlsxSnapshotService(args.data_root)
+    result = (
+        service.locate(args.paper_id)
+        if args.command == "xlsx-locate"
+        else service.import_user_fields()
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
 def run_cli(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     timer = ForegroundTimer()
@@ -999,6 +1015,8 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             return _run_environment(args)
         if args.command in {"mineru-secret-save", "mineru-secret-delete"}:
             return _run_mineru_secret(args)
+        if args.command in {"xlsx-locate", "xlsx-import-user-fields"}:
+            return _run_xlsx(args)
         if args.command == "batch-submit":
             return _run_batch(args)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as error:

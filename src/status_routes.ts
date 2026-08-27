@@ -2,6 +2,7 @@ import type { Context } from 'cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Config } from './config.js'
 import { engineJson } from './cli.js'
+import { isPaperId } from './papers.js'
 
 const JSON_LIMIT = 16 * 1024
 
@@ -97,5 +98,17 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
     } catch (error) {
       sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
     }
+  })
+
+  register('/sr/api/excel/locate', async (req, res) => {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+    const url = new URL(req.url ?? '/sr/api/excel/locate', 'http://localhost')
+    const paperId = url.searchParams.get('paper_id') ?? ''
+    if (!isPaperId(paperId) || [...url.searchParams.keys()].some((key) => key !== 'paper_id')) {
+      return sendJson(res, 400, { error: 'paper_id_invalid' })
+    }
+    const result = await engineJson(config, ['xlsx-locate', '--paper-id', paperId])
+    if (!result.ok || !result.json) return sendJson(res, 409, { error: 'xlsx_locate_failed' })
+    sendJson(res, 200, result.json)
   })
 }

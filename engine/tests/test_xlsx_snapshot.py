@@ -19,14 +19,18 @@ def test_snapshot_has_fixed_columns_all_rows_and_readme_sheet(tmp_path):
     _seed(tmp_path, 3)
     result = XlsxSnapshotService(tmp_path).refresh()
     assert result["status"] == "success"
-    workbook = openpyxl.load_workbook(tmp_path / "library" / "scientific-reading.xlsx", read_only=True)
-    assert workbook.sheetnames == ["文献", "说明"]
+    workbook = openpyxl.load_workbook(tmp_path / "library" / "scientific-reading.xlsx")
+    assert workbook.sheetnames == ["文献", "_身份", "说明"]
     sheet = workbook["文献"]
     assert tuple(cell.value for cell in next(sheet.iter_rows())) == XLSX_COLUMNS
     rows = list(sheet.iter_rows(values_only=True))
     assert len(rows) == 4
     assert rows[1][0] == "中文文献 0"
-    assert "个人想法" not in [cell.value for row in workbook["说明"].iter_rows() for cell in row]
+    assert sheet.freeze_panes == "A2"
+    assert sheet.auto_filter.ref == f"A1:{sheet.cell(1, len(XLSX_COLUMNS)).column_letter}{sheet.max_row}"
+    assert sheet.column_dimensions["A"].width >= 30
+    assert sheet["A1"].fill.fill_type == "solid"
+    assert sheet["A2"].alignment.wrap_text is True
     workbook.close()
 
 
@@ -44,7 +48,40 @@ def test_snapshot_preserves_source_url_from_sqlite(tmp_path):
     )
     rows = list(workbook["文献"].iter_rows(values_only=True))
     workbook.close()
-    assert rows[1][12] == source_url
+    headers = {value: index for index, value in enumerate(rows[0])}
+    assert rows[1][headers["文献链接"]] == source_url
+
+
+def test_only_user_columns_are_imported_and_identity_conflicts_are_recorded(tmp_path):
+    _seed(tmp_path, 2)
+    service = XlsxSnapshotService(tmp_path)
+    assert service.refresh()["status"] == "success"
+    workbook = openpyxl.load_workbook(service.target)
+    sheet = workbook["文献"]
+    headers = {cell.value: cell.column for cell in sheet[1]}
+    first_id = sheet.cell(2, headers["文献 ID"]).value
+    original_title = sheet.cell(2, headers["文献名"]).value
+    sheet.cell(2, headers["个人思考"], "自己的判断")
+    sheet.cell(2, headers["个人理解程度"], "基本理解")
+    sheet.cell(2, headers["用户笔记"], "复习图 2")
+    sheet.cell(2, headers["文献名"], "不得回写的题名")
+    sheet.cell(3, headers["文献 ID"], "changed_identity")
+    workbook.save(service.target)
+    workbook.close()
+
+    result = service.import_user_fields()
+    assert result["updated"] == 1
+    assert result["conflicts"] == 1
+    conn = sqlite3.connect(tmp_path / "library.sqlite")
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM items WHERE paper_id=?", (first_id,)).fetchone()
+    assert row["title"] == original_title
+    assert row["personal_thoughts"] == "自己的判断"
+    assert row["understanding_level"] == "基本理解"
+    assert row["user_notes"] == "复习图 2"
+    conflicts = conn.execute("SELECT value FROM library_meta WHERE key='xlsx_conflicts'").fetchone()[0]
+    conn.close()
+    assert "identity_changed" in conflicts
 
 
 def test_permission_error_keeps_old_file_and_records_pending_then_retry(tmp_path, monkeypatch):

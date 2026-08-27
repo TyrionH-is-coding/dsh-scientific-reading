@@ -72,6 +72,9 @@ _ITEM_COLUMNS = (
     ("feishu_error", "TEXT"),
     ("xlsx_sync_state", "TEXT"),
     ("xlsx_error", "TEXT"),
+    ("personal_thoughts", "TEXT"),
+    ("understanding_level", "TEXT"),
+    ("user_notes", "TEXT"),
 )
 
 _V1_REQUIRED_COLUMNS = {
