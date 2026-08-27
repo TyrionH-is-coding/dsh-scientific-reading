@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const expectedTools = [
   'sr_setup', 'sr_scansci_status', 'sr_scansci_fetch', 'sr_scansci_login', 'sr_scansci_set_school',
-  'sr_start_full_read', 'sr_continue_full_read', 'sr_attach_pdf', 'sr_export_assets', 'sr_ingest',
+  'sr_download_papers', 'sr_start_full_read', 'sr_continue_full_read', 'sr_attach_pdf', 'sr_export_assets', 'sr_ingest',
   'sr_abstract_submit', 'sr_library_list', 'sr_folder_manage', 'sr_classification_apply',
   'sr_classification_undo', 'sr_job_status',
 ]

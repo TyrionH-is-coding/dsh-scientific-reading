@@ -128,7 +128,7 @@ export async function runScansci(
   exe: string,
   args: string[],
   config: Config,
-  opts: { timeoutMs?: number; useWrap?: boolean } = {},
+  opts: { timeoutMs?: number; useWrap?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): Promise<RunResult> {
   if (opts.useWrap) {
     const python = await resolveScansciPython(config)
@@ -258,6 +258,7 @@ export async function fetchPaper(
   identifier: string,
   outputDir: string,
   config: Config,
+  options: { suppressBrowserLogin?: boolean } = {},
 ): Promise<FetchOutcome> {
   await mkdir(outputDir, { recursive: true })
   // 走垫片：未配置机构时跳过浏览器登录，开放论文也能稳定输出 JSON
@@ -265,7 +266,11 @@ export async function fetchPaper(
     exe,
     ['fetch', identifier, '--output', outputDir, '--format', 'json'],
     config,
-    { timeoutMs: 10 * 60_000, useWrap: true },
+    {
+      timeoutMs: 10 * 60_000,
+      useWrap: true,
+      env: options.suppressBrowserLogin ? { SR_SCANSCI_DISABLE_INSTITUTION: '1' } : undefined,
+    },
   )
   const parsed = extractJson(r.stdout)
   if (!parsed) {
@@ -550,12 +555,17 @@ export async function engineAttachAndResumeFullReadPdf(config: Config, paperId: 
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
+export async function engineAttachLibraryPdf(config: Config, paperId: string, pdfPath: string) {
+  const r = await engineJson(config, ['pdf-attach-library', '--paper-id', paperId, '--pdf', pdfPath])
+  return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
 export async function engineExportAssets(config: Config, paperId: string) {
   const r = await engineJson(config, ['export-assets', '--paper-id', paperId])
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
-export async function engineResolveArtifact(config: Config, paperId: string, kind: 'reader' | 'exports') {
+export async function engineResolveArtifact(config: Config, paperId: string, kind: 'pdf' | 'reader' | 'exports') {
   const r = await engineJson(config, ['artifact-resolve', '--paper-id', paperId, '--kind', kind])
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }

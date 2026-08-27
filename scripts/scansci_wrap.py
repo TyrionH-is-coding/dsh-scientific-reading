@@ -12,6 +12,7 @@
 import contextlib
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -31,6 +32,8 @@ _orig_login = auth_mod.WebVPNAuth.login
 
 
 def _safe_login(self, force: bool = False) -> bool:
+    if os.environ.get("SR_SCANSCI_DISABLE_INSTITUTION") == "1":
+        return False
     cfg = self.config or {}
     institution_configured = bool(
         cfg.get('vpnsci_enabled')

@@ -20,6 +20,7 @@ import type { Config } from './config.js'
 import { resolveDataRoot, resolveOutputDir } from './config.js'
 import { isPaperId, parsePaperRoute } from './papers.js'
 import { BATCH_ACTIONS, listNavigation, resolveNavigationArtifact, submitBatch } from './library_tools.js'
+import { readDownloadJob, submitDownloadBatch } from './download_batch.js'
 import {
   engineJobStatus,
   engineLibraryItem,
@@ -302,6 +303,33 @@ export function registerRoutes(ctx: Context, config: Config): void {
     }
   })
 
+  exact('/sr/api/download-batch', async (req, res) => {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+    try {
+      const body = await readJsonBody(req, 1 * 1024 * 1024)
+      const selection = Array.isArray(body.selection) ? body.selection : []
+      if (!selection.length || selection.length > 100 || selection.some((id) => typeof id !== 'string' || !isPaperId(id))) {
+        return sendJson(res, 400, { error: 'invalid_selection' })
+      }
+      return sendJson(res, 202, await submitDownloadBatch(config, selection))
+    } catch (error) {
+      return sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
+    }
+  })
+
+  prefix('/sr/api/download-batch', async (req, res) => {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+    const jobId = decodeURIComponent((req.url ?? '').slice('/sr/api/download-batch'.length)).split('/').filter(Boolean)[0] ?? ''
+    if (!JOB_ID_RE.test(jobId)) return sendJson(res, 404, { error: 'bad_job_id' })
+    try {
+      const path = join(dataRoot(), 'jobs', 'downloads', jobId + '.json')
+      const value = JSON.parse(await readFile(path, 'utf8'))
+      return sendJson(res, 200, withoutSensitiveFields(value))
+    } catch {
+      return sendJson(res, 404, { error: 'download_job_not_found' })
+    }
+  })
+
   prefix('/sr/api/abstract', async (req, res) => {
     const id = decodeURIComponent((req.url ?? '').slice('/sr/api/abstract'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!isPaperId(id)) return sendJson(res, 404, { error: 'bad_paper_id' })
@@ -527,6 +555,8 @@ export function registerRoutes(ctx: Context, config: Config): void {
       }
     }
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+    const download = await readDownloadJob(config, id)
+    if (download) return sendJson(res, 200, withoutSensitiveFields(download))
     const r = await engineJobStatus(config, id)
     sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? withoutSensitiveFields(r.json) : { error: 'job_unavailable', detail: 'engine_rejected_request' })
   })

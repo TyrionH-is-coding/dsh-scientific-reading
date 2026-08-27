@@ -856,6 +856,9 @@ def _build_parser() -> argparse.ArgumentParser:
     attach.add_argument("--paper-id", required=True)
     attach.add_argument("--job-id", required=True)
     attach.add_argument("--pdf", type=Path, required=True)
+    library_attach = commands.add_parser("pdf-attach-library")
+    library_attach.add_argument("--paper-id", required=True)
+    library_attach.add_argument("--pdf", type=Path, required=True)
     export = commands.add_parser("export-assets")
     export.add_argument("--paper-id", required=True)
     export.add_argument("--force", action="store_true")
@@ -979,6 +982,22 @@ def _run_xlsx(args) -> int:
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
+
+def _run_library_pdf_attach(args) -> int:
+    from .pdf_acquisition import TrustedPdfAcquisitionService
+
+    result = TrustedPdfAcquisitionService(args.data_root).attach_local(
+        args.paper_id, args.pdf
+    )
+    print(json.dumps({
+        "status": result.status,
+        "paper_id": args.paper_id,
+        "sha256": result.sha256,
+        "page_count": result.page_count,
+        "reused": result.reused,
+    }, ensure_ascii=False))
+    return 0
+
 def run_cli(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     timer = ForegroundTimer()
@@ -1017,6 +1036,8 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             return _run_mineru_secret(args)
         if args.command in {"xlsx-locate", "xlsx-import-user-fields"}:
             return _run_xlsx(args)
+        if args.command == "pdf-attach-library":
+            return _run_library_pdf_attach(args)
         if args.command == "batch-submit":
             return _run_batch(args)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as error:

@@ -15,6 +15,7 @@ import {  engineJobStatus,  engineLibraryIngest,
   engineJson,
 } from './cli.js'
 import { isPaperId } from './papers.js'
+import { readDownloadJob, submitDownloadBatch } from './download_batch.js'
 
 type Block = { type: 'text'; text: string }
 const text = (t: string): Block[] => [{ type: 'text', text: t }]
@@ -64,6 +65,17 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   const requireJobId = (value: string): void => {
     if (!/^job_[0-9a-f]{16}$/.test(value)) throw new Error('job_id_invalid')
   }
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_download_papers',
+    description: '在后台为一篇或多篇已入库文献补齐 PDF；先直连/OA，再整批复用一次机构会话。',
+    parameters: { paper_ids: { type: 'array', items: { type: 'string' }, required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('PDF 批次：' + JSON.stringify(value)) },
+    async execute(args: { paper_ids: string[] }) {
+      if (!Array.isArray(args.paper_ids) || !args.paper_ids.length || args.paper_ids.some((id) => !isPaperId(id))) throw new Error('paper_id_invalid')
+      return await submitDownloadBatch(config, args.paper_ids) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_download_papers')
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_start_full_read',
@@ -264,6 +276,8 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
     },
     async execute(args: { job_id: string }) {
       requireJobId(args.job_id)
+      const download = await readDownloadJob(config, args.job_id)
+      if (download) return download as never
       const r = await engineJobStatus(config, args.job_id)
       if (!r.ok || !r.json) throw new Error(r.stderr || 'job-status 失败')
       return r.json as never
