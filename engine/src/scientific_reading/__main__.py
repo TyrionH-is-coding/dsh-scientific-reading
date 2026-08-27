@@ -871,6 +871,8 @@ def _build_parser() -> argparse.ArgumentParser:
     environment_presented = commands.add_parser("environment-mark-presented")
     environment_presented.add_argument("--school", default="")
     environment_presented.add_argument("--version", required=True)
+    commands.add_parser("mineru-secret-save")
+    commands.add_parser("mineru-secret-delete")
 
     batch = commands.add_parser("batch-submit")
     return parser
@@ -941,6 +943,26 @@ def _run_environment(args) -> int:
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
+
+def _run_mineru_secret(args) -> int:
+    from .secret_store import MineruSecretStore, resolve_mineru_token
+
+    store = MineruSecretStore(args.data_root)
+    if args.command == "mineru-secret-save":
+        payload = json.load(sys.stdin)
+        if not isinstance(payload, dict) or set(payload) != {"api_key"}:
+            raise ValueError("mineru_api_token_payload_invalid")
+        store.save(payload["api_key"])
+    else:
+        store.delete()
+    token, source = resolve_mineru_token(args.data_root, store=store)
+    print(json.dumps({
+        "status": "configured" if token else "not_configured",
+        "source": source,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }, ensure_ascii=False))
+    return 0
+
 def run_cli(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     timer = ForegroundTimer()
@@ -975,6 +997,8 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command in {"environment-status", "environment-recheck", "environment-mark-presented"}:
             return _run_environment(args)
+        if args.command in {"mineru-secret-save", "mineru-secret-delete"}:
+            return _run_mineru_secret(args)
         if args.command == "batch-submit":
             return _run_batch(args)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as error:

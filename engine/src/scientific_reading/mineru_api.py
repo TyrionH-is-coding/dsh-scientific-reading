@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import stat
 import time
@@ -298,10 +297,3 @@ class MineruApiClient:
                 "state": state,
             },
         )
-
-
-def token_from_environment() -> str:
-    token = os.environ.get("MINERU_API_TOKEN", "").strip()
-    if not token:
-        raise MineruApiError("mineru_api_token_required")
-    return token

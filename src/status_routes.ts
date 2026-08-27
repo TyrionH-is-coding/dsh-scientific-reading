@@ -76,4 +76,26 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
       sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
     }
   })
+
+  register('/sr/api/settings/mineru-key', async (req, res) => {
+    if (!['POST', 'DELETE'].includes(req.method ?? '')) return sendJson(res, 405, { error: 'method_not_allowed' })
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'request_forbidden' })
+    try {
+      const payload = req.method === 'POST' ? await readJson(req) : {}
+      if (req.method === 'POST' && (typeof payload.api_key !== 'string' || !payload.api_key.trim())) {
+        return sendJson(res, 400, { error: 'mineru_api_token_required' })
+      }
+      const command = req.method === 'POST' ? 'mineru-secret-save' : 'mineru-secret-delete'
+      const result = await engineJson(config, [command], payload)
+      if (!result.ok || !result.json) return sendJson(res, 400, { error: 'mineru_secret_update_failed' })
+      const source = typeof result.json.source === 'string' ? result.json.source : 'none'
+      sendJson(res, 200, {
+        status: result.json.status === 'configured' ? 'configured' : 'not_configured',
+        source,
+        checked_at: typeof result.json.checked_at === 'string' ? result.json.checked_at : null,
+      })
+    } catch (error) {
+      sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
+    }
+  })
 }

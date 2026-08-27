@@ -20,7 +20,6 @@ from .mineru_api import (
     DEFAULT_MODEL_VERSION,
     MineruApiClient,
     MineruApiError,
-    token_from_environment,
 )
 from .mineru_models import MINERU_NORMALIZATION_VERSION
 from .mineru_normalizer import MineruNormalizer
@@ -33,6 +32,7 @@ from .workspace import (
     atomic_write_json,
     validate_explicit_workspace,
 )
+from .secret_store import resolve_mineru_token
 
 
 def _now() -> str:
@@ -235,7 +235,10 @@ class MineruParseService:
             try:
                 raw_root = staging / "raw"
                 api_result = None
-                client = self.api_client_factory(token_from_environment())
+                token, _source = resolve_mineru_token(data_root)
+                if token is None:
+                    raise MineruApiError("mineru_api_token_required")
+                client = self.api_client_factory(token)
                 api_result = client.parse(
                     workspace.source_pdf,
                     raw_root,

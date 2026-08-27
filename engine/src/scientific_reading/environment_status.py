@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sqlite3
 from datetime import datetime, timezone
@@ -143,6 +142,8 @@ class EnvironmentStatusService:
     def _probe_mineru_local() -> dict[str, object]:
         return {"status": "ready" if shutil.which("mineru") else "unavailable"}
 
-    @staticmethod
-    def _probe_mineru_api() -> dict[str, object]:
-        return {"status": "configured" if os.environ.get("MINERU_API_TOKEN") else "not_configured"}
+    def _probe_mineru_api(self) -> dict[str, object]:
+        from .secret_store import resolve_mineru_token
+
+        token, source = resolve_mineru_token(self.data_root)
+        return {"status": "configured" if token else "not_configured", "source": source}
