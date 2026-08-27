@@ -71,3 +71,18 @@ def test_invalid_recheck_target_is_rejected(tmp_path: Path) -> None:
         assert str(error) == "environment_target_invalid"
     else:
         raise AssertionError("invalid target must fail")
+
+
+def test_cloak_optional_package_is_reported_without_becoming_an_error(tmp_path: Path) -> None:
+    service = EnvironmentStatusService(
+        tmp_path,
+        probes={"cloak": lambda: {"status": "not_installed"}},
+        now=lambda: "2026-08-27T12:00:00+00:00",
+    )
+
+    assert service.snapshot()["cloak"]["status"] == "not_checked"
+    result = service.recheck(("cloak",))
+    assert result["cloak"] == {
+        "status": "not_installed",
+        "checked_at": "2026-08-27T12:00:00+00:00",
+    }

@@ -34,20 +34,14 @@ assert.deepEqual(pairAbstractParagraphs('English one.\n\nEnglish two.', '中文�
 assert.deepEqual(pairAbstractParagraphs('', ''), [])
 
 const disabled = paperEntryModel({ abstract_status: 'missing', has_pdf: false, has_reader: false }, isSafeHttpUrl)
-assert.equal(disabled.quick.disabledReason, '待补摘要')
-assert.equal(disabled.pdf.disabledReason, '尚无 PDF 原件')
-assert.equal(disabled.reader.label, '开始精读')
+assert.equal(disabled.pdf.label, '获取 PDF')
+assert.equal(disabled.pdf.action, 'download')
+assert.equal(disabled.html.disabledReason, '尚未生成精读 HTML')
+assert.equal(disabled.excel.action, 'locate')
 const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true }, isSafeHttpUrl)
-assert.equal(paperEntryModel({ abstract_status: 'completed' }, isSafeHttpUrl).quick.disabledReason, '', 'worker completed 状态也必须可浅读')
-assert.equal(paperEntryModel({ full_read_status: 'running' }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中')
-for (const status of ['精读排队', '获取 PDF', '解析全文', '翻译与生成', '需要用户处理', 'queued', 'running', 'needs_user', 'waiting_user']) {
-  assert.equal(paperEntryModel({ full_read_status: status }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中', status)
-}
-for (const status of ['精读完成', 'completed', 'full_read_ready']) {
-  assert.equal(paperEntryModel({ full_read_status: status, has_reader: false }, isSafeHttpUrl).reader.disabledReason, '精读 HTML 待校验', status)
-}
-assert.equal(paperEntryModel({ full_read_status: '处理失败' }, isSafeHttpUrl).reader.disabledReason, '', '失败状态允许从更多菜单重试而非 busy')
-assert.equal(ready.reader.href, '/sr/reader/')
+assert.equal(ready.pdf.href, '/sr/api/paper/')
+assert.equal(ready.html.href, '/sr/reader/')
+assert.equal(ready.excel.label, '定位 Excel')
 
 const calls = []
 const scheduled = []

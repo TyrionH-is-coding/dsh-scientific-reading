@@ -82,17 +82,21 @@ assert.match(source, /ingestSubmit\.disabled =[^]*!titles\.length/, '空输入�
 assert.match(source, /ingestSubmitting[^]*Escape/, '提交期间不得被 Escape 中断')
 assert.match(source, /ingestCancel\.disabled = ingestSubmitting/, '提交期间必须禁用取消')
 assert.match(source, /ingestCancel\.type = 'button'/, '取消按钮不得误触发表单提交')
-assert.match(source, /height:calc\(100vh - 76px\);min-height:0;max-height:100%/, '根布局必须限制在宿主 viewport 内并由表格区内部滚动')
+assert.match(source, /height:calc\(100vh - 76px\);min-height:0;max-height:100%/, '根布局必须限制在宿主 viewport 内并由列表区内部滚动')
 assert.match(source, /\.sr-main\{min-height:0;overflow:hidden\}/, 'grid 主区必须允许收缩，避免长表格把分页挤出根容器')
 assert.match(source, /\.sr-main\{padding-bottom:126px\}/, '主栏必须为宿主固定输入框预留底部安全区')
-assert.match(source, /\.sr-table-wrap\{flex:1;min-height:0;overflow:auto/, '长列表必须由表格区域内部滚动')
-for (const label of ['题名', '作者 / 年份', '归类', '状态', '快捷入口']) {
-  assert.match(source, new RegExp(label), `缺少表头：${label}`)
-}
-assert.doesNotMatch(source, /下载 PDF|生成浅读/, '列表页不得出现普通阶段按钮')
-for (const label of ['浅读', '开始精读', '阅读 HTML', 'PDF', '更多']) {
+assert.match(source, /\.sr-paper-list\{flex:1;min-height:0;overflow:auto/, '长列表必须由两行列表区域内部滚动')
+assert.match(source, /\.sr-batch-bar\[hidden\]\{display:none\}/, '未选择文献时批量工具栏必须真正隐藏')
+assert.match(source, /el\('article', 'sr-paper-row'/, '每篇文献必须使用语义 article')
+assert.doesNotMatch(source, /min-width:1080px/, '文献页不得依赖宽表格横向滚动')
+for (const label of ['获取 PDF', '打开 PDF', '打开 HTML', '定位 Excel']) {
   assert.match(source, new RegExp(label), `缺少行快捷入口：${label}`)
 }
+const rowStart = source.indexOf('function renderPaperRow(')
+const rowEnd = source.indexOf('function loadLibrary(', rowStart)
+assert.ok(rowStart > 0 && rowEnd > rowStart, '必须有独立两行条目渲染器')
+const rowRenderer = source.slice(rowStart, rowEnd)
+for (const retired of ['开始精读', '整理文章图表', '更多', '浅读 ']) assert.doesNotMatch(rowRenderer, new RegExp(retired), `行内不得保留：${retired}`)
 assert.doesNotMatch(source, /飞书|feishu/i, '飞书不得留在文献页')
 assert.match(source, /role[^\n]*dialog|setAttribute\('role', 'dialog'\)/, 'drawer 必须声明 dialog role')
 assert.match(source, /aria-modal/, 'drawer 必须声明 aria-modal')

@@ -102,9 +102,10 @@ await createBatchController({ selection: runningSelection, api() { return Promis
 assert.equal(runningNotices[0], '批量处理中：待处理 1')
 assert.deepEqual(runningSelection.values(), ['paper_wait'])
 
-for (const label of ['已选 ', '移动文件夹', '添加标签', '移除标签', '加入精读队列', '重试失败任务']) {
+for (const label of ['已选 ', '下载缺失 PDF', '移动文件夹', '添加标签', '移除标签', '取消选择']) {
   assert.match(source, new RegExp(label), `缺少批量工具栏：${label}`)
 }
+for (const retired of ['加入精读队列', '重试失败任务']) assert.doesNotMatch(source, new RegExp(retired), `批量栏不得保留：${retired}`)
 assert.doesNotMatch(source, /飞书|feishu/i, '飞书不得留在批量工具栏')
 assert.doesNotMatch(source, /批量删除/, '批量工具栏不得提供删除')
 assert.match(source, /aria-live[^\n]*polite|setAttribute\('aria-live', 'polite'\)/, '父汇总必须是独立可访问 live region')

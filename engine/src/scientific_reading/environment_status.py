@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from importlib.util import find_spec
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
 
 Probe = Callable[[], dict[str, object]]
-_TARGETS = {"download", "institution", "mineru_local", "mineru_api"}
+_TARGETS = {"download", "institution", "mineru_local", "mineru_api", "cloak"}
 
 
 def _utc_now() -> str:
@@ -37,6 +38,7 @@ class EnvironmentStatusService:
             "institution": self._probe_institution,
             "mineru_local": self._probe_mineru_local,
             "mineru_api": self._probe_mineru_api,
+            "cloak": self._probe_cloak,
             **(probes or {}),
         }
 
@@ -45,6 +47,7 @@ class EnvironmentStatusService:
         download = self._status(saved.get("download"))
         institution = self._status(saved.get("institution"), school=self.school)
         mineru_saved = saved.get("mineru") if isinstance(saved.get("mineru"), dict) else {}
+        cloak = self._status(saved.get("cloak"))
         return {
             "contract_version": "environment-status-v1",
             "onboarding": {
@@ -58,6 +61,7 @@ class EnvironmentStatusService:
                 "api": self._status(mineru_saved.get("api")),
                 "strategy": "auto",
             },
+            "cloak": cloak,
             "library": self._library_status(),
         }
 
@@ -86,6 +90,8 @@ class EnvironmentStatusService:
                 result["institution"] = safe
             elif target == "download":
                 result["download"] = safe
+            elif target == "cloak":
+                result["cloak"] = safe
             elif target == "mineru_local":
                 result["mineru"]["local"] = safe  # type: ignore[index]
             else:
@@ -150,3 +156,9 @@ class EnvironmentStatusService:
 
         token, source = resolve_mineru_token(self.data_root)
         return {"status": "configured" if token else "not_configured", "source": source}
+
+    @staticmethod
+    def _probe_cloak() -> dict[str, object]:
+        executable = shutil.which("cloakbrowser") or shutil.which("cloak-browser")
+        module = find_spec("cloakbrowser") or find_spec("cloak_browser")
+        return {"status": "installed" if executable or module else "not_installed"}

@@ -118,6 +118,7 @@ function navigationList(value: unknown, page: number, pageSize: number): Record<
       title: safeString(sourceItem.title),
       authors_short: safeString(sourceItem.authors_short),
       year: Number.isInteger(sourceItem.year) ? sourceItem.year : null,
+      journal: safeString(sourceItem.journal),
       folder: safeNullableString(sourceItem.folder),
       tags: Array.isArray(sourceItem.tags) ? sourceItem.tags.filter((tag): tag is string => typeof tag === 'string') : [],
       abstract_status: safeString(sourceItem.abstract_status),

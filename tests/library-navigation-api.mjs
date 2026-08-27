@@ -64,7 +64,7 @@ try {
   assert.equal(list.statusCode, 200)
   assert.deepEqual(JSON.parse(list.body), {
     items: [{
-      paper_id: 'library_demo', title: '', authors_short: '', year: null, folder: null, tags: [],
+      paper_id: 'library_demo', title: '', authors_short: '', year: null, journal: '', folder: null, tags: [],
       abstract_status: '', full_read_status: '', has_pdf: false, has_reader: false, last_error: '',
     }],
     page: 2, page_size: 7, total: 1, jobs: { running: 0, queued: 0 },
