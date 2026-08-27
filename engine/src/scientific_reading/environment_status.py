@@ -140,7 +140,10 @@ class EnvironmentStatusService:
 
     @staticmethod
     def _probe_mineru_local() -> dict[str, object]:
-        return {"status": "ready" if shutil.which("mineru") else "unavailable"}
+        from .mineru_local import LocalMineruProvider
+
+        probe = LocalMineruProvider().probe()
+        return {"status": probe.status}
 
     def _probe_mineru_api(self) -> dict[str, object]:
         from .secret_store import resolve_mineru_token

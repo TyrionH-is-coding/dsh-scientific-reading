@@ -194,6 +194,7 @@ class ReadingPipeline:
             }
         if stage == "parse_mineru":
             from .mineru_api import MineruApiError
+            from .mineru_provider import MineruProviderError
             from .mineru_service import MineruParseService
 
             stage_workspace = self._stage_workspace(
@@ -223,6 +224,15 @@ class ReadingPipeline:
                     raise AgentRequired(
                         error.code, {"stage": "parse_mineru"}
                     ) from error
+                raise
+            except MineruProviderError as error:
+                code = str(error)
+                if code in {
+                    "mineru_provider_unavailable",
+                    "mineru_local_unavailable",
+                    "mineru_api_unavailable",
+                }:
+                    raise AgentRequired(code, {"stage": "parse_mineru"}) from error
                 raise
             self._adopt_workspace_stage(
                 workspace, stage_workspace, "paper_parse_upgrade"

@@ -65,8 +65,13 @@ class MineruArtifactValidator:
             ):
                 raise ValueError("MinerU content list 哈希无效")
             provider = report_payload.get("provider")
-            if provider != "mineru-api-v4":
+            if provider not in {"mineru-api-v4", "mineru-local-v1"}:
                 raise ValueError("MinerU 解析来源无效")
+            if (
+                not isinstance(report_payload.get("provider_version"), str)
+                or not report_payload["provider_version"]
+            ):
+                raise ValueError("MinerU provider 版本缺失")
             if provider == "mineru-api-v4" and (
                 not isinstance(report_payload.get("model_version"), str)
                 or not report_payload["model_version"]
@@ -214,6 +219,7 @@ class MineruArtifactValidator:
                 )
                 for key in (
                     "provider",
+                    "provider_version",
                     "model_version",
                     "batch_id",
                     "result_zip_sha256",

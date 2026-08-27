@@ -15,14 +15,11 @@ from typing import Callable
 from . import __version__
 from .assets import AssetManifest
 from .background_models import AgentRequired
-from .mineru_api import (
-    API_CONTRACT_VERSION,
-    DEFAULT_MODEL_VERSION,
-    MineruApiClient,
-    MineruApiError,
-)
+from .mineru_api import API_CONTRACT_VERSION
 from .mineru_models import MINERU_NORMALIZATION_VERSION
 from .mineru_normalizer import MineruNormalizer
+from .mineru_local import LocalMineruProvider
+from .mineru_provider import ApiMineruProvider, choose_provider
 from .models import AssetRecord, PaperMetadata, StageRecord
 from .mineru_artifacts import MineruArtifactValidator
 from .package_manifest import refresh_generation_package_manifest
@@ -32,18 +29,19 @@ from .workspace import (
     atomic_write_json,
     validate_explicit_workspace,
 )
-from .secret_store import resolve_mineru_token
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _api_cache_identity(source_sha256: str, method: str) -> str:
+def _cache_identity(
+    source_sha256: str, method: str, provider_id: str, provider_version: str
+) -> str:
     payload = {
         "source_sha256": source_sha256,
-        "provider": API_CONTRACT_VERSION,
-        "model_version": DEFAULT_MODEL_VERSION,
+        "provider": provider_id,
+        "provider_version": provider_version,
         "method": method,
         "normalization_version": MINERU_NORMALIZATION_VERSION,
     }
@@ -114,6 +112,7 @@ class MineruParseResult:
     assets: tuple[AssetRecord, ...]
     cached: bool
     provider: str = API_CONTRACT_VERSION
+    provider_version: str | None = None
     model_version: str | None = None
     batch_id: str | None = None
     result_zip_sha256: str | None = None
@@ -125,10 +124,9 @@ class MineruParseResult:
 
 
 class MineruParseService:
-    def __init__(self, *, api_client_factory=None) -> None:
-        self.api_client_factory = api_client_factory or (
-            lambda token: MineruApiClient(token)
-        )
+    def __init__(self, *, api_client_factory=None, provider_factory=None) -> None:
+        self.api_client_factory = api_client_factory
+        self.provider_factory = provider_factory
 
     def run(
         self,
@@ -140,6 +138,7 @@ class MineruParseService:
         upgrade_reason: str = "quality",
         paper_id: str | None = None,
         workspace: PaperWorkspace | None = None,
+        provider_strategy: str = "auto",
     ) -> MineruParseResult:
         if method not in {"auto", "txt", "ocr"}:
             raise ValueError("mineru_method_invalid")
@@ -174,9 +173,27 @@ class MineruParseService:
             raise ValueError("source.pdf 与 pdf_ready 登记哈希不一致")
         if not validation.valid:
             raise ValueError("source.pdf 正文验证失败")
-        mineru_version = f"{API_CONTRACT_VERSION}:{DEFAULT_MODEL_VERSION}"
-        identity = _api_cache_identity(validation.sha256, method)
-        provider = API_CONTRACT_VERSION
+        if self.provider_factory is not None:
+            selected_provider = self.provider_factory(
+                Path(data_root), workspace, provider_strategy
+            )
+        else:
+            selected_provider = choose_provider(
+                provider_strategy,
+                local=LocalMineruProvider(),
+                api=ApiMineruProvider(
+                    data_root,
+                    data_id=workspace.root.name,
+                    checkpoint_path=workspace.parsed_dir / ".mineru-api-checkpoint.json",
+                    client_factory=self.api_client_factory,
+                ),
+            )
+        provider = selected_provider.provider_id
+        provider_version = selected_provider.version
+        mineru_version = f"{provider}:{provider_version}"
+        identity = _cache_identity(
+            validation.sha256, method, provider, provider_version
+        )
 
         with _mineru_claim(workspace):
             cached = self._load_cache(
@@ -234,23 +251,14 @@ class MineruParseService:
             published = False
             try:
                 raw_root = staging / "raw"
-                api_result = None
-                token, _source = resolve_mineru_token(data_root)
-                if token is None:
-                    raise MineruApiError("mineru_api_token_required")
-                client = self.api_client_factory(token)
-                api_result = client.parse(
+                provider_result = selected_provider.parse(
                     workspace.source_pdf,
                     raw_root,
-                    data_id=workspace.root.name,
-                    checkpoint_path=(
-                        workspace.parsed_dir
-                        / ".mineru-api-checkpoint.json"
-                    ),
-                    heartbeat=heartbeat,
+                    method,
+                    heartbeat,
                 )
                 normalized = MineruNormalizer(mineru_version).normalize(
-                    raw_root,
+                    provider_result.raw_root,
                     staging,
                     confirmed,
                     validation.sha256,
@@ -261,11 +269,12 @@ class MineruParseService:
                     payload["method"] = method
                     if name == "parse_report.json":
                         payload["provider"] = provider
-                        if api_result is not None:
-                            payload["model_version"] = api_result.model_version
-                            payload["batch_id"] = api_result.batch_id
+                        payload["provider_version"] = provider_version
+                        if provider_result.model_version is not None:
+                            payload["model_version"] = provider_result.model_version
+                            payload["batch_id"] = provider_result.batch_id
                             payload["result_zip_sha256"] = (
-                                api_result.result_zip_sha256
+                                provider_result.result_zip_sha256
                             )
                     atomic_write_json(path, payload)
                 report, assets = (
@@ -296,12 +305,13 @@ class MineruParseService:
                     assets=assets,
                     cached=False,
                     provider=provider,
+                    provider_version=provider_version,
                     model_version=(
-                        api_result.model_version if api_result else None
+                        provider_result.model_version
                     ),
-                    batch_id=api_result.batch_id if api_result else None,
+                    batch_id=provider_result.batch_id,
                     result_zip_sha256=(
-                        api_result.result_zip_sha256 if api_result else None
+                        provider_result.result_zip_sha256
                     ),
                 )
                 self._record_state(
@@ -390,8 +400,11 @@ class MineruParseService:
             ),
             assets=assets,
             cached=True,
-            provider=API_CONTRACT_VERSION,
-            model_version=DEFAULT_MODEL_VERSION,
+            provider=report_payload["provider"],
+            provider_version=report_payload.get("provider_version"),
+            model_version=report_payload.get("model_version"),
+            batch_id=report_payload.get("batch_id"),
+            result_zip_sha256=report_payload.get("result_zip_sha256"),
         )
 
     @staticmethod
@@ -465,6 +478,7 @@ class MineruParseService:
                 ),
                 "duration_seconds": duration_seconds,
                 "provider": result.provider,
+                "provider_version": result.provider_version,
                 "model_version": result.model_version,
                 "batch_id": result.batch_id,
                 "result_zip_sha256": result.result_zip_sha256,
