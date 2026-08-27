@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-delete process.env.FEISHU_APP_ID
-delete process.env.FEISHU_APP_SECRET
 
 const routes = readFileSync(new URL('../src/routes.ts', import.meta.url), 'utf8')
 const cli = readFileSync(new URL('../src/cli.ts', import.meta.url), 'utf8')

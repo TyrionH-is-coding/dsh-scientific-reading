@@ -5,8 +5,6 @@ import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { registerRoutes } from '../lib/routes.js'
 
-delete process.env.FEISHU_APP_ID
-delete process.env.FEISHU_APP_SECRET
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
 assert.ok(python)
 const fixture = mkdtempSync(join(tmpdir(), 'sr-batch-contract-'))
@@ -24,7 +22,7 @@ const oldPythonPath = process.env.PYTHONPATH
 process.env.PYTHONPATH = oldPythonPath ? fakeRoot + delimiter + oldPythonPath : fakeRoot
 const routes = []
 const ctx = { effect(fn) { fn() }, logger() {}, webServer: { register(route) { routes.push(route); return () => {} } } }
-const config = { dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'scansci-pdf', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python, feishuConfig: '' }
+const config = { dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'scansci-pdf', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python }
 const response = () => ({ statusCode: 0, headers: {}, body: '', writeHead(status, headers) { this.statusCode = status; this.headers = headers }, end(body = '') { this.body = String(body) } })
 const request = (method, body = '', oversized = false) => ({ method, url: '/sr/api/batch', on(event, cb) { if (event === 'data' && body) cb(oversized ? Buffer.alloc(1024 * 1024 + 1) : Buffer.from(body)); if (event === 'end') queueMicrotask(cb) }, destroy() {} })
 async function call(method, value, oversized = false) { const res = response(); const route = routes.find((item) => item.path === '/sr/api/batch'); assert.ok(route); await route.handler(request(method, typeof value === 'string' ? value : JSON.stringify(value), oversized), res); return res }
@@ -36,12 +34,11 @@ try {
   assert.equal((await call('POST', { action: 'unknown', selection: ['library_1'] })).statusCode, 400)
   assert.equal((await call('POST', { action: 'move_folder', selection: [] })).statusCode, 400)
   assert.equal((await call('POST', { action: 'move_folder', selection: ['../secret'] })).statusCode, 400)
-  assert.equal((await call('POST', { action: 'feishu_resync', selection: ['library_1'], payload: { feishu_record_url: 'https://evil.invalid' } })).statusCode, 400)
   assert.equal((await call('POST', '{}', true)).statusCode, 413)
   const duplicate = await call('POST', { action: 'queue_full_read', selection: ['library_1', 'library_1'], payload: {} })
   assert.equal(duplicate.statusCode, 200, '引擎负责稳定去重，HTTP 不得拆分或改变原请求')
 
-  const allowed = ['move_folder', 'add_tags', 'remove_tags', 'queue_full_read', 'retry_failed', 'feishu_resync']
+  const allowed = ['move_folder', 'add_tags', 'remove_tags', 'queue_full_read', 'retry_failed']
   for (const action of allowed) {
     const result = await call('POST', { action, selection: ['library_1'], payload: {} })
     assert.equal(result.statusCode, 200, action)

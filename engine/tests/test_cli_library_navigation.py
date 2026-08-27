@@ -73,7 +73,7 @@ def test_folder_commands_and_library_list_v2_emit_single_json(
     assert page["items"][0]["paper_id"] == paper_id
     assert set(page["items"][0]) >= {
         "authors_short", "folder", "abstract_status", "full_read_status",
-        "feishu_sync_state", "has_pdf", "has_reader", "feishu_record_url", "last_error",
+        "has_pdf", "has_reader", "last_error",
     }
 
 

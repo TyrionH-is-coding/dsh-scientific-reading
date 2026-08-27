@@ -35,7 +35,6 @@ process.env.PYTHONPATH = previousPythonPath ? root + delimiter + previousPythonP
 const config = {
   dataRoot: join(root, 'data'), python: 'python', scansciExe: 'scansci-pdf', school: '',
   legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python,
-  feishuConfig: '',
 }
 
 try {
@@ -46,9 +45,7 @@ try {
   const derived = await engineDerivedEnqueue(config, 'library_demo')
   assert.equal(derived.ok, true)
   assert.equal(derived.json?.command, 'derived-enqueue')
-  const configuredDerived = await engineDerivedEnqueue({ ...config, feishuConfig: join(root, 'feishu-config.json') }, 'library_demo')
-  assert.equal(configuredDerived.ok, true)
-  const derivedLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue') && !line.includes('--feishu-config'))
+  const derivedLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue'))
   assert.match(derivedLog ?? '', /--paper-id.*library_demo/)
   assert.doesNotMatch(derivedLog ?? '', /--metadata/)
 
@@ -60,10 +57,6 @@ try {
   const submittedLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('abstract-read-submit'))
   assert.match(submittedLog ?? '', /abstract_zh/)
   assert.match(submittedLog ?? '', /--input/)
-  assert.doesNotMatch(submittedLog ?? '', /--feishu-config/)
-  const configuredLog = (await readFile(logPath, 'utf8')).split(/\r?\n/).find((line) => line.includes('derived-enqueue') && line.includes('--feishu-config'))
-  assert.match(configuredLog ?? '', /feishu-config\.json/)
-  assert.match(configuredLog ?? '', /--paper-id.*library_demo/)
 
   const started = Date.now()
   const detached = await engineStartDetached(config, ['metadata-enrichment', '--slow'], { paper_id: 'library_demo' })

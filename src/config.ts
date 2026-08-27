@@ -25,8 +25,6 @@ export interface Config {
   scansciPython: string
   /** 装有 scientific-reading 引擎的 Python 解释器绝对路径。空 = 自动探测（优先复用 scansci 同环境） */
   enginePython: string
-  /** 飞书多维表格配置 JSON 路径（feishu-config-v1，含 app_token/table_id/field_map） */
-  feishuConfig: string
 }
 
 export const Config = z.object({
@@ -39,7 +37,6 @@ export const Config = z.object({
   loginType: z.string().default('carsi'),
   scansciPython: z.string().default(''),
   enginePython: z.string().default(''),
-  feishuConfig: z.string().default(''),
 })
 
 export function resolveDataRoot(config: Config): string {

@@ -76,11 +76,7 @@ class ScansciJsonProvider:
             encoding="utf-8",
             timeout=600,
             check=False,
-            env={
-                key: value
-                for key, value in os.environ.items()
-                if key not in {"FEISHU_APP_ID", "FEISHU_APP_SECRET"}
-            },
+            env=dict(os.environ),
             **hidden_window_kwargs(),
         )
         try:

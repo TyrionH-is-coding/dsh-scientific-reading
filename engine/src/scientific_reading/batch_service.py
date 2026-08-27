@@ -14,7 +14,7 @@ from .workspace import atomic_write_json
 
 ALLOWED_ACTIONS = {
     "move_folder", "add_tags", "remove_tags",
-    "queue_full_read", "retry_failed", "feishu_resync",
+    "queue_full_read", "retry_failed",
 }
 CHUNK_SIZE = 100
 _RESULT_STATES = {"created", "reused", "needs_user", "failed"}
@@ -28,7 +28,6 @@ class BatchService:
         library: LibraryService | None = None,
         queue_full_read: Callable[[str], dict[str, Any]] | None = None,
         retry_failed: Callable[[str], dict[str, Any]] | None = None,
-        feishu_resync: Callable[[str], dict[str, Any]] | None = None,
         persist: Callable[[Path, dict[str, Any]], None] = atomic_write_json,
     ) -> None:
         self.data_root = Path(data_root).resolve()
@@ -36,7 +35,6 @@ class BatchService:
         self._owns_library = library is None
         self.queue_full_read = queue_full_read
         self.retry_failed = retry_failed
-        self.feishu_resync = feishu_resync
         self.persist = persist
 
     def submit(self, action: str, paper_ids: Sequence[str], payload: dict) -> dict[str, Any]:
@@ -135,12 +133,9 @@ class BatchService:
             item = library.get_item(paper_id)
             if action == "retry_failed" and item.get("full_read_status") not in {"处理失败", "failed"}:
                 return {"paper_id": paper_id, "status": "reused", "reason": "not_failed"}
-            if action == "feishu_resync" and not payload.get("explicit") and item.get("feishu_sync_state") != "pending":
-                return {"paper_id": paper_id, "status": "reused", "reason": "not_pending"}
             callback = {
                 "queue_full_read": self.queue_full_read,
                 "retry_failed": self.retry_failed,
-                "feishu_resync": self.feishu_resync,
             }[action]
             if callback is None:
                 raise ValueError("batch_action_unavailable")

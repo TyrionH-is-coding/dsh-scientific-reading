@@ -8,8 +8,6 @@ import {  engineJobStatus,  engineLibraryIngest,
   engineLibraryList,
   engineFolderManage,
   engineClassification,
-  engineFeishuProbe,
-  engineFeishuResync,
   engineStartFullRead,
   engineContinueFullRead,
   engineExportAssets,
@@ -23,7 +21,7 @@ const text = (t: string): Block[] => [{ type: 'text', text: t }]
 
 export const BATCH_ACTIONS = new Set([
   'move_folder', 'add_tags', 'remove_tags',
-  'queue_full_read', 'retry_failed', 'feishu_resync',
+  'queue_full_read', 'retry_failed',
 ])
 
 export async function submitBatch(config: Config, request: Record<string, unknown>) {
@@ -121,7 +119,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_ingest：本地快速入库 + 脱离派生 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_ingest',
-    description: '快速写入本地文献库 skeleton；本地结果返回后再排队题录、Abstract、XLSX 和可选飞书派生。',
+    description: '快速写入本地文献库 skeleton；本地结果返回后再排队题录、Abstract 和 XLSX 派生。',
     parameters: {
       metadata: { type: 'object', required: true, additionalProperties: true, description: '论文元数据 JSON' },
     },
@@ -239,20 +237,6 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       return (r.json ?? { error: r.stderr || 'classification_undo_failed' }) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_classification_undo')
-
-  // ── sr_library_search：全文搜索 ─────────────────────────────────────
-  ctx.effect(() => ctx.tools.register(defineTool({
-    name: 'sr_feishu_resync',
-    description: '检查飞书自动同步配置，仅 enabled 时重排待同步条目。',
-    parameters: { paper_ids: { type: 'array', items: { type: 'string' } } },
-    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
-    async execute(args: { paper_ids?: string[] }) {
-      const probe = await engineFeishuProbe(config)
-      if (!probe.ok || !(probe.json?.enabled === true || probe.json?.status === 'enabled')) return { status: 'disabled', detail: probe.stderr || 'feishu_not_enabled' }
-      const r = await engineFeishuResync(config, args.paper_ids ?? [])
-      return (r.json ?? { status: 'failed', error: r.stderr || 'feishu_resync_failed' }) as never
-    },
-  })), '@dsh-external/dsh-scientific-reading: sr_feishu_resync')
 
   // ── sr_job_status：查询后台任务状态 ────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({

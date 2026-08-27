@@ -85,7 +85,7 @@ for (const retired of ['sr_feishu_resync', 'feishuConfig', 'feishu_record_url'])
 }
 ```
 
-在 Python schema 测试断言新建数据库不再创建 `feishu_*` 列，但旧数据库的遗留列允许保留且不读取。
+在 Python 导航测试断言 `feishu_*` 遗留列不再被读取或返回。为保护既有 SQLite，不为删除旧列重建用户数据库；旧列只作为不可见、不可写的迁移兼容保留。
 
 - [ ] **Step 2: 运行测试确认失败**
 
@@ -116,7 +116,7 @@ export interface Config {
 }
 ```
 
-删除飞书 CLI、worker 分支、工具、路由字段和 XLSX 列。迁移只停止使用旧列，不重建或破坏用户现有 SQLite。
+删除飞书 CLI、worker 分支、工具、路由字段和 XLSX 列。新旧数据库都不再读取或写入遗留列，不重建或破坏用户现有 SQLite。
 
 - [ ] **Step 4: 运行退场测试和全量小门禁**
 

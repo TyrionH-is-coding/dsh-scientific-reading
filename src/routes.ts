@@ -121,10 +121,8 @@ function navigationList(value: unknown, page: number, pageSize: number): Record<
       tags: Array.isArray(sourceItem.tags) ? sourceItem.tags.filter((tag): tag is string => typeof tag === 'string') : [],
       abstract_status: safeString(sourceItem.abstract_status),
       full_read_status: safeString(sourceItem.full_read_status),
-      feishu_sync_state: safeString(sourceItem.feishu_sync_state),
       has_pdf: typeof sourceItem.has_pdf === 'boolean' ? sourceItem.has_pdf : false,
       has_reader: typeof sourceItem.has_reader === 'boolean' ? sourceItem.has_reader : false,
-      feishu_record_url: safeString(sourceItem.feishu_record_url),
       last_error: safeError(sourceItem.last_error),
     }
   })
@@ -139,12 +137,6 @@ function navigationList(value: unknown, page: number, pageSize: number): Record<
       queued: safeNonnegativeInteger(jobs.queued, 0),
     },
   }
-}
-
-function hasClientFeishuUrl(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false
-  if (Array.isArray(value)) return value.some(hasClientFeishuUrl)
-  return Object.entries(value as Record<string, unknown>).some(([key, child]) => key === 'feishu_record_url' || hasClientFeishuUrl(child))
 }
 
 function withoutSensitiveFields(value: unknown): unknown {
@@ -296,7 +288,6 @@ export function registerRoutes(ctx: Context, config: Config): void {
       if (!selection.length || selection.some((id) => typeof id !== 'string' || !isPaperId(id))) {
         return sendJson(res, 400, { error: 'invalid_selection' })
       }
-      if (hasClientFeishuUrl(body.payload)) return sendJson(res, 400, { error: 'client_feishu_url_forbidden' })
       const request = {
         action,
         selection,

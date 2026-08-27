@@ -150,8 +150,6 @@ window.__ModuleLoader__.load({
       });
     }
     function paperEntryModel(paper, validateUrl) {
-      var safeFeishu = validateUrl(String(paper.feishu_record_url || ''));
-      var feishuState = paper.feishu_sync_state || 'unconfigured';
       var busy = ['精读排队', '获取 PDF', '解析全文', '翻译与生成', '需要用户处理', 'queued', 'running', 'needs_user', 'waiting_user'].includes(paper.full_read_status);
       var completeWithoutReader = ['精读完成', 'completed', 'full_read_ready'].includes(paper.full_read_status) && !paper.has_reader;
       return {
@@ -160,11 +158,6 @@ window.__ModuleLoader__.load({
           ? { label: '阅读 HTML', href: '/sr/reader/', disabledReason: '' }
           : { label: '开始精读', href: '', disabledReason: completeWithoutReader ? '精读 HTML 待校验' : busy ? '精读已排队或处理中' : '' },
         pdf: { label: 'PDF', href: paper.has_pdf ? '/sr/api/paper/' : '', disabledReason: paper.has_pdf ? '' : '尚无 PDF 原件' },
-        feishu: {
-          label: feishuState === 'synced' ? '飞书' : feishuState === 'pending' ? '飞书待同步' : '飞书未配置',
-          href: feishuState === 'synced' && safeFeishu ? paper.feishu_record_url : '',
-          disabledReason: feishuState === 'synced' && !safeFeishu ? '飞书链接无效' : feishuState === 'pending' ? '等待同步' : feishuState === 'synced' ? '' : '飞书未配置',
-        },
       };
     }
     function createPaperActionController(deps) {
@@ -335,12 +328,11 @@ window.__ModuleLoader__.load({
         controls.drawerBody.appendChild(el('h3', '', 'Abstract'));
         if (!pairs.length) controls.drawerBody.appendChild(el('p', 'sr-empty-note', '待补摘要'));
         pairs.forEach(function (pair) { var block = el('section', 'sr-abstract-pair'); if (pair.en) block.appendChild(el('p', 'sr-abstract-en', pair.en)); if (pair.zh) block.appendChild(el('p', 'sr-abstract-zh', pair.zh)); controls.drawerBody.appendChild(block); });
-        controls.drawerBody.appendChild(el('p', 'sr-muted', '浅读：' + (abstract.status || paper.abstract_status || '待补摘要') + '｜精读：' + (paper.full_read_status || '未开始') + '｜飞书：' + (paper.feishu_sync_state || '未配置')));
+        controls.drawerBody.appendChild(el('p', 'sr-muted', '浅读：' + (abstract.status || paper.abstract_status || '待补摘要') + '｜精读：' + (paper.full_read_status || '未开始')));
         var failure = abstract.last_error || paper.last_error; if (failure) controls.drawerBody.appendChild(el('p', 'sr-error-note', '失败原因：' + failure));
         var links = el('div', 'sr-drawer-actions'); var model = paperEntryModel(paper, isSafeHttpUrl);
         if (paper.has_pdf) links.appendChild(entryLink('PDF', '/sr/api/paper/' + encodeURIComponent(paper.paper_id) + '/pdf'));
         if (paper.has_reader) links.appendChild(entryLink('阅读 HTML', '/sr/reader/' + encodeURIComponent(paper.paper_id)));
-        if (model.feishu.href) links.appendChild(entryLink('飞书', model.feishu.href, true));
         links.appendChild(btn('查看资产目录', function () { drawerActions.loadAssets(paper.paper_id, session); }, 'sr-entry'));
         links.appendChild(btn('整理文章图表', function () { exportPaperAssets(paper.paper_id, session); }, 'sr-entry'));
         var job = payload.detail.job || {}; var jobDetail = job.detail || {}; var needsPdf = (job.status === 'waiting_user' && jobDetail.reason_code === 'pdf_required') || (paper.needsUser && paper.pdfRequired);
@@ -403,14 +395,12 @@ window.__ModuleLoader__.load({
           var status = el('td');
           status.appendChild(el('span', 'sr-status', '浅读 ' + (paper.abstract_status || '待补摘要')));
           status.appendChild(el('span', 'sr-status', '精读 ' + (paper.full_read_status || '未开始')));
-          status.appendChild(el('span', 'sr-status', '飞书 ' + (paper.feishu_sync_state || '未配置')));
           tr.appendChild(status);
           var entries = el('td', 'sr-entries'); var model = paperEntryModel(paper, isSafeHttpUrl);
           entries.appendChild(entryButton(model.quick, function () { openDrawer(paper, title); }));
           if (model.reader.href) entries.appendChild(entryLink(model.reader.label, model.reader.href + encodeURIComponent(paper.paper_id)));
           else entries.appendChild(entryButton(model.reader, function () { runUiAction(rowActions.startFullRead(paper.paper_id), '开始精读', paper.paper_id); }));
           entries.appendChild(model.pdf.href ? entryLink('PDF', model.pdf.href + encodeURIComponent(paper.paper_id) + '/pdf') : entryButton(model.pdf));
-          entries.appendChild(model.feishu.href ? entryLink(model.feishu.label, model.feishu.href, true) : entryButton(model.feishu));
           var more = document.createElement('details'); var summary = el('summary', '', '更多'); more.appendChild(summary);
           if (paper.last_error) more.appendChild(btn('重试失败任务', function () { runUiAction(rowActions.startFullRead(paper.paper_id), '重试', paper.paper_id); }, 'sr-menu-action'));
           var exportButton = btn('整理文章图表', function () { openDrawer(paper, exportButton, { exportAfter: true }); }, 'sr-menu-action'); more.appendChild(exportButton);
@@ -575,7 +565,6 @@ window.__ModuleLoader__.load({
       controls.batchBar.appendChild(btn('移除标签', function () { var value = window.prompt('输入要移除的标签，多个标签用逗号分隔', ''); if (value) submitBatch('remove_tags', { tags: value.split(',').map(function (tag) { return tag.trim(); }).filter(Boolean) }); }, 'sr-btn'));
       controls.batchBar.appendChild(btn('加入精读队列', function () { submitBatch('queue_full_read', {}); }, 'sr-btn'));
       controls.batchBar.appendChild(btn('重试失败任务', function () { submitBatch('retry_failed', {}); }, 'sr-btn'));
-      controls.batchBar.appendChild(btn('重新同步飞书', function () { submitBatch('feishu_resync', { explicit: true }); }, 'sr-btn'));
       main.appendChild(controls.batchBar);
       controls.batchNotice = el('div', 'sr-batch-notice'); controls.batchNotice.setAttribute('role', 'status'); controls.batchNotice.setAttribute('aria-live', 'polite'); main.appendChild(controls.batchNotice);
       function renderBatchToolbar() { var count = selections.size(); controls.batchBar.hidden = count === 0; controls.batchCount.textContent = '已选 ' + count + ' 篇'; }
@@ -648,7 +637,6 @@ window.__ModuleLoader__.load({
       { key: 'loginType', label: '机构登录类型', hint: 'cookies | webvpn | carsi | ezproxy | custom', type: 'text' },
       { key: 'scansciPython', label: 'scansci Python 路径', hint: '空 = 自动探测 uv 工具环境', type: 'text' },
       { key: 'enginePython', label: '引擎 Python 路径', hint: '空 = 自动探测（优先复用 scansci 环境）', type: 'text' },
-      { key: 'feishuConfig', label: '飞书配置 JSON 路径', hint: 'feishu-config-v1（含 app_token/table_id/field_map），须在仓库外', type: 'text' },
     ];
     var srCardRoot = null;
     var srCardInputs = {};

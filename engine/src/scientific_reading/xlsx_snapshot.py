@@ -18,7 +18,7 @@ XLSX_COLUMNS = (
     "文献名", "作者", "主要研究单位", "年份", "期刊", "影响因子", "学科领域",
     "主要内容", "解决方法", "实验假设", "创新", "不足之处", "文献链接", "DOI",
     "PMID", "文献 ID", "主文件夹", "标签", "Abstract (EN)", "Abstract (ZH)",
-    "阅读状态", "PDF 路径", "精读 HTML", "图表资产路径", "飞书链接", "创建时间", "更新时间",
+    "阅读状态", "PDF 路径", "精读 HTML", "图表资产路径", "创建时间", "更新时间",
 )
 
 
@@ -80,7 +80,7 @@ class XlsxSnapshotService:
                     "", "", "", "", "", row["source_url"] or "", row["doi"], row["pmid"], row["paper_id"],
                     row["folder_name"] or "", row["tags"] or "", row["abstract_en"] or "",
                     row["abstract_zh"] or "", row["status"], row["pdf_path"] or "", row["html_path"] or "", row["asset_paths"] or "",
-                    row["feishu_record_url"] or "", row["created_at"], row["updated_at"],
+                    row["created_at"], row["updated_at"],
                 ))
             return result
         finally:

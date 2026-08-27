@@ -49,7 +49,6 @@ try {
     loginType: 'carsi',
     scansciPython: '',
     enginePython: python,
-    feishuConfig: '',
     mineruApiToken: 'settings-token-must-be-ignored',
   }
 

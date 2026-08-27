@@ -9,8 +9,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(__dirname, '..')
 const libIndex = new URL('../lib/index.js', import.meta.url).href
 
-delete process.env.FEISHU_APP_ID
-delete process.env.FEISHU_APP_SECRET
 
 const mod = await import(libIndex)
 
@@ -35,7 +33,6 @@ const fakeCtx = {
 const config = {
   dataRoot: '', python: 'python', scansciExe: 'scansci-pdf', school: '',
   legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: '',
-  feishuConfig: '',
 }
 
 let failures = []
@@ -51,7 +48,7 @@ try {
 
 const tools = registrations.filter((r) => r.startsWith('tool:'))
 const routes = registrations.filter((r) => r.startsWith('route:'))
-const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_start_full_read','sr_continue_full_read','sr_attach_pdf','sr_export_assets','sr_ingest','sr_abstract_submit','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_feishu_resync','sr_job_status']
+const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_scansci_login','sr_scansci_set_school','sr_start_full_read','sr_continue_full_read','sr_attach_pdf','sr_export_assets','sr_ingest','sr_abstract_submit','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_job_status']
 for (const t of expectedTools) {
   if (!tools.some((x) => x === 'tool:' + t)) failures.push('缺工具: ' + t)
 }

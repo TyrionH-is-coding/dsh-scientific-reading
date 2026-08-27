@@ -205,9 +205,8 @@ def test_navigation_rows_include_fixed_status_and_asset_contract(tmp_path: Path)
         service.move_items((paper_id,), folder["folder_id"])
         service.add_tags((paper_id,), ("Algorithms", "History"))
         service.conn.execute(
-            "UPDATE items SET abstract_status=?, full_read_status=?, "
-            "feishu_sync_state=?, feishu_record_url=?, last_error=? WHERE paper_id=?",
-            ("ready", "queued", "pending", "https://example.test/record", "retry later", paper_id),
+            "UPDATE items SET abstract_status=?, full_read_status=?, last_error=? WHERE paper_id=?",
+            ("ready", "queued", "retry later", paper_id),
         )
         service.conn.execute(
             "INSERT INTO attachments (paper_id, rel_path, sha256) VALUES (?,?,?)",
@@ -228,8 +227,6 @@ def test_navigation_rows_include_fixed_status_and_asset_contract(tmp_path: Path)
     assert item["tags"] == ["Algorithms", "History"]
     assert item["abstract_status"] == "ready"
     assert item["full_read_status"] == "queued"
-    assert item["feishu_sync_state"] == "pending"
     assert item["has_pdf"] is True
     assert item["has_reader"] is True
-    assert item["feishu_record_url"] == "https://example.test/record"
     assert item["last_error"] == "retry later"

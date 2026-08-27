@@ -81,7 +81,6 @@ _STAGE_OUTPUT_FIELDS = {
         "status",
         "job_id",
         "xlsx_job_id",
-        "feishu_job_id",
         "error",
     },
 }

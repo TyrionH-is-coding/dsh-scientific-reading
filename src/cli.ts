@@ -458,8 +458,6 @@ export async function engineStartDetached(
 /** 持久派生编排：引擎负责记录 pending/failed 状态，插件只提交一次。 */
 export async function engineDerivedEnqueue(config: Config, paperId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const args = ['derived-enqueue', '--paper-id', paperId]
-  const cfg = config.feishuConfig.trim()
-  if (cfg) args.push('--feishu-config', cfg)
   const r = await engineJson(config, args)
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
@@ -508,22 +506,6 @@ export async function engineClassification(config: Config, command: 'classificat
   return { ok: r.ok, json: r.json, stderr: r.stderr }
 }
 
-export async function engineFeishuProbe(config: Config): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const cfg = config.feishuConfig.trim()
-  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
-  const r = await engineJson(config, ['feishu-probe', '--config', cfg])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
-export async function engineFeishuResync(config: Config, paperIds: string[] = []): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
-  const cfg = config.feishuConfig.trim()
-  if (!cfg) return { ok: false, json: null, stderr: 'feishu_config_required' }
-  const args = ['feishu-resync', '--config', cfg]
-  for (const id of paperIds) args.push('--paper-id', id)
-  const r = await engineJson(config, args)
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
-}
-
 /** library-ensure：写入本地文献库条目（查重+读回） */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])
@@ -531,7 +513,7 @@ export async function engineJobStatus(config: Config, jobId: string): Promise<{ 
 }
 
 async function trustedProviderEnv(config: Config): Promise<NodeJS.ProcessEnv> {
-  const sanitized: NodeJS.ProcessEnv = { FEISHU_APP_ID: undefined, FEISHU_APP_SECRET: undefined }
+  const sanitized: NodeJS.ProcessEnv = {}
   const python = await resolveScansciPython(config)
   if (!python) return sanitized
   const wrapper = wrapScriptPath()

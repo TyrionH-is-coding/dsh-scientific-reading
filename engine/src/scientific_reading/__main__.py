@@ -20,10 +20,7 @@ from .background_store import (
     windows_pid_is_alive,
 )
 from .derived_pipeline import DerivedPipeline
-from .derived_updates import FeishuAutoSyncPolicy
 from .export_service import ExportService
-from .feishu_builder import FeishuPayloadBuilder, load_feishu_config
-from .feishu_service import feishu_sync_input_hash
 from .foreground import ForegroundTimer
 from .models import PaperMetadata
 from .workspace import PaperWorkspace, atomic_write_json
@@ -843,7 +840,6 @@ def _build_parser() -> argparse.ArgumentParser:
     derived = commands.add_parser("derived-enqueue")
     derived.add_argument("--paper-id")
     derived.add_argument("--metadata", type=Path)
-    derived.add_argument("--feishu-config", type=Path)
     abstract_submit = commands.add_parser("abstract-read-submit")
     abstract_submit.add_argument("--job-id", required=True)
     abstract_submit.add_argument("--input", type=Path, required=True)
@@ -868,11 +864,6 @@ def _build_parser() -> argparse.ArgumentParser:
     artifact.add_argument("--kind", choices=("pdf", "reader", "exports"), required=True)
 
     batch = commands.add_parser("batch-submit")
-    probe = commands.add_parser("feishu-probe")
-    probe.add_argument("--config", type=Path, required=True)
-    resync = commands.add_parser("feishu-resync")
-    resync.add_argument("--config", type=Path, required=True)
-    resync.add_argument("--paper-id", action="append", default=[])
     return parser
 
 def _run_batch(args) -> int:
@@ -893,11 +884,6 @@ def _run_batch(args) -> int:
             retry_failed=lambda paper_id: _pipeline_batch_result(
                 pipeline.start(paper_id), pipeline.job_store, None, retry=True
             ),
-            feishu_resync=lambda paper_id: {
-                "status": "needs_user",
-                "reason": "use_feishu_resync",
-                "paper_id": paper_id,
-            },
         ).submit(request.get("action"), request.get("selection", ()), request.get("payload", {}))
     finally:
         library.close()
@@ -912,7 +898,6 @@ def _run_derived(args) -> int:
             args.data_root,
             metadata,
             paper_id=args.paper_id,
-            feishu_config_path=args.feishu_config,
         )
         launched = DerivedPipeline(
             args.data_root,
@@ -931,50 +916,6 @@ def _run_derived(args) -> int:
         "target_stage": request.target_stage,
         "process_started": launched.process_started,
     }, ensure_ascii=False))
-    return 0
-
-def _run_feishu(args) -> int:
-    policy = FeishuAutoSyncPolicy(args.data_root)
-    try:
-        if args.command == "feishu-probe":
-            result = policy.probe(args.config)
-        else:
-            config = load_feishu_config(args.config)
-            paper_ids = args.paper_id or policy.pending()
-            revision = policy.activation_revision()
-            if not revision:
-                raise ValueError("feishu_auto_not_initialized")
-            launcher = _build_background_launcher(args.data_root)
-            jobs = []
-            from .library_service import LibraryService
-            library = LibraryService(args.data_root)
-            try:
-                for paper_id in paper_ids:
-                    metadata = library.canonical_metadata(paper_id)
-                    workspace = PaperWorkspace.create_for_paper_id(args.data_root, paper_id, metadata)
-                    payload = FeishuPayloadBuilder().build(workspace, config)
-                    request = BackgroundRequest(
-                        paper_id=paper_id,
-                        target_stage="feishu_sync",
-                        input_hash=feishu_sync_input_hash(config, payload),
-                        payload={
-                            "data_root": str(Path(args.data_root).resolve()),
-                            "metadata": metadata.to_dict(),
-                            "config": config.to_dict(),
-                            "payload": payload.to_dict(),
-                            "write_mode": "configured_auto",
-                            "activation_revision": revision,
-                        },
-                    )
-                    launched = launcher.enqueue(request)
-                    jobs.append({"paper_id": paper_id, "job_id": launched.job_id, "process_started": launched.process_started})
-            finally:
-                library.close()
-            result = {"status": "resync_queued", "jobs": jobs}
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
-        print(json.dumps({"status": "failed", "error": str(error)}, ensure_ascii=False))
-        return 4
-    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 def run_cli(argv: Sequence[str] | None = None) -> int:
@@ -1011,8 +952,6 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "batch-submit":
             return _run_batch(args)
-        if args.command in {"feishu-probe", "feishu-resync"}:
-            return _run_feishu(args)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as error:
         print(json.dumps({"status": "failed", "error": str(error)}, ensure_ascii=False))
         return 4

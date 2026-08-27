@@ -90,9 +90,10 @@ for (const label of ['题名', '作者 / 年份', '归类', '状态', '快捷入
   assert.match(source, new RegExp(label), `缺少表头：${label}`)
 }
 assert.doesNotMatch(source, /下载 PDF|生成浅读/, '列表页不得出现普通阶段按钮')
-for (const label of ['浅读', '开始精读', '阅读 HTML', 'PDF', '飞书', '更多']) {
+for (const label of ['浅读', '开始精读', '阅读 HTML', 'PDF', '更多']) {
   assert.match(source, new RegExp(label), `缺少行快捷入口：${label}`)
 }
+assert.doesNotMatch(source, /飞书|feishu/i, '飞书不得留在文献页')
 assert.match(source, /role[^\n]*dialog|setAttribute\('role', 'dialog'\)/, 'drawer 必须声明 dialog role')
 assert.match(source, /aria-modal/, 'drawer 必须声明 aria-modal')
 assert.match(source, /Escape/, 'drawer 必须支持 Escape 关闭')

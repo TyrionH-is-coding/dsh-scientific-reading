@@ -6,8 +6,6 @@ import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { registerRoutes } from '../lib/routes.js'
 
-delete process.env.FEISHU_APP_ID
-delete process.env.FEISHU_APP_SECRET
 const fixture = mkdtempSync(join(tmpdir(), 'sr-full-routes-'))
 const fakeRoot = join(fixture, 'fake')
 const log = join(fixture, 'engine.log')
@@ -53,7 +51,7 @@ process.env.PYTHONPATH = oldPath ? fakeRoot + delimiter + oldPath : fakeRoot
 const oldScansciRoot = process.env.SCANSCI_PDF_DATA_DIR
 process.env.SCANSCI_PDF_DATA_DIR = join(fixture, 'scansci-config')
 const routes = []
-registerRoutes({ effect(fn) { fn() }, logger() {}, webServer: { register(r) { routes.push(r); return () => {} } } }, { dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'untrusted.exe', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: python, enginePython: python, feishuConfig: '' })
+registerRoutes({ effect(fn) { fn() }, logger() {}, webServer: { register(r) { routes.push(r); return () => {} } } }, { dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'untrusted.exe', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: python, enginePython: python })
 const prefix = (path) => routes.find((r) => r.kind === 'prefix' && r.path === path)
 const req = (method, url, value = {}) => { const body = JSON.stringify(value); return { method, url, on(event, cb) { if (event === 'data') cb(Buffer.from(body)); if (event === 'end') queueMicrotask(cb) } } }
 const res = () => ({ statusCode: 0, body: '', writeHead(s, h) { this.statusCode = s; this.headers = h }, end(v = '') { this.body = Buffer.isBuffer(v) ? v : String(v) } })

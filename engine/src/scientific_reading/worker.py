@@ -16,10 +16,6 @@ from .background_models import (
 from .background_launcher import BackgroundLaunchError
 from .background_store import BackgroundJobStore
 from .full_read_service import FullReadError, FullReadService
-from .feishu_http import FeishuClient
-from .feishu_models import FeishuConfig, FeishuPayload
-from .feishu_service import FeishuSyncError, FeishuSyncService
-from .derived_updates import FeishuAutoSyncPolicy
 from .models import PaperMetadata
 from .metadata_enrichment import MetadataEnrichmentService
 from .abstract_read_service import AbstractReadService, AbstractReadValidationError
@@ -289,109 +285,12 @@ def full_read_pipeline_handler_factory(
     return handler
 
 
-def feishu_handler_factory(
-    service=None,
-    *,
-    client_factory=None,
-    environ: Mapping[str, str] | None = None,
-) -> Handler:
-    def handler(
-        request: BackgroundRequest,
-        heartbeat: Callable[[], None],
-    ) -> dict:
-        payload = request.payload
-        auto_mode = payload.get("write_mode") == "configured_auto"
-        if auto_mode:
-            revision = payload.get("activation_revision")
-            policy = FeishuAutoSyncPolicy(Path(payload["data_root"]))
-            if (
-                not isinstance(revision, str)
-                or not revision
-                or policy.activation_revision() != revision
-            ):
-                raise UserRequired(
-                    "feishu_auto_activation_required",
-                    {"write_mode": "configured_auto"},
-                )
-        elif payload.get("confirm_write") is not True:
-            raise UserRequired(
-                "write_confirmation_required",
-                {"confirm_write": True},
-            )
-        environment = os.environ if environ is None else environ
-        app_id = environment.get("FEISHU_APP_ID")
-        app_secret = environment.get("FEISHU_APP_SECRET")
-        if (
-            not isinstance(app_id, str)
-            or not app_id.strip()
-            or not isinstance(app_secret, str)
-            or not app_secret.strip()
-        ):
-            raise UserRequired(
-                "feishu_credentials_required",
-                {
-                    "environment_variables": [
-                        "FEISHU_APP_ID",
-                        "FEISHU_APP_SECRET",
-                    ]
-                },
-            )
-        config = FeishuConfig.from_dict(payload["config"])
-        sync_payload = FeishuPayload.from_dict(
-            config,
-            payload["payload"],
-        )
-        workspace = _workspace_for_request(
-            request, PaperMetadata.from_dict(payload["metadata"])
-        )
-        selected_service = service or FeishuSyncService()
-        try:
-            selected_client = (
-                client_factory(config)
-                if client_factory is not None
-                else FeishuClient(
-                    base_url=config.base_url,
-                    app_token=config.app_token,
-                    table_id=config.table_id,
-                )
-            )
-        except Exception as error:
-            raise RuntimeError("feishu_sync_failed") from error
-        heartbeat()
-        try:
-            result = selected_service.run(
-                workspace,
-                config,
-                sync_payload,
-                client=selected_client,
-                app_id=app_id,
-                app_secret=app_secret,
-            )
-        except FeishuSyncError as error:
-            if error.code in {
-                "ambiguous_feishu_record",
-                "feishu_readback_mismatch",
-            }:
-                raise AgentRequired(
-                    error.code,
-                    {"record_ids": list(error.record_ids)},
-                ) from error
-            raise RuntimeError(error.code) from error
-        except Exception as error:
-            raise RuntimeError("feishu_sync_failed") from error
-        heartbeat()
-        return result
-
-    return handler
-
-
 DEFAULT_HANDLERS: dict[str, Handler] = {
     "metadata_enrichment": metadata_enrichment_handler_factory(),
     "abstract_read": abstract_read_handler_factory(),
     "xlsx_snapshot": xlsx_snapshot_handler_factory(),
     "full_read": full_read_handler_factory(),
     "full_read_pipeline": full_read_pipeline_handler_factory(),
-    "feishu_sync": feishu_handler_factory(),
 }
 
 
@@ -422,11 +321,6 @@ def _sync_library_status(request: BackgroundRequest, state: str, values: dict) -
                 "UPDATE items SET full_read_status='completed' WHERE paper_id=?",
                 (request.paper_id,),
             )
-    if request.target_stage != "feishu_sync":
-        policy = FeishuAutoSyncPolicy(root)
-        if policy.activation_revision() is not None:
-            policy.mark_system_change(request.paper_id)
-
 def run_job(
     store: BackgroundJobStore,
     job_id: str,

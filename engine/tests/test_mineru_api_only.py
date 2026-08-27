@@ -24,6 +24,5 @@ def test_full_read_pipeline_uses_only_mineru_api_parse_stage() -> None:
         "abstract_read",
         "xlsx_snapshot",
         "full_read",
-        "feishu_sync",
         "full_read_pipeline",
     }

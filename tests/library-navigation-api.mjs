@@ -48,7 +48,6 @@ const ctx = {
 const config = {
   dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'scansci-pdf', school: '',
   legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python,
-  feishuConfig: '',
 }
 function response() {
   return { statusCode: 0, headers: {}, body: '', ended: false, writeHead(status, headers) { this.statusCode = status; this.headers = headers }, end(body = '') { this.body = String(body); this.ended = true; writeFileSync(responseMarker, 'ended', 'utf8') } }
@@ -66,8 +65,7 @@ try {
   assert.deepEqual(JSON.parse(list.body), {
     items: [{
       paper_id: 'library_demo', title: '', authors_short: '', year: null, folder: null, tags: [],
-      abstract_status: '', full_read_status: '', feishu_sync_state: '', has_pdf: false, has_reader: false,
-      feishu_record_url: '', last_error: '',
+      abstract_status: '', full_read_status: '', has_pdf: false, has_reader: false, last_error: '',
     }],
     page: 2, page_size: 7, total: 1, jobs: { running: 0, queued: 0 },
   })

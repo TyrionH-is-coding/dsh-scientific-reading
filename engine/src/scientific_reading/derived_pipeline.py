@@ -9,9 +9,6 @@ from typing import Any
 
 from .background_launcher import BackgroundLaunchError, BackgroundLauncher, LaunchResult
 from .background_models import BackgroundRequest
-from .derived_updates import FeishuAutoSyncPolicy
-from .feishu_builder import FeishuPayloadBuilder
-from .feishu_service import feishu_sync_input_hash
 from .models import PaperMetadata
 from .workspace import PaperWorkspace
 
@@ -34,15 +31,12 @@ class DerivedPipeline:
         metadata: PaperMetadata,
         *,
         paper_id: str | None = None,
-        feishu_config_path: Path | None = None,
     ) -> BackgroundRequest:
         payload: dict[str, Any] = {
             "data_root": str(Path(data_root).resolve()),
             "metadata": metadata.to_dict(),
             "derived_pipeline": True,
         }
-        if feishu_config_path is not None:
-            payload["feishu_config_path"] = str(feishu_config_path.resolve())
         workspace = (
             PaperWorkspace.create_for_paper_id(data_root, paper_id, metadata)
             if paper_id is not None
@@ -105,8 +99,7 @@ class DerivedPipeline:
         if request.target_stage == "abstract_read":
             return {"xlsx_snapshot_job_id": self._enqueue_xlsx(request, latest, parent_job_id).job_id}
         if request.target_stage == "xlsx_snapshot":
-            child = self._enqueue_feishu(request, latest, parent_job_id)
-            return {"feishu_sync_job_id": child.job_id} if child is not None else {"feishu": "disabled"}
+            return {}
         return {}
 
     def _latest_metadata(self, request: BackgroundRequest) -> PaperMetadata:
@@ -130,9 +123,6 @@ class DerivedPipeline:
             "derived_pipeline": True,
             "pipeline_parent_job_id": parent_job_id or request.paper_id,
         }
-        config_path = request.payload.get("feishu_config_path")
-        if isinstance(config_path, str) and config_path:
-            payload["feishu_config_path"] = config_path
         return payload
 
     def _enqueue_abstract(self, parent: BackgroundRequest, metadata: PaperMetadata, parent_job_id: str | None) -> LaunchResult:
@@ -145,31 +135,3 @@ class DerivedPipeline:
         request = BackgroundRequest(parent.paper_id, "xlsx_snapshot", _hash(payload), payload)
         return self.enqueue(request)
 
-    def _enqueue_feishu(
-        self, parent: BackgroundRequest, metadata: PaperMetadata, parent_job_id: str | None
-    ) -> LaunchResult | None:
-        policy = FeishuAutoSyncPolicy(self.data_root)
-        active = policy.active_config()
-        if active is None:
-            return None
-        config_path, config, revision = active
-        payload = self._child_payload(parent, metadata, parent_job_id)
-        workspace = PaperWorkspace.create_for_paper_id(
-            self.data_root, parent.paper_id, metadata
-        )
-        sync_payload = FeishuPayloadBuilder().build(workspace, config)
-        child_payload = {
-            **payload,
-            "config": config.to_dict(),
-            "payload": sync_payload.to_dict(),
-            "write_mode": "configured_auto",
-            "activation_revision": revision,
-            "feishu_config_path": str(config_path),
-        }
-        request = BackgroundRequest(
-            parent.paper_id,
-            "feishu_sync",
-            feishu_sync_input_hash(config, sync_payload),
-            child_payload,
-        )
-        return self.enqueue(request)

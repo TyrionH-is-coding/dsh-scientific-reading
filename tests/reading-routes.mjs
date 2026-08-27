@@ -57,7 +57,6 @@ const config = {
   loginType: 'carsi',
   scansciPython: '',
   enginePython: python,
-  feishuConfig: '',
 }
 
 function response() {

@@ -7,8 +7,6 @@ import { tmpdir } from 'node:os'
 
 import { registerRoutes } from '../lib/routes.js'
 
-delete process.env.FEISHU_APP_ID
-delete process.env.FEISHU_APP_SECRET
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
 assert.ok(python)
 const fixture = mkdtempSync(join(tmpdir(), 'sr-navigation-contract-'))
@@ -34,9 +32,9 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   `gen=${JSON.stringify(generation)}`,
   `reader_sha=${JSON.stringify(createHash('sha256').update(reader).digest('hex'))}`,
   `pdf_sha=${JSON.stringify(createHash('sha256').update(pdf).digest('hex'))}`,
-  'if cmd=="library-list-v2": print(json.dumps({"items":[{"paper_id":pid,"title":"Navigation","authors_short":"A et al.","year":2024,"folder":None,"tags":["NLP",7],"abstract_status":"ready","full_read_status":"not_started","feishu_sync_state":"synced","has_pdf":True,"has_reader":True,"feishu_record_url":"https://example.invalid/record","last_error":{"children":[{"stack":"Traceback","api_secret":"TOKEN"}]},"abstract_en":"SECRET ABSTRACT","required_input":{"secret":"TOKEN"},"unexpected":"drop"},{"paper_id":7,"title":{},"authors_short":[],"year":2024.5,"folder":9,"tags":"bad","abstract_status":{},"full_read_status":False,"feishu_sync_state":[],"has_pdf":"yes","has_reader":1,"feishu_record_url":{},"last_error":7}],"page":-4,"page_size":"bad","total":-1,"jobs":{"running":-2,"queued":"bad"},"required_input":{"secret":"TOKEN"}}))',
+  'if cmd=="library-list-v2": print(json.dumps({"items":[{"paper_id":pid,"title":"Navigation","authors_short":"A et al.","year":2024,"folder":None,"tags":["NLP",7],"abstract_status":"ready","full_read_status":"not_started","has_pdf":True,"has_reader":True,"last_error":{"children":[{"stack":"Traceback","api_secret":"TOKEN"}]},"abstract_en":"SECRET ABSTRACT","required_input":{"secret":"TOKEN"},"unexpected":"drop"},{"paper_id":7,"title":{},"authors_short":[],"year":2024.5,"folder":9,"tags":"bad","abstract_status":{},"full_read_status":False,"has_pdf":"yes","has_reader":1,"last_error":7}],"page":-4,"page_size":"bad","total":-1,"jobs":{"running":-2,"queued":"bad"},"required_input":{"secret":"TOKEN"}}))',
   'elif cmd=="folder-list": print(json.dumps([]))',
-  'elif cmd=="library-item-v2": print(json.dumps({"paper_id":pid,"title":"Tokenization study","abstract_en":7,"abstract_zh":{},"abstract_status":False,"active_job_id":"job_0123456789abcdef","last_error":"Traceback SECRET token","message":"password leaked","nested":{"safe":"citation","stack":"Traceback","api_secret":"TOKEN"},"feishu_record_url":"https://example.invalid/record"}))',
+  'elif cmd=="library-item-v2": print(json.dumps({"paper_id":pid,"title":"Tokenization study","abstract_en":7,"abstract_zh":{},"abstract_status":False,"active_job_id":"job_0123456789abcdef","last_error":"Traceback SECRET token","message":"password leaked","nested":{"safe":"citation","stack":"Traceback","api_secret":"TOKEN"}}))',
   'elif cmd=="artifact-resolve":',
   '  kind=a[a.index("--kind")+1]',
   '  if kind=="reader": print(json.dumps({"rel_path":f"generations/{gen}/reading/reader.html","sha256":reader_sha}))',
@@ -56,7 +54,7 @@ process.env.PYTHONPATH = oldPythonPath ? fakeRoot + delimiter + oldPythonPath : 
 
 const routes = []
 const ctx = { effect(fn) { fn() }, logger() {}, webServer: { register(route) { routes.push(route); return () => {} } } }
-const config = { dataRoot, python: 'python', scansciExe: 'scansci-pdf', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python, feishuConfig: '' }
+const config = { dataRoot, python: 'python', scansciExe: 'scansci-pdf', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: '', enginePython: python }
 const response = () => ({ statusCode: 0, headers: {}, body: '', writeHead(status, headers) { this.statusCode = status; this.headers = headers }, end(body = '') { this.body = body } })
 const findRoute = (path) => { const route = routes.find((item) => item.path === path && (!['/sr/api/paper', '/sr/api/job'].includes(path) || item.kind === 'prefix')); assert.ok(route, `缺少路由 ${path}`); return route }
 const request = (method, url, body = '') => ({ method, url, on(event, cb) { if (event === 'data' && body) cb(Buffer.isBuffer(body) ? body : Buffer.from(body)); if (event === 'end') queueMicrotask(cb) }, destroy() {} })
@@ -69,8 +67,8 @@ try {
   assert.equal(list.statusCode, 200)
   assert.deepEqual(JSON.parse(list.body), {
     items: [
-      { paper_id: paperId, title: 'Navigation', authors_short: 'A et al.', year: 2024, folder: null, tags: ['NLP'], abstract_status: 'ready', full_read_status: 'not_started', feishu_sync_state: 'synced', has_pdf: true, has_reader: true, feishu_record_url: 'https://example.invalid/record', last_error: '' },
-      { paper_id: '', title: '', authors_short: '', year: null, folder: null, tags: [], abstract_status: '', full_read_status: '', feishu_sync_state: '', has_pdf: false, has_reader: false, feishu_record_url: '', last_error: '' },
+      { paper_id: paperId, title: 'Navigation', authors_short: 'A et al.', year: 2024, folder: null, tags: ['NLP'], abstract_status: 'ready', full_read_status: 'not_started', has_pdf: true, has_reader: true, last_error: '' },
+      { paper_id: '', title: '', authors_short: '', year: null, folder: null, tags: [], abstract_status: '', full_read_status: '', has_pdf: false, has_reader: false, last_error: '' },
     ],
     page: 1, page_size: 50, total: 2, jobs: { running: 0, queued: 0 },
   })
@@ -88,7 +86,6 @@ try {
   assert.equal(detail.statusCode, 200)
   const detailBody = JSON.parse(detail.body)
   assert.equal(detailBody.item.title, 'Tokenization study')
-  assert.equal(detailBody.item.feishu_record_url, 'https://example.invalid/record')
   assert.equal(detailBody.item.nested.safe, 'citation')
   assert.equal(detailBody.job.required_input.kind, 'gate')
   assert.equal(detailBody.job.required_input.nested.safe, 'ok')

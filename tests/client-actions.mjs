@@ -33,12 +33,11 @@ assert.deepEqual(pairAbstractParagraphs('English one.\n\nEnglish two.', '中文�
 ])
 assert.deepEqual(pairAbstractParagraphs('', ''), [])
 
-const disabled = paperEntryModel({ abstract_status: 'missing', has_pdf: false, has_reader: false, feishu_sync_state: 'unconfigured', feishu_record_url: '' }, isSafeHttpUrl)
+const disabled = paperEntryModel({ abstract_status: 'missing', has_pdf: false, has_reader: false }, isSafeHttpUrl)
 assert.equal(disabled.quick.disabledReason, '待补摘要')
 assert.equal(disabled.pdf.disabledReason, '尚无 PDF 原件')
 assert.equal(disabled.reader.label, '开始精读')
-assert.equal(disabled.feishu.label, '飞书未配置')
-const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true, feishu_sync_state: 'synced', feishu_record_url: 'https://example.test/r' }, isSafeHttpUrl)
+const ready = paperEntryModel({ abstract_status: 'ready', has_pdf: true, has_reader: true }, isSafeHttpUrl)
 assert.equal(paperEntryModel({ abstract_status: 'completed' }, isSafeHttpUrl).quick.disabledReason, '', 'worker completed 状态也必须可浅读')
 assert.equal(paperEntryModel({ full_read_status: 'running' }, isSafeHttpUrl).reader.disabledReason, '精读已排队或处理中')
 for (const status of ['精读排队', '获取 PDF', '解析全文', '翻译与生成', '需要用户处理', 'queued', 'running', 'needs_user', 'waiting_user']) {
@@ -49,8 +48,6 @@ for (const status of ['精读完成', 'completed', 'full_read_ready']) {
 }
 assert.equal(paperEntryModel({ full_read_status: '处理失败' }, isSafeHttpUrl).reader.disabledReason, '', '失败状态允许从更多菜单重试而非 busy')
 assert.equal(ready.reader.href, '/sr/reader/')
-assert.equal(ready.feishu.href, 'https://example.test/r')
-assert.equal(paperEntryModel({ feishu_sync_state: 'synced', feishu_record_url: 'javascript:alert(1)' }, isSafeHttpUrl).feishu.href, '')
 
 const calls = []
 const scheduled = []
