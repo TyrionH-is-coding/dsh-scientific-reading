@@ -532,4 +532,4 @@ Expected: `main` 包含全部提交并通过全量测试；根目录原有未跟
 
 ## 执行记录
 
-- 计划创建时尚未修改实现代码。
+- 2026-08-27：在 `feature/v1-release` worktree 完成基线。`npm ci --ignore-scripts --legacy-peer-deps`、`npm run build:ci`、`npm run test:offline` 均通过；未使用真实 MinerU、机构认证或外部写入。
