@@ -863,6 +863,15 @@ def _build_parser() -> argparse.ArgumentParser:
     artifact.add_argument("--paper-id", required=True)
     artifact.add_argument("--kind", choices=("pdf", "reader", "exports"), required=True)
 
+    environment_status = commands.add_parser("environment-status")
+    environment_status.add_argument("--school", default="")
+    environment_recheck = commands.add_parser("environment-recheck")
+    environment_recheck.add_argument("--school", default="")
+    environment_recheck.add_argument("--target", action="append", default=[])
+    environment_presented = commands.add_parser("environment-mark-presented")
+    environment_presented.add_argument("--school", default="")
+    environment_presented.add_argument("--version", required=True)
+
     batch = commands.add_parser("batch-submit")
     return parser
 
@@ -918,6 +927,20 @@ def _run_derived(args) -> int:
     }, ensure_ascii=False))
     return 0
 
+
+def _run_environment(args) -> int:
+    from .environment_status import EnvironmentStatusService
+
+    service = EnvironmentStatusService(args.data_root, school=args.school)
+    if args.command == "environment-status":
+        result = service.snapshot()
+    elif args.command == "environment-recheck":
+        result = service.recheck(args.target)
+    else:
+        result = service.mark_presented(args.version)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
 def run_cli(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     timer = ForegroundTimer()
@@ -950,6 +973,8 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             result = _resolve_artifact(args.data_root, args.paper_id, args.kind)
             print(json.dumps(result, ensure_ascii=False))
             return 0
+        if args.command in {"environment-status", "environment-recheck", "environment-mark-presented"}:
+            return _run_environment(args)
         if args.command == "batch-submit":
             return _run_batch(args)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, sqlite3.Error) as error:

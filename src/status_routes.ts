@@ -1,0 +1,79 @@
+import type { Context } from 'cordis'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Config } from './config.js'
+import { engineJson } from './cli.js'
+
+const JSON_LIMIT = 16 * 1024
+
+function sendJson(res: ServerResponse, status: number, value: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+  res.end(JSON.stringify(value))
+}
+
+function sameOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin
+  const host = req.headers.host
+  if (typeof origin !== 'string' || typeof host !== 'string' || req.headers['x-sr-csrf'] !== '1') return false
+  try { return new URL(origin).host === host } catch { return false }
+}
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > JSON_LIMIT) { reject(new Error('body_too_large')); req.destroy() } else chunks.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid_json')
+        resolve(parsed as Record<string, unknown>)
+      } catch { reject(new Error('invalid_json')) }
+    })
+  })
+}
+
+export function registerStatusRoutes(ctx: Context, config: Config): void {
+  const register = (path: string, handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>) => {
+    ctx.effect(() => ctx.webServer.register({ kind: 'exact', path, handler }), 'sr-route:' + path)
+  }
+
+  register('/sr/api/settings/status', async (req, res) => {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+    const result = await engineJson(config, ['environment-status', '--school', config.school])
+    if (!result.ok || !result.json) return sendJson(res, 502, { error: 'environment_status_unavailable' })
+    sendJson(res, 200, result.json)
+  })
+
+  register('/sr/api/settings/recheck', async (req, res) => {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'request_forbidden' })
+    try {
+      const body = await readJson(req)
+      const targets = Array.isArray(body.targets) ? body.targets.filter((value): value is string => typeof value === 'string') : []
+      const args = ['environment-recheck', '--school', config.school]
+      for (const target of targets) args.push('--target', target)
+      const result = await engineJson(config, args)
+      if (!result.ok || !result.json) return sendJson(res, 400, { error: 'environment_recheck_failed' })
+      sendJson(res, 200, result.json)
+    } catch (error) {
+      sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
+    }
+  })
+
+  register('/sr/api/settings/mark-presented', async (req, res) => {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'request_forbidden' })
+    try {
+      const body = await readJson(req)
+      if (body.version !== 'v1') return sendJson(res, 400, { error: 'onboarding_version_invalid' })
+      const result = await engineJson(config, ['environment-mark-presented', '--version', 'v1', '--school', config.school])
+      if (!result.ok || !result.json) return sendJson(res, 400, { error: 'onboarding_update_failed' })
+      sendJson(res, 200, result.json)
+    } catch (error) {
+      sendJson(res, error instanceof Error && error.message === 'body_too_large' ? 413 : 400, { error: 'invalid_request' })
+    }
+  })
+}

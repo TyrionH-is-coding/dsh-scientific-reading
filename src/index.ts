@@ -7,6 +7,7 @@ import { registerTools } from './tools.js'
 import { registerLibraryTools } from './library_tools.js'
 import { registerRoutes } from './routes.js'
 import { registerSettings } from './settings.js'
+import { registerStatusRoutes } from './status_routes.js'
 
 export const name = '@dsh-external/dsh-scientific-reading'
 export const inject = ['tools', 'webServer']
@@ -19,6 +20,7 @@ export function apply(ctx: Context, config: PluginConfig): void {
   registerLibraryTools(ctx, config)
   try {
     registerRoutes(ctx, config)
+    registerStatusRoutes(ctx, config)
   } catch (e) {
     try { writeFileSync(join(resolveDataRoot(config), '.sr-apply-error.log'), String((e as Error).stack ?? e), 'utf8') } catch { /* ignore */ }
     throw e
