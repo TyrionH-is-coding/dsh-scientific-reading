@@ -3,7 +3,7 @@
 ## 当前职责
 
 - `dsh-scientific-reading`：DSH 工具、参数校验、HTTP/文件路由、文献导航 UI、合法 PDF provider 和真实 Bundle 验收。
-- 内置 `engine/`：SQLite、查重、文件夹/标签、持久任务、PDF 校验、MinerU、翻译、reader、资产和 Excel 领域合同。
+- 内置 `engine/`：SQLite、查重、文件夹/标签、持久任务、PDF 校验、本机/API MinerU、翻译、reader、资产、Excel 和 DPAPI 密钥领域合同。
 - `%USERPROFILE%\scientific-reading-data`：默认数据根；论文、数据库、任务、配置和所有资产与仓库分离。
 
 `client/client.js` 是前端规范源，`lib/client.js` 由构建生成，不直接编辑。两个仓库都可能存在其他任务 worktree；开发前先检查 `git status` 和 `git worktree list`。
@@ -56,6 +56,8 @@ Windows 生产子进程启动边界必须保持无窗口参数，避免 worker/C
 ## 安全和所有权
 
 - 机构访问只在轻量来源失败后启动；批量任务共用一次专用浏览器会话并集中提示，插件不保存账号、验证码或 MFA，也不读取用户日常浏览器 Profile。
+- MinerU API Key 不进入普通插件 Config；Windows 首版只从当前用户 DPAPI 安全存储或宿主环境变量解析，并且不得出现在日志、argv、job、SQLite、Excel 或诊断报告。
+- 本机 MinerU 只调用用户已有且通过检测的环境，不自动安装 MinerU、CUDA 或模型；本机和 API 必须共享规范化与资产发布合同。
 - Excel 只允许白名单用户字段回写；系统字段、稳定身份、资产路径和任务状态仍由 SQLite 管理。
 - 飞书退出发布路线；删除遗留实现时不得迁移、上传或损坏用户现有飞书数据。
 - 旧 PDF、MinerU、reader 和历史浅读只读索引，不移动、不删除、不无故重算。

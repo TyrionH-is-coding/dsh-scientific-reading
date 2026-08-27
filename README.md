@@ -13,6 +13,8 @@
 - 新文献未指定文件夹时进入【待归类】；文件夹为单归属，标签可多归属。
 - 浅读只显示英文 Abstract 与逐段中文对照。找不到 Abstract 时明确标记【待补摘要】，不会根据题名生成内容。
 - 文献页主要负责搜索、筛选、分页、文件夹/标签和打开已有资产；发布目标允许为缺失 PDF 的单篇或所选文献发起下载，但不把页面扩展为通用任务控制台。
+- 发布目标使用两行式紧凑列表：常驻作者、年份、期刊、标签、PDF、HTML 和 Excel 定位；标题点击打开双语 Abstract 抽屉。
+- 首次安装自动展示一次【设置与状态】页；机构、MinerU 和浏览器的真实验证只在用户点击【重新检测】后执行。
 
 ### 2. 按需全文精读与资产
 
@@ -61,7 +63,7 @@
 下面是从一台只有 Codex 的全新 Windows 10/11 x64 机器开始的完整流程。首次安装通常需要 10–20 分钟，最终访问地址是 `http://127.0.0.1:3080`。
 
 - 本地题录入库和 Abstract 浅读不要求 MinerU 凭据。
-- 生成全文精读 reader 需要有效的 `MINERU_API_TOKEN`。
+- 生成全文精读 reader 需要经过验证的本机 MinerU，或有效的 MinerU API Key。
 - DSH 模型凭据在首次启动后的【设置 → 模型】中配置，不要写进仓库。
 
 ### 1. 安装基础依赖
@@ -128,14 +130,16 @@ dsh --profile web --dump-config | Select-String '@dsh-external/dsh-scientific-re
 
 ### 5. 配置可选凭据
 
-需要全文精读时，在当前 PowerShell 中设置 MinerU Token，并单独持久化到用户环境。以下命令会交互读取，不把 Token 写进仓库或命令历史：
+发布完成后，普通用户在【设置与状态】页粘贴 MinerU API Key。Key 使用当前 Windows 用户作用域的 DPAPI 加密，不进入普通插件配置、SQLite、Excel、日志或任务状态。
+
+环境变量继续作为开发和自动化环境的回退方式。以下命令会交互读取，不把 Token 写进仓库或命令历史：
 
 ```powershell
 $env:MINERU_API_TOKEN = Read-Host '请输入 MinerU API Token'
 [Environment]::SetEnvironmentVariable('MINERU_API_TOKEN', $env:MINERU_API_TOKEN, 'User')
 ```
 
-用户级环境变量只会自动出现在之后新开的进程中；上面的 `$env:` 赋值保证本次启动立即生效。首次运行 `sr_setup` 时，插件会把随 tarball 提供的 wheel 安装到 `<dataRoot>\.venv`；`enginePython` 只保留为开发调试覆盖项，普通安装不需要填写。
+安全存储的 Key 优先于环境变量。用户级环境变量只会自动出现在之后新开的进程中；上面的 `$env:` 赋值保证本次启动立即生效。首次运行 `sr_setup` 时，插件会把随 tarball 提供的 wheel 安装到 `<dataRoot>\.venv`；`enginePython` 只保留为开发调试覆盖项，普通安装不需要填写。
 
 ### 6. 首次启动
 
@@ -145,13 +149,13 @@ $env:MINERU_API_TOKEN = Read-Host '请输入 MinerU API Token'
 dsh --profile web --host 127.0.0.1 --port 3080
 ```
 
-DSH 默认打开 `http://127.0.0.1:3080`。首次进入后：
+DSH 默认打开 `http://127.0.0.1:3080`。插件首次安装后自动进入一次【设置与状态】页；页面初次展示不联网，用户点击【重新检测】后才验证机构会话、本机 MinerU 或 API。之后即使环境尚未配置，也不会每次启动强制跳回。首次进入后：
 
 1. 打开【设置 → 模型】，配置 DeepSeek 或其他兼容模型；
 2. 选择或添加工作区；
-3. 检查左侧是否出现【文献】入口；
+3. 检查左侧是否出现【文献】与【设置与状态】入口；
 4. 先录入一篇只有题名/DOI 的非敏感测试文献，确认本地主库可用；
-5. 只有准备好 MinerU Token 后，再启动全文精读。
+5. 验证本机 MinerU 或保存并验证 MinerU API Key 后，再启动全文精读。
 
 按 `Ctrl+C` 可正常停止 DSH。新增、移除或更新插件 Bundle 后必须重启 Profile。
 
@@ -204,15 +208,17 @@ dsh plugin --profile web remove @dsh-external/dsh-scientific-reading
 
 ScanSci 相关工具只负责合法来源下载和需要用户参与的机构认证：`sr_setup`、`sr_scansci_status`、`sr_scansci_fetch`、`sr_scansci_login`、`sr_scansci_set_school`。默认 `legalOnly=true`，不会启用 Sci-Hub/LibGen；批量编排由文献工作流统一负责。
 
-## MinerU API 配置
+## MinerU 解析后端
 
-正式精读解析使用 MinerU 精准解析 API，不依赖本机 MinerU。把 Token 设置在启动 DSH 的宿主环境中，然后重启 DSH：
+首个发布版提供【自动】【仅本机】【仅 API】三种策略，默认自动选择经过验证的本机 MinerU，否则使用经过验证的 API。插件只检测并调用用户已有的本机环境，不自动安装 MinerU、CUDA 或模型。本机和 API 输出进入同一规范化、资产校验和 generation 发布流程。
+
+如果使用环境变量回退，把 Token 设置在启动 DSH 的宿主环境中，然后重启 DSH：
 
 ```ini
 MINERU_API_TOKEN=你的MinerU_API_Token
 ```
 
-插件不会保存或显示 Token，也不会把它写入命令参数、任务状态或日志。解析本地 PDF 时，文件会上传至 MinerU 官方服务器；含敏感内容的文档应先确认符合你的数据与隐私要求。缺少或失效凭证时任务会保留 PDF 和断点信息，并给出可恢复错误，不会静默改用本机 MinerU。
+设置页保存的 Key 使用 DPAPI 加密且只允许替换或删除，页面不会再次显示内容。Key 不进入命令参数、任务状态或日志。API 解析会上传 PDF 至 MinerU 官方服务；含敏感内容的文档应先确认符合数据与隐私要求。provider 在任务创建时固定，运行中失败不会静默切换；任务保留 PDF 和断点，等待用户决定是否换后端重试。
 
 ## Excel 字段所有权
 
@@ -241,10 +247,10 @@ npm.cmd test
 npm.cmd run verify:restart-recovery
 ```
 
-`npm test` 会构建内置 wheel、运行 MinerU API-only 引擎测试、插件/路由测试，并把 wheel 安装到临时虚拟环境执行 CLI 冒烟。真实 Profile 验收仍必须使用实际 tarball，开发注入不能代替 Bundle 验收。
+`npm test` 会构建内置 wheel、运行 MinerU provider/引擎测试、插件/路由测试，并把 wheel 安装到临时虚拟环境执行 CLI 冒烟。真实 Profile 验收仍必须使用实际 tarball，开发注入不能代替 Bundle 验收。
 
 ## 旧数据与当前限制
 
-既有 PDF、MinerU 结果与 reader 保留在数据根中；升级不会移动、删除或无故重算用户资产。首个发布版只围绕本地库、合法 PDF 下载、MinerU API、精读 HTML、资产导出和 Excel 维护交付。
+既有 PDF、MinerU 结果与 reader 保留在数据根中；升级不会移动、删除或无故重算用户资产。首个发布版只围绕本地库、合法 PDF 下载、本机/API MinerU、精读 HTML、资产导出和 Excel 维护交付。
 
 首个发布版不实现：任意字段双向同步、批量删除、多个 MinerU/全文翻译任务并行、AI 自动挑选关键图、在 DSH 页面内嵌整篇 reader、文献推荐、引用网络、知识图谱或逐篇 JSON 证据卡。上游发现/推荐和下游证据卡留到下一版本。

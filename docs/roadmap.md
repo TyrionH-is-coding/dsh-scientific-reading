@@ -17,11 +17,15 @@ V1 只交付一条稳定、可恢复、适合长期使用的主链路：
 ### V1 必须完成
 
 1. 文献页职责收敛为资料库导航，只保留归类和缺失 PDF 的单篇/批量补下载。
-2. 下载按 OA/HTTP、系统 Chrome、可选 CloakBrowser 增强包、手动 PDF 的整批降级流程执行。
-3. PDF、精读 HTML、Figure/Table 导出和 generation manifest 长期稳定保存。
-4. Excel 固定格式、稳定身份、刷新 pending 和白名单回写通过真实 Excel 占用/修改场景验收。
-5. 删除飞书产品入口、运行工具、配置和测试依赖；历史资料只留在归档，不污染当前说明。
-6. 使用虚构工科文献完成真实 Bundle、HTTP、浏览器、批量下载、reader 和 Excel 回写验收。
+2. 文献页改为两行式紧凑列表，只突出作者、年份、期刊、标签、PDF、HTML 和 Excel 定位。
+3. 新增首次安装只展示一次的【设置与状态】页，所有真实环境验证由用户点击触发。
+4. 支持经过验证的本机 MinerU 和 MinerU API，使用统一 provider、规范化和资产发布合同。
+5. MinerU API Key 使用 Windows DPAPI 安全保存，并保留环境变量回退。
+6. 下载按 OA/HTTP、系统 Chrome、可选 CloakBrowser 增强包、手动 PDF 的整批降级流程执行。
+7. PDF、精读 HTML、Figure/Table 导出和 generation manifest 长期稳定保存。
+8. Excel 固定格式、稳定身份、刷新 pending 和白名单回写通过真实 Excel 占用/修改场景验收。
+9. 删除飞书产品入口、运行工具、配置和测试依赖；历史资料只留在归档，不污染当前说明。
+10. 使用虚构工科文献完成真实 Bundle、HTTP、浏览器、批量下载、双 MinerU provider、reader 和 Excel 回写验收。
 
 ### V1 明确不做
 
