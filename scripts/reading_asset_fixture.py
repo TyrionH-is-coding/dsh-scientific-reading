@@ -16,7 +16,7 @@ from scripts.reader_review_fixtures import (
 )
 
 
-def seed_reading_assets(root: Path) -> dict:
+def seed_reading_assets(root: Path, *, review_contract_version: str | None = None) -> dict:
     root = Path(root).resolve()
     metadata = PaperMetadata(title="Recoverable reading asset", authors=["Synthetic Fixture"], year=2026, journal="Fixture Review", doi="10.1234/reading.assets", abstract_en="IL-6 did not increase. aPS/PT was measured.", abstract_zh="血栓风险与抗磷脂抗体关联。")
     library = LibraryService(root)
@@ -33,6 +33,8 @@ def seed_reading_assets(root: Path) -> dict:
     generations = []
     for case in ("superscript-text", "formula-outline"):
         payload = json.loads(fixture_path(case).read_text(encoding="utf-8"))
+        if review_contract_version is not None:
+            payload["review"]["contract_version"] = review_contract_version
         payload["metadata"] = {key: getattr(metadata, key) for key in ("title", "authors", "journal", "year")}
         payload["content_items"][0]["text"] = metadata.title
         source = f"%PDF-1.4\n% deterministic reader review fixture\n% {case}\n".encode()

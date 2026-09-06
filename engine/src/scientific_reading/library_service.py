@@ -928,7 +928,7 @@ class LibraryService:
                         )
                     )
                     and isinstance(review, dict)
-                    and review.get("contract_version") == "full-review-v2"
+                    and review.get("contract_version") in {"full-review-v2", "full-review-v3"}
                     and isinstance(review.get("guide"), dict)
                     and set(review["guide"])
                     == {
@@ -984,7 +984,7 @@ class LibraryService:
                         == self._sha256(highlights_path)
                         and guide_payload
                         == {
-                            "contract_version": "full-review-v2",
+                            "contract_version": review["contract_version"],
                             "reader_revision": revision,
                             "guide": review["guide"],
                         }

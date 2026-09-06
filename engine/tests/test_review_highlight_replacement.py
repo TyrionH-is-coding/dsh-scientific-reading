@@ -38,3 +38,18 @@ def test_review_v3_can_remove_excess_translation_highlights_and_reader_validates
     result = service.finalize(workspace, review)
     assert result["highlight_count"] == 0
     FullReadRenderer().render_completed(workspace, paper_id=workspace.root.name)
+
+
+def test_review_v3_reader_publishes_through_library_validation(tmp_path):
+    from scripts.reading_asset_fixture import seed_reading_assets
+    from scientific_reading.library_service import LibraryService
+
+    result = seed_reading_assets(tmp_path, review_contract_version="full-review-v3")
+    library = LibraryService(tmp_path)
+    try:
+        assert library.get_item(result["paper_id"])["status"] == "full_read_ready"
+        paper_root = tmp_path / "papers" / result["paper_id"]
+        reader = tmp_path / result["reader"]
+        library.validate_reader(result["paper_id"], reader.relative_to(paper_root).as_posix())
+    finally:
+        library.close()
