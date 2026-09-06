@@ -2,7 +2,7 @@
 
 面向 DSH 的个人文献库：通过对话快速入库，按需获取 OA 正文或补入本地 PDF，生成可追溯的精读 HTML，并用 SQLite 与 Excel 长期维护。
 
-当前准备 **0.1.0-rc.1 发布候选**。普通用户使用包含引擎 wheel 的构建包，见[候选安装指南](docs/releases/v0.1.0/INSTALL.md)；[实现与验收状态](docs/releases/v0.1.0/IMPLEMENTATION_GAPS.md)分别记录原生插件 A 和独立 Codex 工作台 B。公开 Release 尚未创建，不能把源码目录或版本号视为已经公开的发行包。
+**0.1.0-rc.1 已撤回为草稿，暂未公开放行。** 修复源码已通过 CI，旧 tag 与最终放行提交仍需核对，见[发布修复记录](docs/releases/v0.1.0/RELEASE_GATE.md)。持有冻结构建包的测试用户可按[候选安装指南](docs/releases/v0.1.0/INSTALL.md)核对 SHA 后测试；[实现与验收状态](docs/releases/v0.1.0/IMPLEMENTATION_GAPS.md)分别记录原生插件 A 和独立 Codex 工作台 B。源码目录和 GitHub 自动生成的 Source code 压缩包不能代替安装包。
 
 ## 首个发布版范围
 

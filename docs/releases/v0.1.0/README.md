@@ -1,6 +1,11 @@
 # v0.1 发布候选交付
 
-本目录是两个 0.1 产品的范围与验收入口，以及原生插件 A 的用户指南。当前目标为 **0.1.0-rc.1**；尚未创建公开 Release。每次候选用 SHA 区分，不能只凭版本号认定是同一个包。
+本目录是两个 0.1 产品的范围与验收入口，以及原生插件 A 的用户指南。当前候选用 SHA 区分，不能只凭版本号认定是同一个包。
+
+- A：`0.1.0-rc.1` 已撤回为草稿，暂未公开放行，见[发布修复记录](RELEASE_GATE.md)。
+- A 旧 tag 对应源码：`a0db7cf8eba434c493ac2cb5e3d3d22ad403ab7a`；已通过 CI 的修复提交：`401e98256d42e10650b5ec71a475634c1aedfd1b`。两者尚未对齐。
+- B 私有 prerelease：https://github.com/TyrionH-is-coding/codex-scientific-reading/releases/tag/v0.1.0-rc.1
+- B 对应源码：`645d41a19fc879b0dd362245aaf8b03f5961651e`
 
 - **A：DSH Scientific Reading**，以已构建的 `.tgz` 安装到用户自己的 DSH。自动获取仅限 OA，支持补入本地 PDF。
 - **B：Codex 文献工作台**，独立的 Windows 安装包和 Codex Skill，内含固定 A 包与隔离 DSH；Codex 管全库，DSH 持久会话管理各分类。B 自己提供安装、模型、迁移、升级与卸载指南。

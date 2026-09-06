@@ -1,6 +1,6 @@
 # Windows 安装指南
 
-这是原生插件 A 的 **0.1.0-rc.1** 安装指南。可直接使用本轮交付目录里的 `.tgz` 与 `SHA256SUMS.txt`，无需等待公开 Release；公开后的文件仍须核对同一份 SHA-256。
+这是原生插件 A 的 **0.1.0-rc.1** 安装指南。该 Release 已撤回为草稿，当前供持有冻结构建包的测试用户使用；公开状态见[发布修复记录](RELEASE_GATE.md)。测试前核对 `.tgz` 与交付方提供的 `SHA256SUMS.txt`。
 
 ## 需要准备什么
 
@@ -40,7 +40,7 @@ if ($LASTEXITCODE -ne 0) { throw 'DSH 或 pnpm 安装失败，请保留错误信
 
 ## 2. 下载并核对安装包
 
-使用本轮交付目录中的 `dsh-external-dsh-scientific-reading-0.1.0-rc.1.tgz` 和 `SHA256SUMS.txt`，放在同一目录。公开后也可从[项目 Releases](https://github.com/TyrionH-is-coding/dsh-scientific-reading/releases)下载对应候选；本指南不表示该版本已经公开。
+将已取得的 `dsh-external-dsh-scientific-reading-0.1.0-rc.1.tgz` 和配套 `SHA256SUMS.txt` 放在同一目录。尚未取得安装包时，等待[项目 Releases](https://github.com/TyrionH-is-coding/dsh-scientific-reading/releases)正式公开候选；草稿对普通访问者不可下载。GitHub 自动生成的 Source code 压缩包不能安装。
 
 下面默认使用“下载”目录；如果保存到别处，先修改 `$releaseFolder`。
 

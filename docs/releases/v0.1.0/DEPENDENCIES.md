@@ -23,6 +23,6 @@
 - wheel 的实际 METADATA 为 `dsh-scientific-reading-engine 0.1.0`，Python `>=3.11`；运行依赖为 Beautiful Soup、latex2mathml、Pillow、openpyxl，与上表约束一致。pytest 仅为 dev extra。
 - 随包第三方通知明确 MinerU API 为外部调用，不分发本地 CLI；OA 使用官方 ScanSci PDF 1.9.0 的受限模块，Apache-2.0，官方 wheel 及最小 Requests/Beautiful Soup 闭包 SHA 固定在 `scripts/oa-requirements.txt`。未安装机构/浏览器来源及未使用 extras。
 - A 的通用运行依赖仍为版本范围。B 则固定 14 个 Python wheel、npm lock 和私有 Node/Python；两者的可复现条件不同，不将 A 的范围声明冒充完整锁文件。
-- 附件只分发程序、文档、锁文件和许可，不包含研究 PDF、用户库、账号信息或浏览器 Profile。公开源码提交尚未创建，公开前须对准确提交再检查。
+- 附件只分发程序、文档、锁文件和许可，不包含研究 PDF、用户库、账号信息或浏览器 Profile。A 源码已公开；Release 已撤回为草稿，后续公开放行仍须核对准确提交、附件 SHA 和来源清单。
 
 这里只准备核对材料，不改变项目许可证或新增运行依赖。若后续发布 Codex 工作台 B，捆绑的 DSH、运行时和 OAuth 组件应另做发行清单，不沿用 A 的清单冒充完整覆盖。

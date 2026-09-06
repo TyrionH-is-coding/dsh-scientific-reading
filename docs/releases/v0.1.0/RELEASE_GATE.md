@@ -1,6 +1,8 @@
 # 公开放行修复记录
 
-本记录跟进对 `a0db7cf` 的独立验收。该提交的 GitHub CI 是失败状态，不将它记为已公开候选。
+本记录跟进对 `a0db7cf` 的独立验收。该提交的 GitHub CI 失败；其 Release 曾公开，现已按用户决定撤回为草稿，不能作为公开候选放行。旧 tag `v0.1.0-rc.1` 暂保留在该提交，没有自动改写。
+
+修复提交 `401e98256d42e10650b5ec71a475634c1aedfd1b` 的[完整 CI](https://github.com/TyrionH-is-coding/dsh-scientific-reading/actions/runs/34013006939)已经通过：构建、引擎 388 项、离线与资产测试均成功。后续文档收尾提交仍须核对其自身 CI，不能将本次结果自动延伸到未来提交。
 
 ## 修复
 
