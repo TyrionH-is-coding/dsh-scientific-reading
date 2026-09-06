@@ -18,6 +18,14 @@ def _hashes(root):
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob("*") if p.is_file()}
 
 
+def test_reading_fixture_accepts_unresolved_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source = Path("fixture-library")
+    sample = seed_reading_assets(source)
+    assert (source / sample["reader"]).is_file()
+    assert all((source / generation).is_dir() for generation in sample["generations"])
+
+
 def test_backup_restores_relations_generations_reader_and_unfinished_jobs(tmp_path):
     source, restored = tmp_path / "source", tmp_path / "restored"
     sample = seed_reading_assets(source)

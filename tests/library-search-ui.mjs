@@ -155,7 +155,7 @@ try {
       abstract_en: 'Interleukin route evidence.',
       abstract_zh: '凝血路由证据。',
     }),
-    env: process.env,
+    env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
   })
   const routes = []
   registerRoutes({

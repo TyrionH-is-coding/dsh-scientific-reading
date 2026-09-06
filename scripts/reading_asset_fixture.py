@@ -17,7 +17,7 @@ from scripts.reader_review_fixtures import (
 
 
 def seed_reading_assets(root: Path) -> dict:
-    root = Path(root)
+    root = Path(root).resolve()
     metadata = PaperMetadata(title="Recoverable reading asset", authors=["Synthetic Fixture"], year=2026, journal="Fixture Review", doi="10.1234/reading.assets", abstract_en="IL-6 did not increase. aPS/PT was measured.", abstract_zh="血栓风险与抗磷脂抗体关联。")
     library = LibraryService(root)
     try:
