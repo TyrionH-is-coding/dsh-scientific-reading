@@ -52,7 +52,12 @@ class EnvironmentStatusService:
             "download": download,
             "mineru": {
                 "local": self._status(mineru_saved.get("local")),
-                "api": {**self._status(mineru_saved.get("api")), "api_call_verified": False},
+                "api": {
+                    **self._status(mineru_saved.get("api")),
+                    "api_call_verified": mineru_saved.get("api", {}).get("api_call_verified") is True
+                    if isinstance(mineru_saved.get("api"), dict)
+                    else False,
+                },
                 "strategy": "auto",
             },
             "library": self._library_status(),
@@ -86,6 +91,21 @@ class EnvironmentStatusService:
             else:
                 safe["api_call_verified"] = False
                 result["mineru"]["api"] = safe  # type: ignore[index]
+        self._write(result)
+        return result
+
+    def mark_mineru_api_verified(self) -> dict[str, object]:
+        result = self.snapshot()
+        api = result["mineru"]["api"] if isinstance(result.get("mineru"), dict) else {}
+        if not isinstance(api, dict):
+            api = {}
+        api = {
+            **api,
+            "status": api.get("status") if isinstance(api.get("status"), str) else "configured",
+            "api_call_verified": True,
+            "checked_at": self.now(),
+        }
+        result["mineru"]["api"] = api  # type: ignore[index]
         self._write(result)
         return result
 

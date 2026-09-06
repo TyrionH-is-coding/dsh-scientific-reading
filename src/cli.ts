@@ -375,8 +375,9 @@ export async function runEngine(
     env: { ...opts.env, ...engineScopeEnvironment() },
   })
   const parsed = extractJson(r.stdout)
-  // 0=成功；2=user gate；3=agent gate（协议合法状态，job-status 对 gate 返回非零退出）
-  const gateOk = r.exitCode === 0 || r.exitCode === 2 || r.exitCode === 3
+  // 0=成功；2=user gate；3=agent gate；job-status 对 failed/interrupted 也返回协议 JSON
+  const jobStatus = args[0] === 'job-status' && typeof parsed?.job_id === 'string'
+  const gateOk = r.exitCode === 0 || r.exitCode === 2 || r.exitCode === 3 || jobStatus
   return { ok: gateOk, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, json: parsed }
 }
 

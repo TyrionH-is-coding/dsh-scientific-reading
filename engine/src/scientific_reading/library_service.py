@@ -1540,7 +1540,7 @@ class LibraryService:
             "library_key": row["library_key"],
             "created": created,
             "dedupe": dedupe,
-            "folder_id": None,
+            "folder_id": row.get("folder_id"),
             "user_status": "生成浅读",
             "derived_updates": ["metadata_enrichment", "xlsx_snapshot"],
         }

@@ -114,3 +114,15 @@ def test_mineru_configuration_is_not_an_api_verification(tmp_path: Path) -> None
     assert result["mineru"]["api"]["status"] == "configured"
     assert result["mineru"]["api"]["api_call_verified"] is False
     assert "never-return" not in json.dumps(result)
+
+
+def test_successful_api_parse_marks_verification_and_recheck_resets_it(tmp_path: Path) -> None:
+    service = EnvironmentStatusService(
+        tmp_path, probes={"mineru_api": lambda: {"status": "configured"}}
+    )
+    marked = service.mark_mineru_api_verified()
+    assert marked["mineru"]["api"]["api_call_verified"] is True
+    assert service.snapshot()["mineru"]["api"]["api_call_verified"] is True
+    reset = service.recheck(("mineru_api",))
+    assert reset["mineru"]["api"]["status"] == "configured"
+    assert reset["mineru"]["api"]["api_call_verified"] is False

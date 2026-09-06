@@ -136,6 +136,73 @@ def test_default_schedule_stage_enqueues_xlsx_snapshot(
     }
 
 
+def test_start_keeps_missing_generation_parent_after_pdf_attach(
+    tmp_path, metadata
+) -> None:
+    paper_id = _ingest(tmp_path, metadata)
+    pipeline = ReadingPipeline(tmp_path)
+    first = pipeline.start(paper_id)
+    workspace = PaperWorkspace.create_for_paper_id(tmp_path, paper_id, metadata)
+    pdf = _pdf_bytes(metadata, "attached source")
+    workspace.source_pdf.write_bytes(pdf)
+    library = LibraryService(tmp_path)
+    try:
+        library.conn.execute(
+            "UPDATE items SET active_job_id=NULL WHERE paper_id=?", (paper_id,)
+        )
+        library.conn.commit()
+    finally:
+        library.close()
+
+    orphaned = pipeline.start(paper_id)
+    resumed = pipeline.start(paper_id, resume_job_id=first.parent_job_id)
+
+    assert orphaned.parent_job_id == first.parent_job_id
+    assert resumed.parent_job_id == first.parent_job_id
+
+
+def test_worker_resumes_missing_parent_after_pdf_attach(tmp_path, metadata) -> None:
+    paper_id = _ingest(tmp_path, metadata)
+    pipeline = ReadingPipeline(tmp_path)
+    first = pipeline.start(paper_id)
+    workspace = PaperWorkspace.create_for_paper_id(tmp_path, paper_id, metadata)
+    workspace.source_pdf.write_bytes(_pdf_bytes(metadata, "attached source"))
+    library = LibraryService(tmp_path)
+    try:
+        library.conn.execute(
+            "UPDATE items SET active_job_id=NULL WHERE paper_id=?", (paper_id,)
+        )
+        library.conn.commit()
+    finally:
+        library.close()
+
+    class ResumeThenComplete:
+        def start(self, *args, **kwargs):
+            return pipeline.start(*args, **kwargs)
+
+        def advance(self, parent_job_id, _supplied):
+            return ReadingPipelineState(
+                paper_id=paper_id,
+                parent_job_id=parent_job_id,
+                current_stage="completed",
+                state="completed",
+            )
+
+    store = pipeline.job_store
+    code = run_job(
+        store,
+        first.parent_job_id,
+        handlers={
+            "full_read_pipeline": full_read_pipeline_handler_factory(
+                ResumeThenComplete()
+            )
+        },
+    )
+
+    assert code == 0
+    assert store.load_status(first.parent_job_id).state == "completed"
+
+
 def test_worker_fails_old_job_when_pipeline_selects_a_new_parent(
     tmp_path, metadata
 ) -> None:

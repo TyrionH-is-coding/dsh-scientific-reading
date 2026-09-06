@@ -216,6 +216,7 @@ class MineruParseService:
                     _now(),
                 )
                 refresh_generation_package_manifest(workspace)
+                self._mark_api_verified(data_root, cached.provider)
                 return cached
             target = workspace.parsed_dir / "mineru"
             if target.exists():
@@ -328,6 +329,7 @@ class MineruParseService:
                     ),
                 )
                 refresh_generation_package_manifest(workspace)
+                self._mark_api_verified(data_root, provider)
                 return result
             except Exception as primary_error:
                 raised_error = primary_error
@@ -416,6 +418,14 @@ class MineruParseService:
             batch_id=report_payload.get("batch_id"),
             result_zip_sha256=report_payload.get("result_zip_sha256"),
         )
+
+    @staticmethod
+    def _mark_api_verified(data_root: Path, provider: str) -> None:
+        if not str(provider).startswith("mineru-api"):
+            return
+        from .environment_status import EnvironmentStatusService
+
+        EnvironmentStatusService(data_root).mark_mineru_api_verified()
 
     @staticmethod
     def _publish_manifest(

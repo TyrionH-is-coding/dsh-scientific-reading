@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .background_models import AgentRequired, BackgroundRequest, UserActionRequired
-from .background_store import BackgroundJobStore, JobClaimUnavailable
+from .background_store import BackgroundJobStore, JobClaimUnavailable, stable_job_id
 from .data_guard import root_operation
 from .identifiers import metadata_identity_compatible
 from .library_service import LibraryService
@@ -504,7 +504,13 @@ class ReadingPipeline:
         }
 
     @root_operation
-    def start(self, paper_id: str, provider_profile: str = "none") -> PipelineResult:
+    def start(
+        self,
+        paper_id: str,
+        provider_profile: str = "none",
+        *,
+        resume_job_id: str | None = None,
+    ) -> PipelineResult:
         if provider_profile not in {"none", "scansci"}:
             raise ValueError("trusted_provider_profile_invalid")
         library = LibraryService(self.data_root)
@@ -515,6 +521,23 @@ class ReadingPipeline:
                 self.data_root, paper_id, metadata
             )
             current_sha = self._validated_source_sha(workspace.source_pdf, metadata)
+            if resume_job_id:
+                try:
+                    resumed = self._load(resume_job_id, expected_paper_id=paper_id)
+                    resumed_profile = self.job_store.load_request(resume_job_id).payload.get(
+                        "provider_profile", "none"
+                    )
+                    if resumed.current_stage != "completed":
+                        if resumed_profile != provider_profile:
+                            raise RuntimeError("provider_profile_conflict")
+                        if (
+                            resumed.source_pdf_sha256 is None
+                            or resumed.source_pdf_sha256 == current_sha
+                        ):
+                            self._sync_library(resumed)
+                            return resumed
+                except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                    pass
             active_job_id = item.get("active_job_id")
             if isinstance(active_job_id, str) and current_scope() is not None:
                 try:
@@ -554,6 +577,26 @@ class ReadingPipeline:
                             "missing-after:"
                             + (active.source_pdf_sha256 or active.parent_job_id)
                         )
+                except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                    pass
+            if current_sha is not None:
+                missing_job_id = stable_job_id(
+                    self._parent_request(paper_id, None, provider_profile)
+                )
+                try:
+                    missing = self._load(missing_job_id, expected_paper_id=paper_id)
+                    missing_profile = self.job_store.load_request(missing_job_id).payload.get(
+                        "provider_profile", "none"
+                    )
+                    if missing.current_stage != "completed":
+                        if missing_profile != provider_profile:
+                            raise RuntimeError("provider_profile_conflict")
+                        if (
+                            missing.source_pdf_sha256 is None
+                            or missing.source_pdf_sha256 == current_sha
+                        ):
+                            self._sync_library(missing)
+                            return missing
                 except (FileNotFoundError, ValueError, json.JSONDecodeError):
                     pass
             if current_sha is not None:
