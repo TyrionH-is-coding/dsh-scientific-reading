@@ -90,7 +90,8 @@ class MineruArtifactValidator:
             raw_hash = report_payload.get("raw_content_list_sha256")
             for payload in (report_payload, source_map):
                 if (
-                    payload.get("version") != MINERU_NORMALIZATION_VERSION
+                    payload.get("version") not in {"mineru-normalization-v3", MINERU_NORMALIZATION_VERSION}
+                    or payload.get("version") != report_payload.get("version")
                     or payload.get("parser") != "mineru"
                     or payload.get("parser_version") != mineru_version
                     or payload.get("source_sha256") != source_sha256
@@ -226,7 +227,8 @@ class MineruArtifactValidator:
                 parsed_root.parent / f".mineru-verify-{uuid.uuid4().hex}"
             )
             try:
-                regenerated = MineruNormalizer(mineru_version).normalize(
+                stored_version = json.loads((parsed_root / "source_map.json").read_text(encoding="utf-8"))["version"]
+                regenerated = MineruNormalizer(mineru_version, normalization_version=stored_version).normalize(
                     parsed_root / "raw",
                     verification,
                     metadata,

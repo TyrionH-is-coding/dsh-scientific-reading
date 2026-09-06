@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .background_models import AgentRequired, BackgroundRequest, UserActionRequired
-from .background_store import BackgroundJobStore, JobClaimUnavailable
+from .background_store import BackgroundJobStore, JobClaimUnavailable, stable_job_id
 from .data_guard import root_operation
 from .identifiers import metadata_identity_compatible
 from .library_service import LibraryService
@@ -26,7 +26,7 @@ from .reading_pipeline_models import (
     PipelineResult,
     ReadingPipelineState,
 )
-from .workspace import PaperWorkspace, atomic_write_json
+from .workspace import PaperWorkspace, atomic_write_json, read_json_file
 
 
 StageRunner = Callable[
@@ -286,9 +286,15 @@ class ReadingPipeline:
                     service.save_translation_batch(stage_workspace, translation)
                 except (FullReadError, TypeError, ValueError) as error:
                     batch = service.next_batch(stage_workspace)
+                    gate = self._translation_gate(stage_workspace, batch)
+                    # Publish only a machine-readable validation code, never
+                    # arbitrary exception text or supplied scientific content.
+                    code = str(error)
+                    if code.replace("_", "").isalnum() and len(code) < 100:
+                        gate["validation_error"] = code
                     raise AgentRequired(
                         "full_translation_revision_required",
-                        self._translation_gate(stage_workspace, batch),
+                        gate,
                     ) from error
             try:
                 batch = service.next_batch(stage_workspace)
@@ -504,7 +510,7 @@ class ReadingPipeline:
         }
 
     @root_operation
-    def start(self, paper_id: str, provider_profile: str = "none") -> PipelineResult:
+    def start(self, paper_id: str, provider_profile: str = "none", *, expected_parent_job_id: str | None = None) -> PipelineResult:
         if provider_profile not in {"none", "scansci"}:
             raise ValueError("trusted_provider_profile_invalid")
         library = LibraryService(self.data_root)
@@ -516,6 +522,18 @@ class ReadingPipeline:
             )
             current_sha = self._validated_source_sha(workspace.source_pdf, metadata)
             active_job_id = item.get("active_job_id")
+            # Resume the worker's original request when a later start replaced
+            # the library pointer after PDF attachment.
+            if expected_parent_job_id is not None and self._state_path(expected_parent_job_id).is_file():
+                expected = self._load(expected_parent_job_id, expected_paper_id=paper_id)
+                recorded = self.job_store.load_request(expected_parent_job_id)
+                if recorded.target_stage != "full_read_pipeline" or stable_job_id(recorded) != expected_parent_job_id:
+                    raise RuntimeError("full_read_parent_mismatch")
+                if expected.source_pdf_sha256 is not None and expected.source_pdf_sha256 != current_sha:
+                    raise RuntimeError("full_read_parent_mismatch")
+                if recorded.payload.get("provider_profile", "none") != provider_profile:
+                    raise RuntimeError("provider_profile_conflict")
+                active_job_id = expected_parent_job_id
             if isinstance(active_job_id, str) and current_scope() is not None:
                 try:
                     saved = self.job_store.load_status(active_job_id)
@@ -529,6 +547,19 @@ class ReadingPipeline:
                 except FileNotFoundError:
                     pass
             generation = current_sha
+            # The library pointer is derived state: ingestion/recovery can clear it.
+            # A parent created before PDF attachment keeps its missing-generation ID.
+            if not isinstance(active_job_id, str) and current_sha is not None:
+                missing_id = stable_job_id(self._parent_request(paper_id, None, provider_profile))
+                try:
+                    missing = self._load(missing_id, expected_paper_id=paper_id)
+                    saved = self.job_store.load_status(missing_id)
+                    if missing.source_pdf_sha256 == current_sha:
+                        if current_scope() is not None and saved.scope != capture_scope(self.data_root, paper_id):
+                            raise ScopeError("scope_job_conflict")
+                        active_job_id = missing_id
+                except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                    pass
             if isinstance(active_job_id, str):
                 try:
                     active = self._load(active_job_id, expected_paper_id=paper_id)
@@ -565,10 +596,12 @@ class ReadingPipeline:
                         )
                         indexed_status = self.job_store.load_status(indexed_job_id)
                         if (
-                            indexed_status.state == "completed"
-                            and indexed.current_stage == "completed"
-                            and indexed.source_pdf_sha256 == current_sha
+                            indexed.source_pdf_sha256 == current_sha
                         ):
+                            if current_scope() is not None and indexed_status.scope != capture_scope(self.data_root, paper_id):
+                                raise ScopeError("scope_job_conflict")
+                            if self.job_store.load_request(indexed_job_id).payload.get("provider_profile", "none") != provider_profile:
+                                raise RuntimeError("provider_profile_conflict")
                             self._sync_library(indexed)
                             return indexed
                     except (
@@ -750,7 +783,7 @@ class ReadingPipeline:
         *,
         expected_paper_id: str | None = None,
     ) -> ReadingPipelineState:
-        value = json.loads(self._state_path(parent_job_id).read_text(encoding="utf-8"))
+        value = read_json_file(self._state_path(parent_job_id))
         if value.get("contract_version") != "reading-pipeline-v1":
             raise ValueError("reading_pipeline_contract_invalid")
         state = ReadingPipelineState.from_dict(value)

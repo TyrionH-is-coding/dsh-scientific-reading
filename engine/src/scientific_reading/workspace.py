@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +29,30 @@ def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
         json.dumps(value, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    temporary.replace(path)
+    # Windows readers may briefly hold the destination without delete sharing.
+    # Keep replacement atomic and bound retries; permanent failures still surface.
+    for attempt in range(6):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError as error:
+            if getattr(error, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+
+
+def read_json_file(path: Path) -> dict[str, Any]:
+    """Read a JSON snapshot through brief Windows replacement contention."""
+    for attempt in range(6):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError as error:
+            transient = getattr(error, "winerror", None) in {5, 32, 33} or (
+                os.name == "nt" and error.errno == 13
+            )
+            if not transient or attempt == 5:
+                raise
+            time.sleep(0.02 * (attempt + 1))
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +195,7 @@ class PaperWorkspace:
             atomic_write_json(self.job_path, state.to_dict())
 
     def load_job(self) -> JobState:
-        value = json.loads(self.job_path.read_text(encoding="utf-8"))
+        value = read_json_file(self.job_path)
         return JobState.from_dict(value)
 
 def validate_explicit_workspace(

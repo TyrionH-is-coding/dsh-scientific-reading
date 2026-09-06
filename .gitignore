@@ -10,6 +10,7 @@ _scratch/
 /engine/build/
 /engine/*.egg-info/
 /.pytest_cache/
+/.venv/
 /engine/.pytest_cache/
 /outputs/
 /*.tgz

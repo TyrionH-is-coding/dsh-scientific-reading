@@ -644,13 +644,18 @@ def _validate_full_read_resume(status, supplied: dict) -> dict:
             not isinstance(review, dict)
             or set(review) != {"contract_version", "highlights", "guide"}
             or review.get("contract_version")
-            != FULL_REVIEW_CONTRACT_VERSION
+            not in {FULL_REVIEW_CONTRACT_VERSION, "full-review-v3"}
             or not isinstance(review.get("highlights"), list)
             or not isinstance(review.get("guide"), dict)
         ):
             raise ValueError("full_review_resume_input_invalid")
         return {"full_review": review}
-    if reason == "mineru_runtime_required":
+    if reason in {
+        "mineru_runtime_required", "mineru_provider_unavailable",
+        "mineru_local_unavailable", "mineru_api_token_required",
+        "mineru_api_auth_failed", "mineru_api_quota_exceeded",
+        "mineru_api_timeout", "mineru_api_unavailable",
+    }:
         if supplied:
             raise ValueError("mineru_resume_input_invalid")
         return {}

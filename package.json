@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-scientific-reading",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "DSH 文献工作流：合法下载、MinerU 解析、精读 HTML、本地库与 Excel 总表",
   "private": true,
   "type": "module",

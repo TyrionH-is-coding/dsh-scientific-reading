@@ -65,6 +65,8 @@ class MineruSecretStore:
         temporary = self.path.with_suffix(".tmp")
         temporary.write_bytes(encrypted)
         temporary.replace(self.path)
+        from .environment_status import EnvironmentStatusService
+        EnvironmentStatusService(self.data_root).recheck(("mineru_api",))
 
     def load(self) -> str | None:
         if not self.path.is_file():
@@ -77,6 +79,8 @@ class MineruSecretStore:
 
     def delete(self) -> None:
         self.path.unlink(missing_ok=True)
+        from .environment_status import EnvironmentStatusService
+        EnvironmentStatusService(self.data_root).recheck(("mineru_api",))
 
 
 def resolve_mineru_token(

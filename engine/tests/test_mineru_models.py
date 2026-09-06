@@ -19,7 +19,7 @@ def test_text_item_round_trip() -> None:
 
     item = MineruContentItem.from_dict(value, index=7)
 
-    assert MINERU_NORMALIZATION_VERSION == "mineru-normalization-v3"
+    assert MINERU_NORMALIZATION_VERSION == "mineru-normalization-v4"
     assert item.index == 7
     assert item.page == 1
     assert item.text == "Engineering load response"

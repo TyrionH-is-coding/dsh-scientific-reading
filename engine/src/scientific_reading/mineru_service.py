@@ -328,6 +328,9 @@ class MineruParseService:
                     ),
                 )
                 refresh_generation_package_manifest(workspace)
+                if provider == "mineru-api-v4":
+                    from .environment_status import EnvironmentStatusService
+                    EnvironmentStatusService(data_root).mark_mineru_api_verified()
                 return result
             except Exception as primary_error:
                 raised_error = primary_error

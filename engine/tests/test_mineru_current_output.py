@@ -88,7 +88,7 @@ def _write_current_mineru_output(raw_root: Path, title: str) -> None:
     )
 
 
-def _published_workspace(tmp_path: Path) -> PaperWorkspace:
+def _published_workspace(tmp_path: Path, normalization_version="mineru-normalization-v4") -> PaperWorkspace:
     metadata = PaperMetadata(
         title="Synthetic Beam Load-Deflection Acceptance Study",
         authors=["Acceptance Fixture"],
@@ -98,7 +98,7 @@ def _published_workspace(tmp_path: Path) -> PaperWorkspace:
     raw_root = tmp_path / "raw"
     _write_current_mineru_output(raw_root, metadata.title)
     parsed_root = workspace.parsed_dir / "mineru"
-    result = MineruNormalizer(MINERU_VERSION).normalize(
+    result = MineruNormalizer(MINERU_VERSION, normalization_version=normalization_version).normalize(
         raw_root,
         parsed_root,
         metadata,

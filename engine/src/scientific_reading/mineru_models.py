@@ -7,8 +7,10 @@ import re
 from typing import Any
 
 
-MINERU_NORMALIZATION_VERSION = "mineru-normalization-v3"
+MINERU_NORMALIZATION_VERSION = "mineru-normalization-v4"
 _KNOWN_TYPES = {
+    "equation",
+    "footer",
     "text",
     "header",
     "aside_text",
@@ -124,6 +126,12 @@ class MineruContentItem:
                 raise ValueError("text 不能为空")
             text = raw_text.strip() or None
 
+        if item_type == "equation":
+            raw_text = value.get("text")
+            if raw_text is not None and not isinstance(raw_text, str):
+                raise ValueError("equation text 必须是文本")
+            text = raw_text.strip() if raw_text else None
+
         asset_path = None
         caption: tuple[str, ...] = ()
         footnote: tuple[str, ...] = ()
@@ -186,7 +194,7 @@ class MineruContentItem:
             footnote=footnote,
             table_body=table_body,
             list_items=list_items,
-            supported=item_type in _KNOWN_TYPES,
+            supported=item_type in _KNOWN_TYPES and (item_type != "equation" or text is not None),
             is_body=(
                 value["is_body"]
                 if isinstance(value.get("is_body"), bool)

@@ -29,6 +29,36 @@ def _pdf_bytes(metadata: PaperMetadata, marker: str) -> bytes:
     ).encode("utf-8")
 
 
+def test_missing_pdf_parent_survives_lost_library_pointer(tmp_path, metadata):
+    paper_id = _ingest(tmp_path, metadata)
+    workspace = PaperWorkspace.create_for_paper_id(tmp_path, paper_id, metadata)
+    content = _pdf_bytes(metadata, "attached source")
+    sha = hashlib.sha256(content).hexdigest()
+    pipeline = ReadingPipeline(tmp_path, stage_runner=lambda *_: {"status": "pdf_ready", "source_pdf_sha256": sha})
+    first = pipeline.start(paper_id)
+    workspace.source_pdf.write_bytes(content)
+    pipeline.advance(first.parent_job_id)
+    library = LibraryService(tmp_path)
+    try:
+        library.conn.execute("UPDATE items SET active_job_id=NULL WHERE paper_id=?", (paper_id,))
+        library.conn.commit()
+    finally:
+        library.close()
+    assert ReadingPipeline(tmp_path).start(paper_id).parent_job_id == first.parent_job_id
+    competing = pipeline.job_store.create_or_get(pipeline._parent_request(paper_id, sha))
+    library = LibraryService(tmp_path)
+    try:
+        library.update_full_read_state(paper_id, "queued", competing.job_id)
+    finally:
+        library.close()
+    assert pipeline.start(paper_id, expected_parent_job_id=first.parent_job_id).parent_job_id == first.parent_job_id
+    workspace.source_pdf.write_bytes(_pdf_bytes(metadata, "changed source"))
+    import pytest
+    with pytest.raises(RuntimeError, match="full_read_parent_mismatch"):
+        pipeline.start(paper_id, expected_parent_job_id=first.parent_job_id)
+    assert ReadingPipeline(tmp_path).start(paper_id).parent_job_id != first.parent_job_id
+
+
 def test_start_does_not_resume_unfinished_parent_after_source_changes(
     tmp_path, metadata
 ) -> None:
@@ -150,7 +180,7 @@ def test_worker_fails_old_job_when_pipeline_selects_a_new_parent(
     handle = store.create_or_get(request)
 
     class DifferentParentPipeline:
-        def start(self, _paper_id, _provider_profile):
+        def start(self, _paper_id, _provider_profile, **_kwargs):
             return SimpleNamespace(parent_job_id="job_0123456789abcdef")
 
         def advance(self, *_args):
@@ -197,7 +227,7 @@ def test_pipeline_completion_preserves_published_reader_library_status(
     )
 
     class CompletedPipeline:
-        def start(self, _paper_id, _provider_profile):
+        def start(self, _paper_id, _provider_profile, **_kwargs):
             return SimpleNamespace(parent_job_id=handle.job_id)
 
         def advance(self, _parent_job_id, _supplied):

@@ -75,7 +75,10 @@ try {
   assert.equal(isPaperId('library_.._secret'), false)
   assert.throws(() => paperMetadataPath(config.dataRoot, '../outside'), /invalid_paper_id/)
 
-  for (let i = 0; i < 20; i++) {
+  // The detached acknowledgement above must be prompt; Windows process startup
+  // itself may take longer while other acceptance instances are installing.
+  const workerDeadline = Date.now() + 10000
+  while (Date.now() < workerDeadline) {
     try {
       const log = await readFile(logPath, 'utf8')
       if (log.includes('metadata-enrichment')) break

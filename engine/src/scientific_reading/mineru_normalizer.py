@@ -60,10 +60,13 @@ class MineruNormalizeResult:
 
 
 class MineruNormalizer:
-    def __init__(self, parser_version: str = "3.4.0") -> None:
+    def __init__(self, parser_version: str = "3.4.0", *, normalization_version: str = MINERU_NORMALIZATION_VERSION) -> None:
         if not parser_version.strip():
             raise ValueError("MinerU 版本不能为空")
         self.parser_version = parser_version.strip()
+        if normalization_version not in {"mineru-normalization-v3", MINERU_NORMALIZATION_VERSION}:
+            raise ValueError("MinerU normalization version 无效")
+        self.normalization_version = normalization_version
 
     def normalize(
         self,
@@ -132,7 +135,7 @@ class MineruNormalizer:
                 warnings.append(
                     f"empty_text_item:{item.item_type}:{item.index}"
                 )
-            if not item.supported:
+            if not item.supported or (self.normalization_version == "mineru-normalization-v3" and item.item_type in {"equation", "footer"}):
                 warnings.append(
                     f"unsupported_content_type:{item.item_type}:{item.index}"
                 )
@@ -155,9 +158,8 @@ class MineruNormalizer:
                             numbered_level is not None
                             and numbered_level != heading_level
                         ):
-                            warnings.append(
-                                f"outline_incomplete:{item.index}:level_conflict"
-                            )
+                            if self.normalization_version == "mineru-normalization-v3":
+                                warnings.append(f"outline_incomplete:{item.index}:level_conflict")
                             heading_level = numbered_level
                             structure_source = "visible_section_number"
                         if heading_level > len(heading_stack) + 1:
@@ -285,7 +287,7 @@ class MineruNormalizer:
         )
         raw_hash = _sha256(resolved_content)
         source_map = {
-            "version": MINERU_NORMALIZATION_VERSION,
+            "version": self.normalization_version,
             "parser": "mineru",
             "parser_version": self.parser_version,
             "source_sha256": source_sha256,
@@ -293,7 +295,7 @@ class MineruNormalizer:
             "blocks": [block.to_dict() for block in blocks],
         }
         report_payload = {
-            "version": MINERU_NORMALIZATION_VERSION,
+            "version": self.normalization_version,
             "parser": "mineru",
             "parser_version": self.parser_version,
             "source_sha256": source_sha256,
@@ -342,7 +344,7 @@ class MineruNormalizer:
 
     @staticmethod
     def _block_text(item: MineruContentItem) -> str | None:
-        if item.item_type in {"text", "header", "aside_text", "ref_text"}:
+        if item.item_type in {"text", "header", "aside_text", "ref_text", "equation"}:
             return item.text
         if item.item_type == "list":
             return "\n".join(f"- {value}" for value in item.list_items)

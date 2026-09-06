@@ -29,6 +29,7 @@ from reader.build_reader import (
 from .data_guard import workspace_operation
 from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
+    FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION,
     FULL_TRANSLATION_CONTRACT_VERSION,
     FullReviewSubmission,
     Translation,
@@ -217,7 +218,7 @@ class FullReadRenderer:
                 raise ValueError("full_review_manifest_mismatch")
             guide_payload = json.loads(guide_path.read_text(encoding="utf-8"))
             if guide_payload != {
-                "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+                "contract_version": review.contract_version,
                 "reader_revision": reader_revision,
                 "guide": review_value["guide"],
             }:
@@ -227,13 +228,15 @@ class FullReadRenderer:
                 for item in translations.values()
                 if item.highlight != "none"
             }
+            if review.contract_version == FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION:
+                expected_highlights = {}
             for item in review.highlights:
                 expected_highlights.setdefault(
                     item.block_id,
                     (item.kind, item.reason),
                 )
             expected_highlight_payload = {
-                "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+                "contract_version": review.contract_version,
                 "highlights": [
                     {
                         "block_id": block_id,

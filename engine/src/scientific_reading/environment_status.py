@@ -52,7 +52,8 @@ class EnvironmentStatusService:
             "download": download,
             "mineru": {
                 "local": self._status(mineru_saved.get("local")),
-                "api": {**self._status(mineru_saved.get("api")), "api_call_verified": False},
+                "api": {**self._status(mineru_saved.get("api")), "api_call_verified":
+                    isinstance(mineru_saved.get("api"), dict) and mineru_saved["api"].get("api_call_verified") is True},
                 "strategy": "auto",
             },
             "library": self._library_status(),
@@ -64,6 +65,13 @@ class EnvironmentStatusService:
         self.presented_path.parent.mkdir(parents=True, exist_ok=True)
         self.presented_path.write_text("v1\n", encoding="utf-8")
         return self.snapshot()
+
+    def mark_mineru_api_verified(self) -> None:
+        result = self.snapshot()
+        result["mineru"]["api"] = {
+            "status": "ready", "checked_at": self.now(), "api_call_verified": True,
+        }
+        self._write(result)
 
     def recheck(self, targets: Iterable[str]) -> dict[str, object]:
         requested = tuple(dict.fromkeys(targets))

@@ -9,6 +9,14 @@ import pytest
 from scientific_reading.environment_status import EnvironmentStatusService
 
 
+def test_actual_api_success_persists_but_configuration_probe_does_not_verify(tmp_path):
+    service = EnvironmentStatusService(tmp_path, probes={"mineru_api": lambda: {"status": "configured"}})
+    assert service.recheck(("mineru_api",))["mineru"]["api"]["api_call_verified"] is False
+    service.mark_mineru_api_verified()
+    assert EnvironmentStatusService(tmp_path).snapshot()["mineru"]["api"]["api_call_verified"] is True
+    assert service.recheck(("mineru_api",))["mineru"]["api"]["api_call_verified"] is False
+
+
 def test_snapshot_is_static_and_onboarding_is_presented_once(tmp_path: Path) -> None:
     calls: list[str] = []
     service = EnvironmentStatusService(

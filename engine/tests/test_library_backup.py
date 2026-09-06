@@ -76,7 +76,7 @@ def test_backup_restores_relations_generations_reader_and_unfinished_jobs(tmp_pa
     assert status.error == "restored_requires_resume"
     assert jobs.load_request(sample["job_id"]).payload["data_root"] == str(restored)
     assert not (jobs.handle(sample["job_id"]).root / "launch.json").exists()
-    downloads = json.loads((restored / "jobs/downloads/job_1234567890abcdef.json").read_text())
+    downloads = json.loads((restored / "jobs/downloads/job_1234567890abcdef.json").read_text(encoding="utf-8"))
     assert downloads["status"] == "failed" and downloads["owner_pid"] is None
 
 

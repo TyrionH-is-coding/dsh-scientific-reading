@@ -265,9 +265,6 @@ def full_read_pipeline_handler_factory(
                 if key not in {"data_root", "provider_profile"}
             }
             supplied = resume_values or None
-        parent_job_id = selected.start(
-            request.paper_id, str(request.payload.get("provider_profile", "none"))
-        ).parent_job_id
         from .background_store import stable_job_id
 
         identity_payload = {
@@ -283,6 +280,10 @@ def full_read_pipeline_handler_factory(
                 payload=identity_payload,
             )
         )
+        parent_job_id = selected.start(
+            request.paper_id, str(request.payload.get("provider_profile", "none")),
+            expected_parent_job_id=expected_parent_job_id,
+        ).parent_job_id
         if parent_job_id != expected_parent_job_id:
             raise RuntimeError("full_read_parent_mismatch")
         while True:

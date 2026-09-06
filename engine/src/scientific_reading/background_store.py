@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .background_models import BackgroundRequest, JobStatus
 from .data_guard import data_root_operation, root_operation
-from .workspace import atomic_write_json
+from .workspace import atomic_write_json, read_json_file
 from .scope import capture_scope, ScopeError
 
 
@@ -182,7 +182,7 @@ class BackgroundJobStore:
 
     def load_status(self, job_id: str) -> JobStatus:
         handle = self.handle(job_id)
-        payload = json.loads(handle.status_path.read_text(encoding="utf-8"))
+        payload = read_json_file(handle.status_path)
         return JobStatus.from_dict(payload)
 
     @root_operation

@@ -31,6 +31,28 @@ def _item(item_type: str, page: int, **values) -> dict:
     }
 
 
+def test_equations_and_flat_numbered_outline_are_preserved(tmp_path, metadata):
+    raw = tmp_path / "raw"
+    equation = "$$\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}(QK^T/\\sqrt{d_k})V$$"
+    _write_content_list(raw, [
+        _item("text", 0, text=metadata.title, text_level=1),
+        _item("text", 0, text="3 Model", text_level=2),
+        _item("text", 0, text="3.2 Attention", text_level=2),
+        _item("text", 0, text="3.2.1 Scaled attention", text_level=2),
+        _item("equation", 0, text=equation, text_format="latex"),
+    ])
+    result = MineruNormalizer().normalize(raw, tmp_path / "new", metadata, "a" * 64)
+    assert result.blocks[-1].text == equation
+    assert result.blocks[-1].source_type == "equation"
+    assert result.blocks[-1].source_index == 4
+    assert result.blocks[-1].section_path == ("3 Model", "3.2 Attention", "3.2.1 Scaled attention")
+    assert not result.report.warnings
+    assert equation in (tmp_path / "new" / "full.md").read_text(encoding="utf-8")
+    legacy = MineruNormalizer(normalization_version="mineru-normalization-v3").normalize(raw, tmp_path / "legacy", metadata, "a" * 64)
+    assert all(block.source_type != "equation" for block in legacy.blocks)
+    assert "unsupported_content_type:equation:4" in legacy.report.warnings
+
+
 def test_normalize_builds_deterministic_blocks_assets_and_report(
     tmp_path,
     metadata,
@@ -195,7 +217,7 @@ def test_normalize_persists_three_level_outline_and_filters_title_noise(
         "3.2.1 Scaled Dot-Product Attention",
     )
     assert result.blocks[6].section_path == result.blocks[5].section_path
-    assert any("level_conflict" in warning for warning in result.report.warnings)
+    assert not any("level_conflict" in warning for warning in result.report.warnings)
     reloaded = json.loads(
         (tmp_path / "normalized/source_map.json").read_text(encoding="utf-8")
     )

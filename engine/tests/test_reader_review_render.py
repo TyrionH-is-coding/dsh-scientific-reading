@@ -326,6 +326,7 @@ def test_python_cli_prints_one_json_summary(tmp_path: Path) -> None:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
 
     assert completed.returncode == 0, completed.stderr

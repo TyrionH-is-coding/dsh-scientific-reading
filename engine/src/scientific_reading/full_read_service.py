@@ -17,6 +17,7 @@ from . import __version__
 from .data_guard import workspace_operation
 from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
+    FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION,
     FULL_TRANSLATION_CONTRACT_VERSION,
     FullReviewSubmission,
     Translation,
@@ -97,6 +98,8 @@ class FullReadService:
 
     @workspace_operation
     def prepare(self, workspace: PaperWorkspace) -> FullReadPlanResult:
+        from .normalization_upgrade import upgrade_unfinished_normalization
+        upgrade_unfinished_normalization(workspace)
         active = self._inspect_active_mineru(workspace)
         batches = self._build_batches(active)
         plan = self._build_plan(active, batches)
@@ -315,7 +318,7 @@ class FullReadService:
         ]
         total_limit = int(substantive_count * 0.25)
         return {
-            "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+            "contract_version": FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION,
             "translations_json": str(destination),
             "source_map_json": str(
                 workspace.parsed_dir / "mineru" / "source_map.json"
@@ -362,6 +365,8 @@ class FullReadService:
             for item in translations.values()
             if item.highlight != "none"
         }
+        if review.contract_version == FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION:
+            highlights = {}
         for item in review.highlights:
             highlights.setdefault(
                 item.block_id,
@@ -371,7 +376,7 @@ class FullReadService:
             raise ValueError("full_review_highlight_limit")
         root = workspace.reading_dir / "full"
         highlights_payload = {
-            "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+            "contract_version": review.contract_version,
             "highlights": [
                 {
                     "block_id": block_id,
@@ -408,7 +413,7 @@ class FullReadService:
         ).hexdigest()
         reader_revision = final_input_hash
         guide_payload = {
-            "contract_version": FULL_REVIEW_CONTRACT_VERSION,
+            "contract_version": review.contract_version,
             "reader_revision": reader_revision,
             "guide": review.to_dict()["guide"],
         }

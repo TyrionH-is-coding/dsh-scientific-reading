@@ -498,7 +498,9 @@ export async function engineClassification(config: Config, command: 'classificat
 /** library-ensure：写入本地文献库条目（查重+读回） */
 export async function engineJobStatus(config: Config, jobId: string): Promise<{ ok: boolean; json: Record<string, unknown> | null; stderr: string }> {
   const r = await runEngine(config, ['job-status', '--job-id', jobId])
-  return { ok: r.ok, json: r.json, stderr: r.stderr }
+  const states = new Set(['queued', 'running', 'waiting_user', 'waiting_agent', 'interrupted', 'failed', 'completed'])
+  const validStatus = r.json?.job_id === jobId && states.has(String(r.json?.status))
+  return { ok: r.ok || validStatus, json: r.json, stderr: r.stderr }
 }
 
 async function trustedProviderEnv(config: Config): Promise<NodeJS.ProcessEnv> {

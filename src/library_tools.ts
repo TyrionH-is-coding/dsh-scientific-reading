@@ -71,6 +71,7 @@ function fullReadGateGuidance(reasonCode: string): string {
     return [
       '复核 gate：读取 required_input.translations_json；仅使用 available_source_block_ids，并遵守 maximum_full_review_highlights 与 guide_limits。',
       'highlights 每项为 {"block_id","kind":"result|method","reason"}；guide 必须含 research_question、key_methods、core_results、limitations 四个数组，每项为 {"text","source_block_ids"}（1-3 个来源块）。',
+      'full-review-v3 的 highlights 是最终完整高亮集合，会替换翻译阶段的初步标记；请选择最重要的 10%-15%，不超过 maximum_full_review_highlights。遇到修订 gate 按 validation_error 自主修正并重新提交。',
       '调用 sr_continue_full_read，input={"full_review":{"contract_version":required_input.contract_version,"highlights":[],"guide":{"research_question":[{"text":"...","source_block_ids":["从 available_source_block_ids 选择"]}],"key_methods":[],"core_results":[],"limitations":[]}}}。',
     ].join('\n')
   }
@@ -154,6 +155,8 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
     async execute(args: { job_id: string; input: Record<string, unknown> }) {
       requireJobId(args.job_id)
       const r = await engineContinueFullRead(config, args.job_id, args.input)
+      if (r.ok) return { parent_job_id: args.job_id, submission: 'accepted', next_action: 'poll',
+        guidance: '输入已交给后台校验。请用 sr_job_status 等待 queued/running 结束，再按新的 gate 继续；提交回执不代表批次已通过。' } as never
       return (r.json ?? { ok: false, detail: r.stderr || 'full_read_continue_failed' }) as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_continue_full_read')
@@ -328,6 +331,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
         }
         const reason = reasonCode ? '（' + (mineruHints[reasonCode] || reasonCode) + '）' : ''
         const lines = ['任务 ' + String(v.job_id) + '：' + String(v.status) + '，next_action=' + String(v.next_action) + reason]
+        if (typeof d.error === 'string' && d.error) lines.push('error=' + d.error)
         const requiredInput = d.required_input
         if (requiredInput && typeof requiredInput === 'object' && !Array.isArray(requiredInput)) {
           lines.push('required_input=' + JSON.stringify(requiredInput, null, 2))

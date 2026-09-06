@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 FULL_TRANSLATION_CONTRACT_VERSION = "full-translation-v3"
 FULL_REVIEW_CONTRACT_VERSION = "full-review-v2"
+FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION = "full-review-v3"
 HIGHLIGHT_KINDS = frozenset({"result", "method", "none"})
 GUIDE_LIMITS = {
     "research_question": 1,
@@ -288,7 +289,7 @@ class FullReviewSubmission:
             value,
             {"contract_version", "highlights", "guide"},
         )
-        if value["contract_version"] != FULL_REVIEW_CONTRACT_VERSION:
+        if value["contract_version"] not in {FULL_REVIEW_CONTRACT_VERSION, FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION}:
             raise ValueError("full_review_contract_invalid")
         raw_highlights = value["highlights"]
         if not isinstance(raw_highlights, list):
@@ -310,7 +311,7 @@ class FullReviewSubmission:
             available_block_ids=available_block_ids,
         )
         return cls(
-            contract_version=FULL_REVIEW_CONTRACT_VERSION,
+            contract_version=value["contract_version"],
             highlights=highlights,
             guide=guide,
         )
