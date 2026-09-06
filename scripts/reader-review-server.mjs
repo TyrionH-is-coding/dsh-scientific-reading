@@ -253,6 +253,13 @@ async function main() {
     started_at: new Date().toISOString(),
     token: options.token,
   }
+  // Health is a readiness signal: publish ownership before serving requests.
+  try {
+    await atomicWriteJson(serverFile, metadata)
+  } catch (error) {
+    server.close()
+    throw error
+  }
   server.on(
     'request',
     await createHandler({
@@ -261,7 +268,6 @@ async function main() {
       metadata,
     }),
   )
-  await atomicWriteJson(serverFile, metadata)
   process.stdout.write(`${JSON.stringify(metadata)}\n`)
 
   let closing = false

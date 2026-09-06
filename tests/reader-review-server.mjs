@@ -5,14 +5,15 @@ import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { once } from 'node:events'
 
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const serverScript = path.join(repositoryRoot, 'scripts', 'reader-review-server.mjs')
 
 
-async function request(port, pathname, method = 'GET') {
+async function request(port, pathname, method = 'GET', timeoutMs = 5000) {
   return await new Promise((resolve, reject) => {
     const req = http.request(
       { host: '127.0.0.1', port, path: pathname, method },
@@ -27,6 +28,7 @@ async function request(port, pathname, method = 'GET') {
       },
     )
     req.on('error', reject)
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('request_timeout')))
     req.end()
   })
 }
@@ -109,10 +111,11 @@ async function createReviewRoot(base) {
 }
 
 
-function startServer({ reviewRoot, fakeRepository, port = 0, token = '2'.repeat(32) }) {
+function startServer({ reviewRoot, fakeRepository, port = 0, token = '2'.repeat(32), blockWrite = false, failWrite = false }) {
   return spawn(
     process.execPath,
     [
+      ...(blockWrite ? ['--import', pathToFileURL(path.join(repositoryRoot, 'tests', 'fixtures', 'review-server-write.mjs')).href] : []),
       serverScript,
       '--review-root', reviewRoot,
       '--repository-root', fakeRepository,
@@ -122,7 +125,8 @@ function startServer({ reviewRoot, fakeRepository, port = 0, token = '2'.repeat(
     ],
     {
       cwd: repositoryRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', ...(blockWrite ? ['ipc'] : [])],
+      env: { ...process.env, REVIEW_TEST_WRITE_FAILURE: failWrite ? '1' : '' },
       windowsHide: true,
       shell: false,
     },
@@ -138,6 +142,35 @@ async function stopServer(child) {
 
 const base = await fs.mkdtemp(path.join(os.tmpdir(), 'reader-review-server-test-'))
 try {
+  for (const failWrite of [false, true]) {
+    const fixture = await createReviewRoot(path.join(base, failWrite ? 'write-failure' : 'delayed-write'))
+    const blocked = startServer({ ...fixture, blockWrite: true, failWrite })
+    const ready = failWrite ? null : waitForLine(blocked.stdout)
+    ready?.catch(() => {})
+    const errors = []
+    blocked.stderr.on('data', chunk => errors.push(chunk))
+    try {
+      const [boundary] = await once(blocked, 'message')
+      assert.equal(boundary.type, 'metadata-write-blocked')
+      await assert.rejects(fs.stat(path.join(fixture.reviewRoot, 'server.json')), /ENOENT/)
+      const premature = await request(boundary.port, '/health', 'GET', 250).catch(() => null)
+      assert.notEqual(premature?.status, 200, 'Health must not declare readiness before server.json is published')
+      blocked.send('release-write')
+      if (failWrite) {
+        assert.notEqual(await waitForExit(blocked), 0)
+        assert.match(Buffer.concat(errors).toString('utf8'), /review_server_failed/)
+        await assert.rejects(request(boundary.port, '/health', 'GET', 250))
+      } else {
+        const handshake = JSON.parse(await ready)
+        const saved = JSON.parse(await fs.readFile(path.join(fixture.reviewRoot, 'server.json'), 'utf8'))
+        assert.deepEqual(saved, handshake)
+        assert.deepEqual(JSON.parse((await request(handshake.port, '/health')).body), saved)
+      }
+    } finally {
+      if (blocked.connected) blocked.send('release-write')
+      await stopServer(blocked)
+    }
+  }
   const { reviewRoot, fakeRepository } = await createReviewRoot(base)
   const child = startServer({ reviewRoot, fakeRepository })
   const stderr = []

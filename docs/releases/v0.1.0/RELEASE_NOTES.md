@@ -1,6 +1,6 @@
 # DSH Scientific Reading v0.1.0-rc.1
 
-> 发布文案草稿：工程收口后核对实际功能与已知限制，再复制到 GitHub Release。下方版本链接在 `v0.1.0-rc.1` 标签公开后生效。
+> 发布文案：仅在放行提交 CI 通过、tag 与 prerelease 创建并读回后称为已公开。源码安装指南始终可访问，不依赖尚未创建的 tag。
 
 在 DSH 的文献模式中，完成从题录入库、正文获取到双语精读和个人笔记的日常流程。
 
@@ -18,7 +18,7 @@
 
 面向 Windows 用户提供构建好的插件 `.tgz`，包含 Python 引擎 wheel。请下载同一 Release 的 `SHA256SUMS.txt` 校验文件；无需自行克隆、编译插件。
 
-[安装指南](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/v0.1.0-rc.1/docs/releases/v0.1.0/INSTALL.md) · [使用与数据维护](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/v0.1.0-rc.1/docs/releases/v0.1.0/USAGE.md) · [问题处理](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/v0.1.0-rc.1/docs/releases/v0.1.0/SUPPORT.md)
+[安装指南](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/main/docs/releases/v0.1.0/INSTALL.md) · [使用与数据维护](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/main/docs/releases/v0.1.0/USAGE.md) · [问题处理](https://github.com/TyrionH-is-coding/dsh-scientific-reading/blob/main/docs/releases/v0.1.0/SUPPORT.md)
 
 依赖条件见安装指南；`RELEASE-MANIFEST.json` 记录版本、已记录的来源快照和实际安装包校验信息。已有用户请先备份数据，安装后抽查原有文献、Reader 和笔记。
 
