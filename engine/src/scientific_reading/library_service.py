@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import sqlite3
+from .scope import current_scope, require_paper, require_global, install_revision_trigger, paper_write, classification_write, library_write, ScopeError
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,13 @@ from .identifiers import (
     stable_paper_id,
 )
 from .library_schema import migrate_library
+from .library_search import (
+    fetch_search_matches,
+    literal_like_pattern,
+    rebuild_search_index,
+    search_predicate,
+)
+from .data_guard import data_root_operation, root_operation
 from .models import PaperMetadata, StageRecord
 from .pdf_validation import validate_pdf
 from .workspace import PaperWorkspace, atomic_write_json
@@ -58,8 +66,9 @@ class LibraryService:
 
     def __init__(self, data_root: Path) -> None:
         self.data_root = Path(data_root).resolve()
-        self.data_root.mkdir(parents=True, exist_ok=True)
-        migrate_library(self.data_root)
+        with data_root_operation(self.data_root):
+            self.data_root.mkdir(parents=True, exist_ok=True)
+            migrate_library(self.data_root)
         self.conn = sqlite3.connect(str(library_path(self.data_root)), timeout=1.0)
         self.conn.execute("PRAGMA busy_timeout = 1000")
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -67,12 +76,16 @@ class LibraryService:
             self.conn.close()
             raise RuntimeError("library_foreign_keys_not_enabled")
         self.conn.row_factory = sqlite3.Row
+        with data_root_operation(self.data_root):
+            install_revision_trigger(self.conn)
 
     def close(self) -> None:
         self.conn.close()
 
     # ── 条目 ────────────────────────────────────────────────────────
 
+    @root_operation
+    @library_write
     def ingest(self, metadata: PaperMetadata) -> dict[str, Any]:
         """只在本地规范化、查重并提交 skeleton，不触发任何派生工作。"""
         doi = normalize_doi(metadata.doi)
@@ -100,10 +113,13 @@ class LibraryService:
             self.conn.rollback()
             return self._ingest_conflict(conflict)
         if existing is not None:
+            require_paper(self.conn, existing["paper_id"])
             self._update_item_from_ingest(existing["paper_id"], metadata)
             return self._ingest_result(existing, created=False, dedupe=dedupe)
 
         paper_id = self._unique_ingest_paper_id(metadata)
+        if current_scope() is not None and current_scope().get("scopePaperId"):
+            raise ScopeError("scope_paper_forbidden")
         key = metadata.library_key or library_key_for(paper_id)
         now = _now()
         self.conn.execute(
@@ -129,6 +145,10 @@ class LibraryService:
         )
         self._index_fulltext(paper_id, metadata)
         self._store_identity_aliases(paper_id, metadata)
+        scope = current_scope()
+        if scope is not None:
+            self._require_folder(scope["scopeFolderId"])
+            self.conn.execute("UPDATE items SET folder_id=? WHERE paper_id=?", (scope["scopeFolderId"], paper_id))
         self.conn.commit()
         row = self._select_item(paper_id)
         if row is None:
@@ -175,6 +195,7 @@ class LibraryService:
             "library_key": library_key_for(paper_id),
             "dedupe": "none",
         }
+    @root_operation
     def ensure_item(self, metadata: PaperMetadata) -> dict[str, Any]:
         """查重 → 写入/更新条目 → 读回验证。
 
@@ -204,14 +225,14 @@ class LibraryService:
         now = _now()
         self.conn.execute(
             "INSERT INTO items (paper_id, library_key, title, authors_json, doi, pmid,"
-            " year, journal, source_url, status, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            " year, journal, source_url, status, created_at, updated_at, abstract_en, abstract_zh)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 paper_id, key, metadata.title,
                 json.dumps(metadata.authors, ensure_ascii=False),
                 normalize_doi(metadata.doi), metadata.pmid,
                 metadata.year, metadata.journal, _stored_source_url(metadata.source_url),
-                "library_ready", now, now,
+                "library_ready", now, now, metadata.abstract_en, metadata.abstract_zh,
             ),
         )
         self._index_fulltext(paper_id, metadata)
@@ -227,7 +248,9 @@ class LibraryService:
         ).fetchone()
         return self._row_to_item(row) if row else None
 
+    @root_operation
     def create_folder(self, name: str) -> dict[str, Any]:
+        require_global("folder_create")
         normalized = self._folder_name(name)
         now = _now()
         folder_id = f"folder_{uuid.uuid4().hex}"
@@ -248,7 +271,9 @@ class LibraryService:
             "updated_at": now,
         }
 
+    @root_operation
     def rename_folder(self, folder_id: str, name: str) -> dict[str, Any]:
+        require_global("folder_rename")
         if not isinstance(folder_id, str) or not folder_id:
             raise ValueError("folder_id_invalid")
         normalized = self._folder_name(name)
@@ -271,11 +296,16 @@ class LibraryService:
         return dict(row)
 
     def list_folders(self) -> list[dict[str, Any]]:
+        scope = current_scope()
+        if scope is not None:
+            return [dict(row) for row in self.conn.execute("SELECT * FROM folders WHERE folder_id=?", (scope["scopeFolderId"],))]
         rows = self.conn.execute(
             "SELECT * FROM folders ORDER BY name COLLATE NOCASE, folder_id"
         ).fetchall()
         return [dict(row) for row in rows]
 
+    @root_operation
+    @classification_write
     def move_items(
         self, paper_ids: tuple[str, ...] | list[str], folder_id: str | None
     ) -> dict[str, Any]:
@@ -293,6 +323,7 @@ class LibraryService:
         self.conn.commit()
         return {"paper_ids": list(ids), "folder_id": folder_id}
 
+    @root_operation
     def add_tags(
         self, paper_ids: tuple[str, ...] | list[str], tags: tuple[str, ...] | list[str]
     ) -> dict[str, Any]:
@@ -314,6 +345,7 @@ class LibraryService:
         self.conn.commit()
         return {"paper_ids": list(ids), "tags": list(normalized_tags)}
 
+    @root_operation
     def remove_tags(
         self, paper_ids: tuple[str, ...] | list[str], tags: tuple[str, ...] | list[str]
     ) -> dict[str, Any]:
@@ -341,6 +373,11 @@ class LibraryService:
         status: str | None = None,
         recent_days: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
+        scope = current_scope()
+        if scope is not None:
+            folder_id = scope["scopeFolderId"]
+            if page is _LIST_ITEMS_UNSET:
+                page = 1
         legacy_call = page is _LIST_ITEMS_UNSET
         if legacy_call:
             rows = self.conn.execute(
@@ -393,25 +430,15 @@ class LibraryService:
             )
             parameters.append(tag)
         if query is not None and query.strip():
-            cleaned = re.sub(r'[^\w\u4e00-\u9fff\s-]+', " ", query).strip()
-            tokens = [token for token in cleaned.split() if token]
-            fts_query = " AND ".join(f'"{token}"' for token in tokens)
-            pattern = f"%{query.strip()}%"
+            predicate, search_parameters = search_predicate("i", query)
+            pattern = literal_like_pattern(query)
             search_parts = [
-                "i.title LIKE ? COLLATE NOCASE",
-                "i.authors_json LIKE ? COLLATE NOCASE",
-                "i.doi LIKE ? COLLATE NOCASE",
+                predicate,
                 "EXISTS (SELECT 1 FROM item_tags search_tags "
                 "WHERE search_tags.paper_id = i.paper_id "
-                "AND search_tags.tag LIKE ? COLLATE NOCASE)",
+                "AND search_tags.tag LIKE ? ESCAPE '\\' COLLATE NOCASE)",
             ]
-            parameters.extend((pattern, pattern, pattern, pattern))
-            if fts_query:
-                search_parts.append(
-                    "i.paper_id IN (SELECT paper_id FROM fulltext "
-                    "WHERE fulltext MATCH ?)"
-                )
-                parameters.append(fts_query)
+            parameters.extend((*search_parameters, pattern))
             where.append("(" + " OR ".join(search_parts) + ")")
 
         where_sql = " WHERE " + " AND ".join(where) if where else ""
@@ -432,34 +459,68 @@ class LibraryService:
             + " ORDER BY i.updated_at DESC, i.paper_id LIMIT ? OFFSET ?",
             (*parameters, page_size, (page - 1) * page_size),
         ).fetchall()
+        items = [self._navigation_row_to_item(row) for row in rows]
+        if query is not None and query.strip():
+            self._add_search_matches(items, query)
         return {
-            "items": [self._navigation_row_to_item(row) for row in rows],
+            "items": items,
             "page": page,
             "page_size": page_size,
             "total": total,
         }
 
     def search(self, query: str) -> list[dict[str, Any]]:
-        """FTS5 全文搜索（标题/作者/DOI/全文内容）。"""
-        cleaned = re.sub(r'[^\w\u4e00-\u9fff\s-]+', " ", query).strip()
-        if not cleaned:
+        """兼容旧调用的搜索列表，并附带 typed search matches。"""
+        if not isinstance(query, str) or not query.strip():
             return []
-        try:
-            rows = self.conn.execute(
-                "SELECT i.*, f.content FROM fulltext f JOIN items i ON i.paper_id = f.paper_id"
-                " WHERE fulltext MATCH ? ORDER BY rank LIMIT 50",
-                (cleaned,),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            # 查询词含 FTS 特殊语法时降级为 LIKE
-            pattern = f"%{cleaned}%"
-            rows = self.conn.execute(
-                "SELECT * FROM items WHERE title LIKE ? OR doi LIKE ?",
-                (pattern, pattern),
-            ).fetchall()
-            return [self._row_to_item(row) for row in rows]
-        return [self._row_to_item(row) for row in rows]
+        return self.list_items(page=1, page_size=50, query=query)["items"]
 
+    @root_operation
+    def rebuild_search_index(self) -> dict[str, int]:
+        with self.conn:
+            return rebuild_search_index(self.conn)
+
+    def _add_search_matches(
+        self, items: list[dict[str, Any]], query: str
+    ) -> None:
+        matches_by_paper = fetch_search_matches(
+            self.conn, query, (item["paper_id"] for item in items)
+        )
+        conclusion_matches = [
+            match
+            for matches in matches_by_paper.values()
+            for match in matches
+            if match["content_type"] == "conclusion"
+        ]
+        review = None
+        if conclusion_matches:
+            from .review_service import ReviewService
+
+            review = ReviewService(self.data_root)
+        try:
+            if review is not None:
+                for match in conclusion_matches:
+                    resolved = review.resolve_conclusion(match["conclusion_id"])
+                    for key in (
+                        "basis",
+                        "evidence",
+                        "evidence_status",
+                        "evidence_error",
+                        "source",
+                        "links",
+                        "claim_support",
+                        "scientific_validity",
+                    ):
+                        if key in resolved:
+                            match[key] = resolved[key]
+            for item in items:
+                item["search_matches"] = matches_by_paper.get(item["paper_id"], [])
+        finally:
+            if review is not None:
+                review.close()
+
+    @root_operation
+    @paper_write
     def update_status(self, paper_id: str, status: str) -> None:
         """阶段完成后同步条目状态（worker 调用）。"""
         self.conn.execute(
@@ -468,6 +529,8 @@ class LibraryService:
         )
         self.conn.commit()
 
+    @root_operation
+    @paper_write
     def update_full_read_state(
         self,
         paper_id: str,
@@ -489,6 +552,8 @@ class LibraryService:
     def _reading_parent_key(paper_id: str, source_sha256: str) -> str:
         return f"reading_parent.{paper_id}.{source_sha256}"
 
+    @root_operation
+    @paper_write
     def set_reading_parent(
         self, paper_id: str, source_sha256: str, parent_job_id: str
     ) -> None:
@@ -508,6 +573,8 @@ class LibraryService:
         ).fetchone()
         return row[0] if row else None
 
+    @root_operation
+    @paper_write
     def clear_reading_parent(
         self, paper_id: str, source_sha256: str, parent_job_id: str
     ) -> None:
@@ -518,6 +585,7 @@ class LibraryService:
         self.conn.commit()
 
     def get_item(self, paper_id: str) -> dict[str, Any]:
+        require_paper(self.conn, paper_id)
         """按已校验的 paper_id 返回 SQLite 中的单篇只读详情。"""
         if (
             not isinstance(paper_id, str)
@@ -541,6 +609,8 @@ class LibraryService:
         )
         return item
 
+    @root_operation
+    @paper_write
     def update_abstract_status(self, paper_id: str, status: str) -> bool:
         """原子更新摘要派生状态，不改变主阅读状态。"""
         if not isinstance(status, str) or not status.strip():
@@ -557,6 +627,8 @@ class LibraryService:
             raise
         return cursor.rowcount == 1
 
+    @root_operation
+    @paper_write
     def update_active_job(
         self,
         paper_id: str,
@@ -626,6 +698,7 @@ class LibraryService:
 
     # ── 附件 ────────────────────────────────────────────────────────
 
+    @root_operation
     def attach_pdf(self, metadata: PaperMetadata, pdf_path: Path) -> dict[str, Any]:
         """校验 PDF → 复制到 workspace.source.pdf → 登记附件 → 读回验证。
 
@@ -698,6 +771,8 @@ class LibraryService:
     def record_pdf_attachment(self, paper_id: str, sha256: str, size: int) -> None:
         self.commit_pdf_publication(paper_id, sha256, size, source_changed=False)
 
+    @root_operation
+    @paper_write
     def commit_pdf_publication(
         self,
         paper_id: str,
@@ -711,6 +786,7 @@ class LibraryService:
         now = _now()
         self.conn.execute("BEGIN IMMEDIATE")
         try:
+            require_paper(self.conn, paper_id)
             self.conn.execute(
                 "INSERT INTO attachments (paper_id, rel_path, sha256, size, validated_at)"
                 " VALUES (?,?,?,?,?) ON CONFLICT(paper_id) DO UPDATE SET"
@@ -749,6 +825,8 @@ class LibraryService:
             self.conn.rollback()
             raise
 
+    @root_operation
+    @paper_write
     def mark_reader_stale(self, paper_id: str) -> None:
         now = _now()
         cursor = self.conn.execute(
@@ -779,15 +857,19 @@ class LibraryService:
                     break
         self.conn.commit()
 
-    def publish_reader(self, paper_id: str, rel_path: str) -> None:
+    def validate_reader(self, paper_id: str, rel_path: str) -> None:
+        """复核 Reader 的来源和文件完整性，不更新文献或产物状态。"""
         self.get_item(paper_id)
         paper_root = (self.data_root / "papers" / paper_id).resolve()
         path = (paper_root / rel_path).resolve()
-        manifest = path.with_name("reader-manifest.json")
         normalized_input = rel_path.replace("\\", "/")
         generation_match = re.fullmatch(
-            r"generations/([0-9a-f]{16})/reading/reader\.html",
+            r"generations/([0-9a-f]{16})/(?:reading/reader\.html|output/reader_full\.html)",
             normalized_input,
+        )
+        manifest = (
+            paper_root / "generations" / generation_match.group(1) / "reading/reader-manifest.json"
+            if generation_match is not None else path.with_name("reader-manifest.json")
         )
         is_base_reader = normalized_input == "reading/reader.html"
         def validate_files() -> None:
@@ -1026,11 +1108,17 @@ class LibraryService:
                 raise ValueError("reader_publication_invalid")
 
         validate_files()
-        normalized = path.relative_to(paper_root).as_posix()
+
+    @root_operation
+    @paper_write
+    def publish_reader(self, paper_id: str, rel_path: str) -> None:
+        self.validate_reader(paper_id, rel_path)
+        normalized = rel_path.replace("\\", "/")
         now = _now()
         self.conn.execute("BEGIN IMMEDIATE")
         try:
-            validate_files()
+            require_paper(self.conn, paper_id)
+            self.validate_reader(paper_id, rel_path)
             self.conn.execute(
                 "INSERT INTO artifacts (paper_id, kind, rel_path, status, updated_at)"
                 " VALUES (?,?,?,?,?) ON CONFLICT(paper_id, kind) DO UPDATE SET"
@@ -1194,6 +1282,8 @@ class LibraryService:
             raise ValueError("folder_not_found")
 
     def _require_papers(self, paper_ids: tuple[str, ...]) -> None:
+        for paper_id in paper_ids:
+            require_paper(self.conn, paper_id)
         placeholders = ",".join("?" for _ in paper_ids)
         found = {
             row["paper_id"]
@@ -1217,6 +1307,7 @@ class LibraryService:
         ).fetchone()
         return dict(row) if row else None
 
+    @paper_write
     def _update_item(self, paper_id: str, metadata: PaperMetadata, status: str) -> None:
         now = _now()
         self.conn.execute(

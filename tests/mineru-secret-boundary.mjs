@@ -50,6 +50,9 @@ try {
   assert.equal(removed.body.includes(secret), false)
   assert.equal(JSON.stringify(Config.toJSON()).includes('mineruApiToken'), false)
   assert.equal(readFileSync(new URL('../client/client.js', import.meta.url), 'utf8').includes(secret), false)
+  const tools = readFileSync(new URL('../src/library_tools.ts', import.meta.url), 'utf8')
+  assert.match(tools, /mineru_api_token_required:[^]*设置与状态/, '缺 Key 提示必须指向设置与状态页')
+  assert.doesNotMatch(tools, /请设置宿主环境变量并重启 DSH/, '不得再把环境变量写成唯一配置入口')
   console.log('PASS: MinerU Key 仅经受保护写入边界传递，不进入配置、argv 或响应')
 } finally {
   if (oldPythonPath === undefined) delete process.env.PYTHONPATH

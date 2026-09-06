@@ -19,6 +19,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: npm ci --ignore-scripts --legacy-peer-deps
+      - run: python -m pip install -e "engine[dev]"
       - run: npm run build:ci
       - run: npm run test:engine
       - run: npm run test:offline
+      - run: npm run test:assets

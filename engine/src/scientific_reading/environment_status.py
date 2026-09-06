@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import json
-import shutil
+from importlib.metadata import PackageNotFoundError, version
 import sqlite3
-from importlib.util import find_spec
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
 
 Probe = Callable[[], dict[str, object]]
-_TARGETS = {"download", "institution", "mineru_local", "mineru_api", "cloak"}
+_TARGETS = {"download", "mineru_local", "mineru_api"}
 
 
 def _utc_now() -> str:
@@ -29,25 +28,21 @@ class EnvironmentStatusService:
         now: Callable[[], str] = _utc_now,
     ) -> None:
         self.data_root = Path(data_root).resolve()
-        self.school = school.strip()
         self.path = self.data_root / "status" / "environment-status-v1.json"
         self.presented_path = self.data_root / "status" / "onboarding-v1.presented"
         self.now = now
         self.probes = {
             "download": self._probe_download,
-            "institution": self._probe_institution,
             "mineru_local": self._probe_mineru_local,
             "mineru_api": self._probe_mineru_api,
-            "cloak": self._probe_cloak,
             **(probes or {}),
         }
 
     def snapshot(self) -> dict[str, object]:
         saved = self._load_saved()
         download = self._status(saved.get("download"))
-        institution = self._status(saved.get("institution"), school=self.school)
+        download["mode"] = "oa_only"
         mineru_saved = saved.get("mineru") if isinstance(saved.get("mineru"), dict) else {}
-        cloak = self._status(saved.get("cloak"))
         return {
             "contract_version": "environment-status-v1",
             "onboarding": {
@@ -55,13 +50,11 @@ class EnvironmentStatusService:
                 "version": "v1",
             },
             "download": download,
-            "institution": institution,
             "mineru": {
                 "local": self._status(mineru_saved.get("local")),
-                "api": self._status(mineru_saved.get("api")),
+                "api": {**self._status(mineru_saved.get("api")), "api_call_verified": False},
                 "strategy": "auto",
             },
-            "cloak": cloak,
             "library": self._library_status(),
         }
 
@@ -85,16 +78,13 @@ class EnvironmentStatusService:
                 "status": status if isinstance(status, str) and status else "failed",
                 "checked_at": checked_at,
             }
-            if target == "institution":
-                safe["school"] = self.school
-                result["institution"] = safe
-            elif target == "download":
+            if target == "download":
+                safe["mode"] = "oa_only"
                 result["download"] = safe
-            elif target == "cloak":
-                result["cloak"] = safe
             elif target == "mineru_local":
                 result["mineru"]["local"] = safe  # type: ignore[index]
             else:
+                safe["api_call_verified"] = False
                 result["mineru"]["api"] = safe  # type: ignore[index]
         self._write(result)
         return result
@@ -125,8 +115,9 @@ class EnvironmentStatusService:
 
     def _library_status(self) -> dict[str, object]:
         database = self.data_root / "library.sqlite"
+        location = {"data_root": str(self.data_root), "database": str(database)}
         if not database.is_file():
-            return {"status": "empty", "papers": 0, "xlsx_pending": 0}
+            return {**location, "status": "empty", "papers": 0, "xlsx_pending": 0}
         try:
             with sqlite3.connect(database) as connection:
                 papers = int(connection.execute("SELECT COUNT(*) FROM items").fetchone()[0])
@@ -134,21 +125,21 @@ class EnvironmentStatusService:
                     "SELECT COUNT(*) FROM items WHERE COALESCE(xlsx_sync_state, '') != 'ready'"
                 ).fetchone()[0])
         except sqlite3.Error:
-            return {"status": "failed", "papers": 0, "xlsx_pending": 0}
-        return {"status": "ready", "papers": papers, "xlsx_pending": pending}
+            return {**location, "status": "failed", "papers": 0, "xlsx_pending": 0}
+        return {**location, "status": "ready", "papers": papers, "xlsx_pending": pending}
 
     @staticmethod
     def _probe_download() -> dict[str, object]:
-        return {"status": "ready" if shutil.which("scansci-pdf") else "unavailable"}
+        try:
+            ready = version("scansci-pdf") == "1.9.0"
+        except PackageNotFoundError:
+            ready = False
+        return {"status": "ready" if ready else "unavailable"}
 
-    def _probe_institution(self) -> dict[str, object]:
-        return {"status": "configured" if self.school else "not_configured"}
-
-    @staticmethod
-    def _probe_mineru_local() -> dict[str, object]:
+    def _probe_mineru_local(self) -> dict[str, object]:
         from .mineru_local import LocalMineruProvider
 
-        probe = LocalMineruProvider().probe()
+        probe = LocalMineruProvider(data_root=self.data_root).probe()
         return {"status": probe.status}
 
     def _probe_mineru_api(self) -> dict[str, object]:
@@ -157,8 +148,3 @@ class EnvironmentStatusService:
         token, source = resolve_mineru_token(self.data_root)
         return {"status": "configured" if token else "not_configured", "source": source}
 
-    @staticmethod
-    def _probe_cloak() -> dict[str, object]:
-        executable = shutil.which("cloakbrowser") or shutil.which("cloak-browser")
-        module = find_spec("cloakbrowser") or find_spec("cloak_browser")
-        return {"status": "installed" if executable or module else "not_installed"}

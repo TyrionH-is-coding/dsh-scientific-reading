@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .scope import capture_scope, current_scope, publication_guard, ScopeError
 
 import hashlib
 import json
@@ -15,6 +16,7 @@ from typing import Any, Callable
 
 from .background_models import AgentRequired, BackgroundRequest, UserActionRequired
 from .background_store import BackgroundJobStore, JobClaimUnavailable
+from .data_guard import root_operation
 from .identifiers import metadata_identity_compatible
 from .library_service import LibraryService
 from .models import PaperMetadata, StageRecord
@@ -31,6 +33,19 @@ StageRunner = Callable[
     [str, ReadingPipelineState, dict[str, Any] | None], dict[str, Any]
 ]
 _HEAVY_STAGES = {"parse_mineru", "translate_full"}
+_MINERU_API_GATES = {
+    "mineru_api_token_required",
+    "mineru_api_auth_failed",
+    "mineru_api_quota_exceeded",
+    "mineru_api_timeout",
+    "mineru_api_unavailable",
+}
+_MINERU_PROVIDER_GATES = {
+    "mineru_provider_unavailable",
+    "mineru_local_unavailable",
+    "mineru_api_unavailable",
+    "mineru_api_token_required",
+}
 _SENSITIVE_KEY_PARTS = (
     "secret",
     "token",
@@ -118,6 +133,19 @@ _REQUIRED_ACTION_INTEGER_FIELDS = {
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def raise_mineru_parse_gate(error: BaseException) -> None:
+    from .mineru_api import MineruApiError
+    from .mineru_provider import MineruProviderError
+
+    if isinstance(error, MineruApiError) and error.code in _MINERU_API_GATES:
+        raise AgentRequired(error.code, {"stage": "parse_mineru"}) from error
+    if isinstance(error, MineruProviderError):
+        code = str(error)
+        if code in _MINERU_PROVIDER_GATES:
+            raise AgentRequired(code, {"stage": "parse_mineru"}) from error
+    raise error
 
 
 class ReadingPipeline:
@@ -213,27 +241,8 @@ class ReadingPipeline:
                     paper_id=state.paper_id,
                     workspace=stage_workspace,
                 )
-            except MineruApiError as error:
-                if error.code in {
-                    "mineru_api_token_required",
-                    "mineru_api_auth_failed",
-                    "mineru_api_quota_exceeded",
-                    "mineru_api_timeout",
-                    "mineru_api_unavailable",
-                }:
-                    raise AgentRequired(
-                        error.code, {"stage": "parse_mineru"}
-                    ) from error
-                raise
-            except MineruProviderError as error:
-                code = str(error)
-                if code in {
-                    "mineru_provider_unavailable",
-                    "mineru_local_unavailable",
-                    "mineru_api_unavailable",
-                }:
-                    raise AgentRequired(code, {"stage": "parse_mineru"}) from error
-                raise
+            except (MineruApiError, MineruProviderError) as error:
+                raise_mineru_parse_gate(error)
             self._adopt_workspace_stage(
                 workspace, stage_workspace, "paper_parse_upgrade"
             )
@@ -260,7 +269,13 @@ class ReadingPipeline:
                 "paper_parse_upgrade",
                 require_stage=True,
             )
-            prepared = service.prepare(stage_workspace)
+            try:
+                prepared = service.prepare(stage_workspace)
+            except FullReadError as error:
+                raise AgentRequired(
+                    error.code,
+                    {"stage": "translate_full", "error": error.code},
+                ) from error
             translation = (
                 supplied_input.get("full_translation")
                 if isinstance(supplied_input, dict)
@@ -275,7 +290,13 @@ class ReadingPipeline:
                         "full_translation_revision_required",
                         self._translation_gate(stage_workspace, batch),
                     ) from error
-            batch = service.next_batch(stage_workspace)
+            try:
+                batch = service.next_batch(stage_workspace)
+            except FullReadError as error:
+                raise AgentRequired(
+                    error.code,
+                    {"stage": "translate_full", "error": error.code},
+                ) from error
             if batch is not None:
                 raise AgentRequired(
                     "translate_full_read",
@@ -318,17 +339,18 @@ class ReadingPipeline:
                 "paper_parse_upgrade",
                 require_stage=True,
             )
-            result = (self.reader_renderer or FullReadRenderer()).render_completed(
-                stage_workspace, paper_id=state.paper_id
-            )
-            relative = Path(result["reader_html"]).resolve().relative_to(
-                workspace.root.resolve()
-            ).as_posix()
-            library = LibraryService(self.data_root)
-            try:
-                library.publish_reader(state.paper_id, relative)
-            finally:
-                library.close()
+            with publication_guard(self.data_root, state.paper_id):
+                result = (self.reader_renderer or FullReadRenderer()).render_completed(
+                    stage_workspace, paper_id=state.paper_id
+                )
+                relative = Path(result["reader_html"]).resolve().relative_to(
+                    workspace.root.resolve()
+                ).as_posix()
+                library = LibraryService(self.data_root)
+                try:
+                    library.publish_reader(state.paper_id, relative)
+                finally:
+                    library.close()
             return {
                 "status": result["status"],
                 "reader_html": relative,
@@ -336,6 +358,23 @@ class ReadingPipeline:
                     workspace.root.resolve()
                 ).as_posix(),
                 "reader_source_sha256": result["reader_source_sha256"],
+            }
+        if stage == "schedule_derived_updates":
+            from .background_launcher import BackgroundLauncher
+
+            payload = {"data_root": str(self.data_root)}
+            request = BackgroundRequest(
+                paper_id=state.paper_id,
+                target_stage="xlsx_snapshot",
+                input_hash=hashlib.sha256(
+                    f"{state.parent_job_id}\0xlsx_snapshot".encode("utf-8")
+                ).hexdigest(),
+                payload=payload,
+            )
+            launched = BackgroundLauncher(self.data_root).enqueue(request)
+            return {
+                "status": launched.status.state,
+                "xlsx_job_id": launched.job_id,
             }
         raise AgentRequired("reading_stage_not_connected", {"stage": stage})
 
@@ -464,6 +503,7 @@ class ReadingPipeline:
             ),
         }
 
+    @root_operation
     def start(self, paper_id: str, provider_profile: str = "none") -> PipelineResult:
         if provider_profile not in {"none", "scansci"}:
             raise ValueError("trusted_provider_profile_invalid")
@@ -476,17 +516,37 @@ class ReadingPipeline:
             )
             current_sha = self._validated_source_sha(workspace.source_pdf, metadata)
             active_job_id = item.get("active_job_id")
+            if isinstance(active_job_id, str) and current_scope() is not None:
+                try:
+                    saved = self.job_store.load_status(active_job_id)
+                    active_request = self.job_store.load_request(active_job_id)
+                    if (
+                        active_request.target_stage == "full_read_pipeline"
+                        and saved.state != "completed"
+                        and saved.scope != capture_scope(self.data_root, paper_id)
+                    ):
+                        raise ScopeError("scope_job_conflict")
+                except FileNotFoundError:
+                    pass
             generation = current_sha
             if isinstance(active_job_id, str):
                 try:
                     active = self._load(active_job_id, expected_paper_id=paper_id)
                     active_profile = self.job_store.load_request(active_job_id).payload.get("provider_profile", "none")
-                    if active_profile != provider_profile:
-                        raise RuntimeError("provider_profile_conflict")
                     if active.current_stage != "completed":
-                        self._sync_library(active)
-                        return active
+                        if (
+                            active.source_pdf_sha256 is None
+                            or active.source_pdf_sha256 == current_sha
+                        ):
+                            if active_profile != provider_profile:
+                                raise RuntimeError("provider_profile_conflict")
+                            self._sync_library(active)
+                            return active
+                        if current_sha is None:
+                            generation = "missing-after:" + active.source_pdf_sha256
                     if active.source_pdf_sha256 == current_sha:
+                        if active_profile != provider_profile:
+                            raise RuntimeError("provider_profile_conflict")
                         self._sync_library(active)
                         return active
                     if current_sha is None:
@@ -566,11 +626,13 @@ class ReadingPipeline:
         finally:
             library.close()
 
+    @root_operation
     def advance(
         self, parent_job_id: str, supplied_input: dict | None = None
     ) -> PipelineResult:
         with self.job_store.claim(parent_job_id, "reading_pipeline"):
             state = self._load(parent_job_id)
+            capture_scope(self.data_root, state.paper_id)
             if state.current_stage == "completed":
                 self._sync_library(state)
                 return state
@@ -599,6 +661,7 @@ class ReadingPipeline:
                         output = self.stage_runner(stage, runner_state, supplied_input)
                 else:
                     output = self.stage_runner(stage, runner_state, supplied_input)
+                capture_scope(self.data_root, state.paper_id)
                 if not isinstance(output, dict):
                     raise ValueError("stage_output_not_json")
                 normalized_output = self._normalize_stage_output(stage, output)
@@ -644,6 +707,7 @@ class ReadingPipeline:
             state.state = "queued"
             return self._persist(state)
 
+    @root_operation
     def inspect(self, parent_job_id: str) -> PipelineResult:
         state = self._load(parent_job_id)
         status = self.job_store.load_status(parent_job_id)
@@ -659,7 +723,7 @@ class ReadingPipeline:
             if state.state not in {"completed", "failed", "needs_user", "waiting_agent"}:
                 state.state = "queued"
                 self._save(state)
-        self._sync_library(state)
+        self._sync_library(state, replace_active=False)
         return state
 
     def _complete(self, state: ReadingPipelineState) -> ReadingPipelineState:
@@ -968,7 +1032,9 @@ class ReadingPipeline:
             return "reading_stage_failed"
         return message
 
-    def _sync_library(self, state: ReadingPipelineState) -> None:
+    def _sync_library(
+        self, state: ReadingPipelineState, *, replace_active: bool = True
+    ) -> None:
         key = (
             state.state
             if state.state in {"queued", "needs_user", "failed"}
@@ -978,6 +1044,16 @@ class ReadingPipeline:
             key = "completed"
         library = LibraryService(self.data_root)
         try:
+            try:
+                capture_scope(self.data_root, state.paper_id)
+            except ScopeError:
+                return
+            if (
+                not replace_active
+                and library.get_item(state.paper_id).get("active_job_id")
+                not in {None, state.parent_job_id}
+            ):
+                return
             library.update_full_read_state(
                 state.paper_id,
                 USER_STATUS.get(key, USER_STATUS["queued"]),

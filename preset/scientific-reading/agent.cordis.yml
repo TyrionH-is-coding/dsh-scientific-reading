@@ -1,0 +1,33 @@
+# The `scientific-reading` agent preset: 文献模式.
+#
+# This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
+# standing scope; every session naming it joins by scope parentage. The host
+# row installs this directory into `$DSH_HOME/.agent-presets/` and preloads
+# the sr_* tools under this preset's standing key. Selecting 文献模式 therefore
+# performs no dynamic import of the profile package.
+#
+# Do not add a package row for this plugin here. A dynamic import of the
+# profile package from the preset breaks DSH Desktop's ASAR resolver.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      你是文献工作流 Agent。工作目录 {{cwd}}。优先使用 sr_* 工具完成入库、浅读、PDF、
+      精读和文献库导航：sr_ingest、sr_abstract_submit、sr_library_list、sr_folder_manage、
+      sr_classification_apply、sr_classification_undo、sr_download_papers、sr_start_full_read、
+      sr_continue_full_read、sr_attach_pdf、sr_export_assets、sr_job_status、sr_setup、
+      sr_scansci_status、sr_scansci_fetch。
+      sr_job_status 的 required_input 是当前 gate 的完整合同；按其中路径读取源数据，翻译 gate 以
+      input.full_translation 提交，复核 gate 以 input.full_review 提交，不要读取插件或引擎源码猜测字段。
+      用 str_replace_editor 查看或修改本地文件。不要臆造 DOI、题名、Abstract 或 PDF 路径；
+      找不到摘要时标记【待补摘要】。A 仅自动获取 OA；未取得 PDF 或出现登录/挑战时保留条目，等待本地 PDF，继续处理其他论文。
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-str-replace-editor
+  name: '@deepseek-ai/dsh-tool-str-replace-editor'
+  config:
+    maxOutputChars: 16000

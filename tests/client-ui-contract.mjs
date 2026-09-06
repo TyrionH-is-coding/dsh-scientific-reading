@@ -22,6 +22,17 @@ function loadNamedFunction(name) {
 
 const createMountController = loadNamedFunction('createMountController')
 const normalizeIngestTitles = loadNamedFunction('normalizeIngestTitles')
+const isLiteraturePreset = loadNamedFunction('isLiteraturePreset')
+const currentSessionIsLiterature = loadNamedFunction('currentSessionIsLiterature')
+assert.equal(isLiteraturePreset('scientific-reading'), true, '文献模式 id 必须识别')
+assert.equal(isLiteraturePreset('standard'), false, '标准模式不得识别为文献模式')
+assert.equal(currentSessionIsLiterature({ current: 's1', byId: { s1: { agentPreset: 'scientific-reading' } } }), true)
+assert.equal(currentSessionIsLiterature({ current: 's1', byId: { s1: { agentPreset: 'standard' } } }), false)
+assert.equal(currentSessionIsLiterature({ current: 's1', byId: { s1: {} } }), false)
+assert.equal(currentSessionIsLiterature({ current: undefined, byId: {} }), false)
+assert.match(source, /exports.inject = \['slots', 'settingsScope', 'connection', 'remote', 'sessions'\]/, 'client 必须注入 sessions 才能按会话 preset 开关标签')
+assert.match(source, /syncModeTabs/, '文献/设置标签必须随当前会话 preset 开关')
+assert.match(source, /hideModeTabs/, '离开文献模式必须注销 conversation.view 标签')
 assert.deepEqual(normalizeIngestTitles('  A paper  ', false), ['A paper'], '单篇录入必须去除首尾空白')
 assert.deepEqual(normalizeIngestTitles(' A\n\n B \nA ', true), ['A', 'B'], '批量录入必须逐行去空、去重并忽略空行')
 assert.deepEqual(normalizeIngestTitles('  \n ', true), [], '空白批量输入不得产生请求')
@@ -71,7 +82,7 @@ assert.doesNotMatch(source, /收件箱|待整理/, '不得出现未批准的收�
 assert.match(source, /aria-expanded/, 'sidebar 开关必须暴露 aria-expanded')
 assert.match(source, /--sr-sidebar-width:240px/, 'sidebar 展开宽度必须为 240px')
 assert.match(source, /--sr-sidebar-width-collapsed:56px/, 'sidebar 收起后必须只保留图标和开关')
-for (const label of ['搜索题名、作者或 DOI', '添加文献', '批量粘贴', '状态', '标签', '最近入库']) {
+for (const label of ['搜索题名、作者、DOI、摘要或已确认结论', '添加文献', '批量粘贴', '状态', '标签', '最近入库']) {
   assert.match(source, new RegExp(label), `缺少顶部控件：${label}`)
 }
 assert.match(source, /\/sr\/api\/library[^]*method:\s*'POST'/, '添加文献必须调用本地主库 POST 接口')
@@ -121,7 +132,7 @@ assert.match(source, /var disposed = false/, '每次 mount 必须有私有 dispo
 assert.match(source, /var requestSequence = 0/, '每次 mount 必须有私有请求序列')
 assert.match(source, /sequence !== requestSequence/, '过时响应不得覆盖新请求')
 assert.match(source, /dispose: function \(\) \{[^]*lifecycle\.dispose\(\)[^]*clearTimeout\(searchTimer\)[^]*clearTimeout\(tagTimer\)[^]*request\.abort\(\)[^]*disposed = true/, '卸载必须先失效 drawer session，再清理 timer、列表请求和动作控制器')
-assert.match(source, /var mountController = createMountController\(renderLiterature\)[^]*var literatureRef = mountController\.ref[^]*ref: literatureRef/, 'slot provider 必须复用稳定 callback ref')
+assert.match(source, /var mountController = createMountController\(function \(\) \{ return renderLiterature\(ctx\.sessions\); \}\)[^]*var literatureRef = mountController\.ref[^]*ref: literatureRef/, 'slot provider 必须复用稳定 callback ref 并注入 sessions')
 assert.match(source, /state\.status !== 'ready' \|\| query\.page <= 1/, '非 ready 状态必须禁用上一页')
 assert.match(source, /state\.status !== 'ready' \|\| query\.page \* query\.page_size >= state\.total/, '非 ready 状态必须禁用下一页')
 assert.match(source, /tagInput\.addEventListener\('input'/, '标签必须是可输入筛选控件')

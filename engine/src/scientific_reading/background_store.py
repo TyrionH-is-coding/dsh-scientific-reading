@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .background_models import BackgroundRequest, JobStatus
+from .data_guard import data_root_operation, root_operation
 from .workspace import atomic_write_json
+from .scope import capture_scope, ScopeError
 
 
 ALLOWED_TRANSITIONS = {
@@ -128,7 +130,8 @@ class BackgroundJobStore:
     def __init__(self, data_root: Path) -> None:
         self.data_root = Path(data_root).resolve()
         self.jobs_root = self.data_root / "jobs"
-        self.jobs_root.mkdir(parents=True, exist_ok=True)
+        with data_root_operation(self.data_root):
+            self.jobs_root.mkdir(parents=True, exist_ok=True)
 
     def handle(self, job_id: str, *, created: bool = False) -> JobHandle:
         if not re_full_job_id(job_id):
@@ -138,7 +141,9 @@ class BackgroundJobStore:
             raise FileNotFoundError(job_id)
         return JobHandle(root=root, created=created)
 
+    @root_operation
     def create_or_get(self, request: BackgroundRequest) -> JobHandle:
+        scope = capture_scope(self.data_root, request.paper_id)
         job_id = stable_job_id(request)
         final = self.jobs_root / job_id
         temporary = self.jobs_root / f".{job_id}.{uuid.uuid4().hex}.tmp"
@@ -152,6 +157,7 @@ class BackgroundJobStore:
                 state="queued",
                 created_at=now,
                 updated_at=now,
+                scope=scope,
             ).to_dict(),
         )
         try:
@@ -164,6 +170,9 @@ class BackgroundJobStore:
             existing = self.load_request(job_id)
             if existing != request:
                 raise ValueError("稳定 job_id 对应的请求不一致")
+            saved = self.load_status(job_id)
+            if scope is not None and saved.state != "completed" and saved.scope != scope:
+                raise ScopeError("scope_job_conflict")
             return JobHandle(root=final, created=False)
 
     def load_request(self, job_id: str) -> BackgroundRequest:
@@ -176,6 +185,7 @@ class BackgroundJobStore:
         payload = json.loads(handle.status_path.read_text(encoding="utf-8"))
         return JobStatus.from_dict(payload)
 
+    @root_operation
     def transition(
         self,
         job_id: str,
@@ -229,7 +239,11 @@ class BackgroundJobStore:
             if line.strip()
         ]
 
+    @root_operation
     def heartbeat(self, job_id: str, *, pid: int | None = None) -> JobStatus:
+        return self._heartbeat(job_id, pid=pid)
+
+    def _heartbeat(self, job_id: str, *, pid: int | None = None) -> JobStatus:
         status = self.load_status(job_id)
         if status.state != "running":
             return status
@@ -241,6 +255,7 @@ class BackgroundJobStore:
         atomic_write_json(self.handle(job_id).status_path, status.to_dict())
         return status
 
+    @root_operation
     def save_resume_input(self, job_id: str, values: dict) -> None:
         atomic_write_json(self.handle(job_id).resume_path, values)
 
@@ -252,6 +267,12 @@ class BackgroundJobStore:
 
     @contextmanager
     def claim(self, job_id: str, name: str):
+        with data_root_operation(self.data_root):
+            with self._claim(job_id, name):
+                yield
+
+    @contextmanager
+    def _claim(self, job_id: str, name: str):
         if not re.fullmatch(r"[a-z][a-z0-9_-]*", name):
             raise ValueError("claim 名称无效")
         lock = self.handle(job_id).root / f".claim_{name}"
@@ -281,6 +302,12 @@ class BackgroundJobStore:
     @contextmanager
     def launch_claim(self, job_id: str):
         """为一次 worker spawn 提供跨进程原子 claim。"""
+        with data_root_operation(self.data_root):
+            with self._launch_claim(job_id):
+                yield
+
+    @contextmanager
+    def _launch_claim(self, job_id: str):
         handle = self.handle(job_id)
         lock = handle.root / ".launch_claim"
         acquired = False

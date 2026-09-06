@@ -14,6 +14,45 @@ from .models import AssetRecord, PaperMetadata
 from .parse_models import ParseReport, SourceBlock
 from .workspace import PaperWorkspace, atomic_write_json
 
+_PROVIDER_STAMP_KEYS = (
+    "provider",
+    "provider_version",
+    "model_version",
+    "batch_id",
+    "result_zip_sha256",
+)
+
+
+def _resolve_provider_version(report: dict, mineru_version: str) -> str:
+    stored = report.get("provider_version")
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    provider = report.get("provider")
+    prefix = f"{provider}:" if isinstance(provider, str) and provider else ""
+    for source in (mineru_version, report.get("parser_version")):
+        if prefix and isinstance(source, str) and source.startswith(prefix):
+            derived = source[len(prefix) :].strip()
+            if derived:
+                return derived
+    raise ValueError("MinerU provider 版本缺失")
+
+
+def _canonical_parse_report(payload: dict) -> dict:
+    cleaned = {
+        key: value
+        for key, value in payload.items()
+        if key not in _PROVIDER_STAMP_KEYS
+    }
+    assets = cleaned.get("assets")
+    if isinstance(assets, list):
+        cleaned["assets"] = [
+            AssetRecord.from_dict(asset).to_dict()
+            if isinstance(asset, dict)
+            else asset
+            for asset in assets
+        ]
+    return cleaned
+
 def active_parsed_root(workspace: PaperWorkspace) -> Path:
     state = workspace.load_job()
     stage = state.stages.get("paper_parse_upgrade")
@@ -67,10 +106,7 @@ class MineruArtifactValidator:
             provider = report_payload.get("provider")
             if provider not in {"mineru-api-v4", "mineru-local-v1"}:
                 raise ValueError("MinerU 解析来源无效")
-            if (
-                not isinstance(report_payload.get("provider_version"), str)
-                or not report_payload["provider_version"]
-            ):
+            if not _resolve_provider_version(report_payload, mineru_version):
                 raise ValueError("MinerU provider 版本缺失")
             if provider == "mineru-api-v4" and (
                 not isinstance(report_payload.get("model_version"), str)
@@ -217,15 +253,9 @@ class MineruArtifactValidator:
                         encoding="utf-8"
                     )
                 )
-                for key in (
-                    "provider",
-                    "provider_version",
-                    "model_version",
-                    "batch_id",
-                    "result_zip_sha256",
-                ):
-                    stored_report.pop(key, None)
-                if regenerated_report != stored_report:
+                if _canonical_parse_report(
+                    regenerated_report
+                ) != _canonical_parse_report(stored_report):
                     raise ValueError("MinerU 规范化结果与 raw 不一致")
                 if regenerated.assets != assets:
                     raise ValueError("MinerU 规范化资产索引与 raw 不一致")
@@ -253,17 +283,17 @@ class MineruArtifactValidator:
             table_counts: dict[int, int] = {}
             for index, value in enumerate(payload):
                 item = MineruContentItem.from_dict(value, index=index)
-                if item.item_type not in {"image", "table"}:
+                if item.item_type not in {"image", "chart", "table"}:
                     continue
                 counts = (
                     image_counts
-                    if item.item_type == "image"
+                    if item.item_type in {"image", "chart"}
                     else table_counts
                 )
                 counts[item.page] = counts.get(item.page, 0) + 1
                 suffix = (
                     f"img{counts[item.page]:04d}"
-                    if item.item_type == "image"
+                    if item.item_type in {"image", "chart"}
                     else f"table{counts[item.page]:04d}"
                 )
                 asset_id = f"mineru-p{item.page:04d}-{suffix}"

@@ -14,11 +14,20 @@ _KNOWN_TYPES = {
     "aside_text",
     "list",
     "image",
+    "chart",
     "table",
+    "ref_text",
     "page_number",
     "page_footnote",
 }
-_TEXT_TYPES = {"text", "header", "aside_text", "page_number", "page_footnote"}
+_TEXT_TYPES = {
+    "text",
+    "header",
+    "aside_text",
+    "ref_text",
+    "page_number",
+    "page_footnote",
+}
 
 
 def _clean_strings(value: Any, name: str) -> tuple[str, ...]:
@@ -119,9 +128,9 @@ class MineruContentItem:
         caption: tuple[str, ...] = ()
         footnote: tuple[str, ...] = ()
         table_body = None
-        if item_type in {"image", "table"}:
+        if item_type in {"image", "chart", "table"}:
             asset_path = _relative_asset_path(value.get("img_path"))
-            prefix = "image" if item_type == "image" else "table"
+            prefix = item_type
             caption = _clean_strings(
                 value.get(f"{prefix}_caption", []),
                 f"{prefix}_caption",

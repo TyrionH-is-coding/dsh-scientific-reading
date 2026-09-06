@@ -26,8 +26,10 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__init__.py'), '')
 writeFileSync(join(fakeRoot, 'scansci_pdf', '__init__.py'), '')
 writeFileSync(join(fakeRoot, 'scansci_pdf', 'auth.py'), 'class WebVPNAuth:\n def login(self,force=False): return False\n')
 writeFileSync(join(fakeRoot, 'scansci_pdf', 'sources', '__init__.py'), '')
-writeFileSync(join(fakeRoot, 'scansci_pdf', 'sources', 'arxiv.py'), 'def download_arxiv_pdf(url,output_path,config): return None\n')
-writeFileSync(join(fakeRoot, 'scansci_pdf', 'main.py'), 'import json,os,sys\ndef app(args=None,standalone_mode=True):\n args=args or sys.argv[1:]; out=args[args.index("--output")+1]; p=os.path.join(out,"download.pdf"); open(p,"wb").write(b"%PDF-1.4\\n"+b"x"*1200+b"\\n%%EOF"); print(json.dumps({"status":"success","quality":"legal","paper":{"pdf_path":p}}))\n')
+writeFileSync(join(fakeRoot, 'scansci_pdf', 'identifiers.py'), 'def normalize_arxiv_id(value): return None\n')
+writeFileSync(join(fakeRoot, 'scansci_pdf', 'sources', 'arxiv.py'), 'def try_arxiv(identifier,output,config): raise AssertionError("unexpected arxiv request")\n')
+writeFileSync(join(fakeRoot, 'scansci_pdf', 'sources', 'unpaywall.py'), 'def try_unpaywall(doi,output,config):\n assert config["download_strategy"] == "oa_only"\n output.write_bytes(b"%PDF-1.4\\n"+b"x"*1200+b"\\n%%EOF")\n return {"success":True,"file":str(output)}\n')
+writeFileSync(join(fakeRoot, 'scansci_pdf', 'main.py'), 'raise AssertionError("A must not load generic ScanSci CLI")\n')
 writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   'import json, os, sys',
   'a=sys.argv[1:]; cmd=next((x for x in a if x in {"full-read-pipeline-start","full-read-pipeline-resume","full-read-pdf-attach-resume","pdf-attach","export-assets","artifact-resolve","library-item-v2","job-status"}), "")',
@@ -48,6 +50,8 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
 const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).find((x) => x.trim().toLowerCase().endsWith('.exe')).trim()
 const oldPath = process.env.PYTHONPATH
 process.env.PYTHONPATH = oldPath ? fakeRoot + delimiter + oldPath : fakeRoot
+const oldEmail = process.env.UNPAYWALL_EMAIL
+process.env.UNPAYWALL_EMAIL = 'fixture@example.org'
 const oldScansciRoot = process.env.SCANSCI_PDF_DATA_DIR
 process.env.SCANSCI_PDF_DATA_DIR = join(fixture, 'scansci-config')
 const routes = []
@@ -69,7 +73,7 @@ try {
   const rows = readFileSync(log, 'utf8').trim().split(/\r?\n/).map(JSON.parse).filter((x) => x.includes('full-read-pdf-attach-resume'))
   const paths = rows.map((x) => x[x.indexOf('--pdf') + 1]); assert.equal(new Set(paths).size, 2); assert.ok(paths.every((x) => x.endsWith('.pdf') && !existsSync(x)))
   const atomicJobs = rows.map((x) => x[x.indexOf('--job-id') + 1]); assert.ok(atomicJobs.every((x) => x === 'job_0123456789abcdef'))
-  const downloaded = res(); await prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/download`, { identifier: '10.1/fixture', job_id: 'job_0123456789abcdef' }), downloaded); assert.equal(downloaded.statusCode, 200); const safeDownload = JSON.parse(downloaded.body); assert.equal(safeDownload.parent_job_id, 'job_0123456789abcdef'); assert.equal('source_path' in safeDownload, false); assert.equal('pdf_path' in safeDownload, false); assert.equal('raw' in safeDownload, false)
+  const downloaded = res(); await prefix('/sr/api/paper').handler(req('POST', `/sr/api/paper/${paperId}/download`, { identifier: '10.1000/fixture', job_id: 'job_0123456789abcdef' }), downloaded); assert.equal(downloaded.statusCode, 200); const safeDownload = JSON.parse(downloaded.body); assert.equal(safeDownload.parent_job_id, 'job_0123456789abcdef'); assert.equal('source_path' in safeDownload, false); assert.equal('pdf_path' in safeDownload, false); assert.equal('raw' in safeDownload, false)
   const traversal = res(); await prefix('/sr/api/paper').handler(req('GET', '/sr/api/paper/title_traversal/reader'), traversal); assert.equal(traversal.statusCode, 404)
   const readerOut = res(); await prefix('/sr/api/paper').handler(req('GET', `/sr/api/paper/${paperId}/reader`), readerOut); assert.equal(readerOut.statusCode, 200)
   const head = res(); await prefix('/sr/reader').handler(req('HEAD', `/sr/reader/${paperId}`), head); assert.equal(head.statusCode, 200); assert.equal(head.body, '')
@@ -81,6 +85,7 @@ try {
   console.log('PASS: 精读动态路由、并发 attach 清理与资产 allowlist/SHA 合同')
 } finally {
   if (oldPath === undefined) delete process.env.PYTHONPATH; else process.env.PYTHONPATH = oldPath
+  if (oldEmail === undefined) delete process.env.UNPAYWALL_EMAIL; else process.env.UNPAYWALL_EMAIL = oldEmail
   if (oldScansciRoot === undefined) delete process.env.SCANSCI_PDF_DATA_DIR; else process.env.SCANSCI_PDF_DATA_DIR = oldScansciRoot
   rmSync(fixture, { recursive: true, force: true })
 }

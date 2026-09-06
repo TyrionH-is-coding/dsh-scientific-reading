@@ -30,15 +30,19 @@ assert.ok(Array.isArray(reports[0]?.files), 'npm pack 报告缺少 files 清单'
 
 const files = reports[0].files.map((file) => file.path)
 const fileSet = new Set(files)
+const normalizedFiles = files.map((file) => file.replace(/^package\//, ''))
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const requiredFiles = [
   'README.md',
   'package.json',
   'cordis.patch.yml',
+  'preset/scientific-reading/preset.yml',
+  'preset/scientific-reading/agent.cordis.yml',
   'lib/index.js',
   'lib/client.js',
   'lib/types/index.d.ts',
   'scripts/scansci_wrap.py',
+  'scripts/oa-requirements.txt',
   'LICENSE',
   'THIRD_PARTY_NOTICES.md',
   'MIGRATION.md',
@@ -60,10 +64,22 @@ for (const file of manifestPaths) {
 }
 for (const file of files) {
   if (/^(?:tests|docs|src|client)\//.test(file)) violations.push(`禁止打包目录: ${file}`)
-  if (file.startsWith('scripts/') && file !== 'scripts/scansci_wrap.py') {
+  if (file.startsWith('scripts/') && !['scripts/scansci_wrap.py', 'scripts/oa-requirements.txt'].includes(file)) {
     violations.push(`禁止打包开发脚本: ${file}`)
   }
   if (/\.(?:pdf|tif|tiff)$/i.test(file)) violations.push(`禁止打包文档或图像: ${file}`)
+}
+for (const forbidden of [
+  'review/',
+  'tests/reader-review-',
+  'scripts/reader-review',
+  'scripts/reader_review_',
+  'scripts/reader-acceptance.mjs',
+  'scripts/acceptance-dsh.mjs',
+]) {
+  if (normalizedFiles.some((file) => file.startsWith(forbidden))) {
+    violations.push(`审核工具不得进入发布包: ${forbidden}`)
+  }
 }
 const wheels = files.filter((file) => /^dist\/python\/dsh_scientific_reading_engine-.+\.whl$/.test(file))
 if (wheels.length !== 1) violations.push(`内置 Python wheel 数量必须为 1，实际为 ${wheels.length}`)

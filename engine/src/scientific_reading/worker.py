@@ -23,6 +23,7 @@ from .derived_pipeline import DerivedPipeline
 from .xlsx_snapshot import XlsxSnapshotService
 from .workspace import PaperWorkspace
 from .workspace import atomic_write_json
+from .scope import use_scope, capture_scope, ScopeError, publication_guard
 
 
 Handler = Callable[[BackgroundRequest, Callable[[], None]], dict]
@@ -133,8 +134,14 @@ def xlsx_snapshot_handler_factory(service=None) -> Handler:
     def handler(request: BackgroundRequest, heartbeat: Callable[[], None]) -> dict:
         selected = service or XlsxSnapshotService(Path(request.payload["data_root"]))
         heartbeat()
-        result = selected.refresh()
+        # XLSX is a system-derived whole-library snapshot, never a scoped query result.
+        with publication_guard(Path(request.payload["data_root"]), request.paper_id), use_scope(None):
+            result = selected.refresh()
         heartbeat()
+        if result["status"] == "pending":
+            raise UserRequired(result["error"]["code"], result)
+        if result["status"] == "failed":
+            raise RuntimeError(result["error"]["code"])
         return result
 
     return handler
@@ -261,6 +268,23 @@ def full_read_pipeline_handler_factory(
         parent_job_id = selected.start(
             request.paper_id, str(request.payload.get("provider_profile", "none"))
         ).parent_job_id
+        from .background_store import stable_job_id
+
+        identity_payload = {
+            key: request.payload[key]
+            for key in ("data_root", "provider_profile")
+            if key in request.payload
+        }
+        expected_parent_job_id = stable_job_id(
+            BackgroundRequest(
+                paper_id=request.paper_id,
+                target_stage=request.target_stage,
+                input_hash=request.input_hash,
+                payload=identity_payload,
+            )
+        )
+        if parent_job_id != expected_parent_job_id:
+            raise RuntimeError("full_read_parent_mismatch")
         while True:
             heartbeat()
             result = selected.advance(parent_job_id, supplied)
@@ -309,7 +333,12 @@ def _sync_library_status(request: BackgroundRequest, state: str, values: dict) -
         if isinstance(values, dict) and isinstance(values.get("status"), str)
         else state
     )
-    if request.target_stage not in {"metadata_enrichment", "abstract_read", "xlsx_snapshot"}:
+    if request.target_stage not in {
+        "metadata_enrichment",
+        "abstract_read",
+        "xlsx_snapshot",
+        "full_read_pipeline",
+    }:
         service = LibraryService(root)
         try:
             service.update_status(request.paper_id, status)
@@ -322,6 +351,28 @@ def _sync_library_status(request: BackgroundRequest, state: str, values: dict) -
                 (request.paper_id,),
             )
 def run_job(
+    store: BackgroundJobStore,
+    job_id: str,
+    handlers: dict[str, Handler] | None = None,
+    *,
+    heartbeat_interval: float = 5.0,
+) -> int:
+    from .data_guard import data_root_operation
+
+    # Includes heartbeat writes and external parser subprocess output until they stop.
+    with data_root_operation(store.data_root, timeout=300), use_scope(store.load_status(job_id).scope):
+        try:
+            capture_scope(store.data_root, store.load_request(job_id).paper_id)
+        except ScopeError as error:
+            status = store.load_status(job_id)
+            if status.state == "queued":
+                store.transition(job_id, "running", pid=os.getpid())
+            store.transition(job_id, "failed", error=str(error))
+            return 4
+        return _run_job(store, job_id, handlers, heartbeat_interval=heartbeat_interval)
+
+
+def _run_job(
     store: BackgroundJobStore,
     job_id: str,
     handlers: dict[str, Handler] | None = None,
@@ -349,11 +400,11 @@ def run_job(
 
     pid = os.getpid()
     store.transition(job_id, "running", pid=pid)
-    _sync_derived_job(request, job_id)
     stopped = threading.Event()
 
     def heartbeat() -> None:
-        store.heartbeat(job_id, pid=pid)
+        # run_job owns the root operation until this thread is joined.
+        store._heartbeat(job_id, pid=pid)
 
     def heartbeat_loop() -> None:
         while not stopped.wait(heartbeat_interval):
@@ -367,6 +418,8 @@ def run_job(
     error = None
     exit_code = 0
     try:
+        _sync_derived_job(request, job_id)
+        capture_scope(store.data_root, request.paper_id)
         values = selected(request, heartbeat)
     except AgentRequired as gate:
         state = "waiting_agent"
@@ -401,6 +454,9 @@ def run_job(
                     ).advance(request, values, parent_job_id=job_id),
                 }
         except Exception as caught:
+            if isinstance(caught, ScopeError):
+                store.transition(job_id, "failed", error=str(caught))
+                return 4
             if not isinstance(caught, BackgroundLaunchError):
                 _sync_derived_job(request, job_id, error=str(caught))
             store.transition(
@@ -419,7 +475,8 @@ def run_job(
             required_input=values,
         )
     else:
-        _sync_derived_job(request, job_id, error=error)
+        if not (error and error.startswith("scope_")):
+            _sync_derived_job(request, job_id, error=error)
         store.transition(job_id, state, error=error)
     return exit_code
 
@@ -433,7 +490,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _build_parser().parse_args()
-    raise SystemExit(run_job(BackgroundJobStore(args.data_root), args.job_id))
+    from .data_guard import data_root_operation
+
+    with data_root_operation(args.data_root, timeout=300):
+        store = BackgroundJobStore(args.data_root)
+        raise SystemExit(run_job(store, args.job_id))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,58 @@
+name: 使用问题或错误报告
+description: 报告安装、入库、PDF、解析、Reader 或 Excel 问题。
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量提供最短复现步骤。不确定的版本可以填写“不清楚”。
+        提交前去除密钥、Cookie、验证码、私人路径和未公开研究内容；无需上传整库、完整配置或浏览器 Profile。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题发生在哪一步
+      options:
+        - 安装或启动
+        - 文献入库、摘要或分类
+        - OA PDF 获取或本地 PDF 补入
+        - MinerU 解析或翻译任务
+        - Reader 或图表导出
+        - Excel 或个人笔记
+        - 备份、恢复或搜索
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本与安装方式
+      description: 例如 v0.1.0 的 Release tgz；源码安装请附提交号。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: Windows、DSH、Node 和 Python 的版本；是否刚升级或迁移数据。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 从哪个页面或对话操作开始，执行什么后出现问题。
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期结果与实际结果
+      description: 同时说明是否每次发生；方便公开时可附 DOI 或原创小样例。
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: 错误码或少量日志（可选）
+      description: 只贴相关片段，先移除敏感内容；截图可另行附在回复中。
+      render: text

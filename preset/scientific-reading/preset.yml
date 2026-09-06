@@ -1,0 +1,3 @@
+name: 文献模式
+description: 入库、浅读、合法取得 PDF、生成精读 HTML，并用本地文献库维护。
+order: 5

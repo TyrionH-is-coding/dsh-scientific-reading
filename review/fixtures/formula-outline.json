@@ -1,0 +1,56 @@
+{
+  "contract_version": "reader-review-fixture-v1",
+  "case": "formula-outline",
+  "paper_id": "fixture_formula_outline",
+  "metadata": {
+    "title": "A Compact Review Fixture for Structured Equations",
+    "authors": ["Ada Example", "Lin Test"],
+    "year": 2026,
+    "journal": "Offline Engineering Fixtures"
+  },
+  "content_items": [
+    {"type": "header", "page_idx": 0, "bbox": [40, 40, 560, 70], "text": "A Compact Review Fixture for Structured Equations", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 75, 560, 95], "text": "Ada Example and Lin Test"},
+    {"type": "header", "page_idx": 0, "bbox": [40, 110, 560, 135], "text": "Abstract", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 140, 560, 185], "text": "This deterministic fixture checks equations, citations, and a persistent outline without any network request."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 200, 560, 225], "text": "1 Introduction", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 230, 560, 275], "text": "The reader should expose a stable hierarchy while preserving long English paragraphs and citation markers [1]."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 290, 560, 315], "text": "2 Background", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 320, 560, 365], "text": "A normalized score uses the inline factor $\\frac{1}{\\sqrt{d_k}}$ before comparing two vectors."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 380, 560, 405], "text": "3 Model Architecture", "text_level": 1},
+    {"type": "header", "page_idx": 0, "bbox": [55, 415, 560, 440], "text": "3.2 Attention", "text_level": 2},
+    {"type": "header", "page_idx": 0, "bbox": [70, 450, 560, 475], "text": "3.2.1 Scaled Dot-Product Attention", "text_level": 3},
+    {"type": "text", "page_idx": 0, "bbox": [70, 480, 560, 525], "text": "The attention operator maps queries and keys to weights, then combines the values in document order."},
+    {"type": "text", "page_idx": 0, "bbox": [70, 530, 560, 575], "text": "$$\\operatorname{Attention}(Q,K,V)=\\operatorname{softmax}(QK^T/\\sqrt{d_k})V$$"},
+    {"type": "header", "page_idx": 0, "bbox": [40, 590, 560, 615], "text": "References", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 620, 560, 650], "text": "[1] Example A. Deterministic document rendering. 2026."}
+  ],
+  "asset_files": {},
+  "translations": [
+    {"block_id": "p0001-m0001", "translation_zh": "结构化公式审核样例", "highlight": "none"},
+    {"block_id": "p0001-m0002", "translation_zh": "Ada Example、Lin Test", "highlight": "none"},
+    {"block_id": "p0001-m0003", "translation_zh": "摘要", "highlight": "none"},
+    {"block_id": "p0001-m0004", "translation_zh": "该确定性样例在完全离线条件下检查公式、引用和持久化目录。", "highlight": "none"},
+    {"block_id": "p0001-m0005", "translation_zh": "1 引言", "highlight": "none"},
+    {"block_id": "p0001-m0006", "translation_zh": "阅读器应呈现稳定层级，同时保留长英文段落和引用标记。", "highlight": "none"},
+    {"block_id": "p0001-m0007", "translation_zh": "2 背景", "highlight": "none"},
+    {"block_id": "p0001-m0008", "translation_zh": "归一化分数在比较两个向量前使用行内缩放因子。", "highlight": "none"},
+    {"block_id": "p0001-m0009", "translation_zh": "3 模型架构", "highlight": "none"},
+    {"block_id": "p0001-m0010", "translation_zh": "3.2 注意力", "highlight": "none"},
+    {"block_id": "p0001-m0011", "translation_zh": "3.2.1 缩放点积注意力", "highlight": "none"},
+    {"block_id": "p0001-m0012", "translation_zh": "注意力算子将查询与键映射为权重，再按文档顺序组合值。", "highlight": "none"},
+    {"block_id": "p0001-m0013", "translation_zh": "注意力公式。", "highlight": "result"},
+    {"block_id": "p0001-m0014", "translation_zh": "参考文献", "highlight": "none"},
+    {"block_id": "p0001-m0015", "translation_zh": "", "highlight": "none"}
+  ],
+  "review": {
+    "contract_version": "full-review-v2",
+    "highlights": [],
+    "guide": {
+      "research_question": [{"text": "如何稳定呈现结构化公式和多级目录？", "source_block_ids": ["p0001-m0006"]}],
+      "key_methods": [{"text": "使用确定性的缩放点积公式与三级章节结构进行验证。", "source_block_ids": ["p0001-m0008", "p0001-m0012"]}],
+      "core_results": [{"text": "公式、目录和引用可由同一离线产物复现。", "source_block_ids": ["p0001-m0013"]}],
+      "limitations": [{"text": "这是布局与数据合同样例，不代表真实论文结论。", "source_block_ids": ["p0001-m0004"]}]
+    }
+  }
+}

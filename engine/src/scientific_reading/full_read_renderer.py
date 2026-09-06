@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .scope import workspace_publication, workspace_write, ScopeError
 
 import base64
 import hashlib
@@ -21,9 +22,11 @@ from latex2mathml.converter import convert as latex_to_mathml
 from reader.build_reader import (
     READER_BUILD_VERSION,
     build_reader,
+    clean_display_text,
     normalize_highlight_kind,
 )
 
+from .data_guard import workspace_operation
 from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
     FULL_TRANSLATION_CONTRACT_VERSION,
@@ -37,27 +40,80 @@ from .package_manifest import refresh_generation_package_manifest
 
 
 def _escape(value: object) -> str:
-    return html.escape(str(value), quote=True)
+    return html.escape(clean_display_text(str(value)), quote=True)
 
 
 _MATH_PATTERN = re.compile(
     r"(?<!\\)\$\$(.+?)(?<!\\)\$\$|(?<!\\)\$(.+?)(?<!\\)\$",
     re.DOTALL,
 )
+_MINERU_LATEX_GAP = re.compile(r"(?<=\S) (?=\S)")
+
+
+def _compact_mineru_latex(latex: str) -> str:
+    # Keep TeX's control-word terminator before removing OCR character gaps.
+    latex = re.sub(r"(\\[A-Za-z]+)\s+(?=[A-Za-z])", r"\1{}", latex)
+    return _MINERU_LATEX_GAP.sub("", latex)
+
+
+def _display_equation_source(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("$$") or (
+        stripped.startswith("$") and stripped.endswith("$")
+    ):
+        return stripped
+    return f"$${stripped}$$"
+
+
+def _render_equation(text: str) -> str:
+    return f'<div class="equation">{_render_rich_text(_display_equation_source(text))}</div>'
+
+
+def _raw_content_list(workspace: PaperWorkspace) -> list[object] | None:
+    raw_root = workspace.parsed_dir / "mineru" / "raw"
+    if not raw_root.is_dir():
+        return None
+    candidates = [
+        path
+        for path in raw_root.rglob("*_content_list.json")
+        if path.is_file() and not path.is_symlink()
+    ]
+    if len(candidates) != 1:
+        return None
+    try:
+        payload = json.loads(candidates[0].read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, list) else None
+
+
+def _raw_equations(workspace: PaperWorkspace) -> list[tuple[int, str]]:
+    items = _raw_content_list(workspace)
+    if items is None:
+        return []
+    equations: list[tuple[int, str]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get("type") != "equation":
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            equations.append((index, text.strip()))
+    return equations
 
 
 def _render_rich_text(value: object) -> str:
-    source = str(value)
+    source = clean_display_text(str(value))
     rendered: list[str] = []
     position = 0
     for match in _MATH_PATTERN.finditer(source):
         rendered.append(_escape(source[position:match.start()]))
         latex = match.group(1) if match.group(1) is not None else match.group(2)
         display = "block" if match.group(1) is not None else "inline"
+        compacted = _compact_mineru_latex(latex.strip())
         try:
-            rendered.append(latex_to_mathml(latex.strip(), display=display))
+            rendered.append(latex_to_mathml(compacted, display=display))
         except (TypeError, ValueError):
-            rendered.append(_escape(match.group(0)))
+            rendered.append(_escape(compacted or match.group(0)))
         position = match.end()
     rendered.append(_escape(source[position:]))
     return "".join(rendered)
@@ -73,6 +129,8 @@ class FullReadRenderer:
     def __init__(self, *, publish_hook: Callable[[str, Path], None] | None = None):
         self._publish_hook = publish_hook
 
+    @workspace_operation
+    @workspace_write
     def render_completed(
         self,
         workspace: PaperWorkspace,
@@ -82,12 +140,15 @@ class FullReadRenderer:
         with self._publish_claim(workspace):
             return self._render_completed(workspace, paper_id=paper_id)
 
-    def _render_completed(
+    def _load_completed_reader_inputs(
         self,
         workspace: PaperWorkspace,
-        *,
-        paper_id: str,
-    ) -> dict[str, str]:
+    ) -> tuple[
+        dict[str, Translation],
+        dict[str, tuple[str, str]],
+        FullReviewSubmission,
+        str,
+    ]:
         from .full_read_service import FullReadError, FullReadService
 
         translation_path = workspace.reading_dir / "full" / "translations.json"
@@ -96,7 +157,11 @@ class FullReadRenderer:
         try:
             payload = json.loads(translation_path.read_text(encoding="utf-8"))
             active = FullReadService._inspect_active_mineru(workspace)
-            if set(payload) != {"contract_version", "source_sha256", "translations"}:
+            if set(payload) != {
+                "contract_version",
+                "source_sha256",
+                "translations",
+            }:
                 raise ValueError("unexpected_keys")
             if payload["contract_version"] != FULL_TRANSLATION_CONTRACT_VERSION:
                 raise ValueError("translation_contract_invalid")
@@ -129,9 +194,7 @@ class FullReadRenderer:
                 raise ValueError("full_review_not_completed")
             stage_result = stage.result
             reader_revision = stage_result.get("reader_revision")
-            reader_build_version = stage_result.get(
-                "reader_build_version"
-            )
+            reader_build_version = stage_result.get("reader_build_version")
             review_value = stage_result.get("review")
             if (
                 not isinstance(reader_revision, str)
@@ -187,10 +250,53 @@ class FullReadRenderer:
                 raise ValueError("highlight_manifest_mismatch")
             highlights = expected_highlights
         except (
-            OSError, KeyError, TypeError, ValueError, json.JSONDecodeError,
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
             FullReadError,
         ) as error:
             raise ValueError("translation_manifest_invalid") from error
+        return translations, highlights, review, reader_revision
+
+    @workspace_operation
+    def render_preview_completed(
+        self,
+        workspace: PaperWorkspace,
+        *,
+        output: Path,
+        paper_id: str,
+    ) -> Path:
+        translations, highlights, review, reader_revision = (
+            self._load_completed_reader_inputs(workspace)
+        )
+        return self.render(
+            workspace,
+            translations,
+            highlights,
+            output,
+            review=review,
+            reader_revision=reader_revision,
+            paper_id=paper_id,
+        )
+
+    def _render_completed(
+        self,
+        workspace: PaperWorkspace,
+        *,
+        paper_id: str,
+    ) -> dict[str, str]:
+        from .full_read_service import FullReadService
+
+        translation_path = workspace.reading_dir / "full" / "translations.json"
+        guide_path = workspace.reading_dir / "full" / "reading_guide.json"
+        highlights_path = workspace.reading_dir / "full" / "highlights.json"
+        translations, highlights, review, reader_revision = (
+            self._load_completed_reader_inputs(workspace)
+        )
+        active = FullReadService._inspect_active_mineru(workspace)
+        reader_build_version = READER_BUILD_VERSION
         metadata, blocks, assets = self._load_active(workspace)
         block_ids = {block.block_id for block in blocks}
         body = {key: value for key, value in translations.items() if key in block_ids}
@@ -223,8 +329,9 @@ class FullReadRenderer:
                 recoverable = False
             if recoverable:
                 workspace.reader_html.parent.mkdir(parents=True, exist_ok=True)
-                staged_html.replace(workspace.reader_html)
-                staged_manifest.replace(workspace.reader_manifest)
+                with workspace_publication(workspace):
+                    staged_html.replace(workspace.reader_html)
+                    staged_manifest.replace(workspace.reader_manifest)
                 shutil.rmtree(abandoned)
                 self._validate_staged_reader(
                     workspace.reader_html, workspace.reader_manifest
@@ -332,10 +439,13 @@ class FullReadRenderer:
             if self._publish_hook is not None:
                 self._publish_hook("reader_staged", staging)
             workspace.reader_html.parent.mkdir(parents=True, exist_ok=True)
-            staged_html.replace(workspace.reader_html)
-            staged_manifest.replace(workspace.reader_manifest)
+            with workspace_publication(workspace):
+                staged_html.replace(workspace.reader_html)
+                staged_manifest.replace(workspace.reader_manifest)
             self._validate_staged_reader(workspace.reader_html, workspace.reader_manifest)
             refresh_generation_package_manifest(workspace)
+        except ScopeError:
+            raise
         except Exception:
             if old_html is not None:
                 workspace.reader_html.write_bytes(old_html)
@@ -489,13 +599,13 @@ class FullReadRenderer:
         counts: dict[tuple[str, int], int] = {}
         for index, item in enumerate(items):
             kind = item.get("type")
-            if kind not in {"image", "table"}:
+            if kind not in {"image", "chart", "table"}:
                 continue
             page = int(item["page_idx"]) + 1
-            key = (kind, page)
+            asset_kind = "figure" if kind in {"image", "chart"} else "table"
+            key = (asset_kind, page)
             counts[key] = counts.get(key, 0) + 1
-            prefix = "image" if kind == "image" else "table"
-            captions = item.get(f"{prefix}_caption", [])
+            captions = item.get(f"{kind}_caption", [])
             text = "\n".join(value.strip() for value in captions if isinstance(value, str) and value.strip())
             if not text:
                 continue
@@ -503,15 +613,14 @@ class FullReadRenderer:
             translation = translations.get(block_id)
             if translation is None or translation.source_text != text:
                 raise ValueError("caption_asset_ambiguous")
-            by_key[(kind, page, counts[key])] = translation
+            by_key[(asset_kind, page, counts[key])] = translation
         linked: dict[str, Translation] = {}
         for asset in assets:
-            kind = "image" if asset.kind == "figure" else "table"
             match = re.search(r"(?:img|table)([0-9]{4})", asset.asset_id)
             if match is None:
                 raise ValueError("caption_asset_ambiguous")
             translation = by_key.get(
-                (kind, asset.page, int(match.group(1)))
+                (asset.kind, asset.page, int(match.group(1)))
             )
             if asset.caption and translation is None:
                 raise ValueError("caption_asset_ambiguous")
@@ -522,6 +631,7 @@ class FullReadRenderer:
             raise ValueError("caption_asset_ambiguous")
         return linked
 
+    @workspace_operation
     def render(
         self,
         workspace: PaperWorkspace,
@@ -643,11 +753,50 @@ class FullReadRenderer:
         caption_links: dict[str, Translation] | None = None,
     ) -> str:
         levels = self._text_levels(blocks)
+        header_pages: dict[str, set[int]] = {}
+        for block in blocks:
+            if block.source_type == "header":
+                header_pages.setdefault(" ".join(block.text.split()), set()).add(block.page)
+        repeated_headers = {text for text, pages in header_pages.items() if len(pages) > 1}
         asset_indices = self._asset_source_indices(workspace, assets, blocks)
         pending_assets = sorted(
             self._display_assets(assets),
             key=lambda asset: (asset_indices[asset.asset_id], asset.asset_id),
         )
+        pending_equations = _raw_equations(workspace)
+
+        def flush_inserts(limit: int | None) -> None:
+            while True:
+                equation_index = (
+                    pending_equations[0][0]
+                    if pending_equations
+                    and (limit is None or pending_equations[0][0] < limit)
+                    else None
+                )
+                asset_index = (
+                    asset_indices[pending_assets[0].asset_id]
+                    if pending_assets
+                    and (
+                        limit is None
+                        or asset_indices[pending_assets[0].asset_id] < limit
+                    )
+                    else None
+                )
+                if equation_index is None and asset_index is None:
+                    return
+                if asset_index is None or (
+                    equation_index is not None and equation_index <= asset_index
+                ):
+                    _, latex = pending_equations.pop(0)
+                    article_rows.append(_render_equation(latex))
+                else:
+                    article_rows.extend(
+                        self._render_assets(
+                            workspace,
+                            [pending_assets.pop(0)],
+                            caption_links,
+                        )
+                    )
 
         toc_rows: list[str] = []
         article_rows = [
@@ -655,20 +804,14 @@ class FullReadRenderer:
             f'<p class="original-title">{_escape(metadata.title)}</p>',
         ]
         for block in blocks:
-            while pending_assets and (
-                block.source_index is not None
-                and asset_indices[pending_assets[0].asset_id] < block.source_index
-            ):
-                article_rows.extend(
-                    self._render_assets(
-                        workspace,
-                        [pending_assets.pop(0)],
-                        caption_links,
-                    )
-                )
+            flush_inserts(
+                block.source_index if block.source_index is not None else -1
+            )
             translation = translations[block.block_id]
             rendered_text = translation.translation_zh or translation.source_text
             source_type = block.source_type or "text"
+            is_page_header = source_type == "header" and " ".join(block.text.split()) in repeated_headers
+            page_header_attribute = ' data-page-header="true"' if is_page_header else ""
             raw_level = levels.get(block.block_id)
             is_heading = (
                 (
@@ -679,7 +822,7 @@ class FullReadRenderer:
                         != "outline_noise_filtered"
                     )
                 )
-            ) and block.text.strip() != metadata.title.strip() and sum(
+            ) and not is_page_header and block.text.strip() != metadata.title.strip() and sum(
                 character.isalpha() for character in block.text
             ) >= 2
             if is_heading:
@@ -705,7 +848,7 @@ class FullReadRenderer:
                 article_rows.append(
                     '<details class="source-text" '
                     f'data-block="{_escape(block.block_id)}" '
-                    f'data-page="{block.page}">'
+                    f'data-page="{block.page}"{page_header_attribute}>'
                     f"<summary>英文原文 · p{block.page} "
                     f"{_escape(block.block_id)}</summary>"
                     f'<p lang="en">{_render_rich_text(block.text)}</p>'
@@ -716,12 +859,10 @@ class FullReadRenderer:
                     ">",
                     f' class="reading-block reference-block" '
                     f'data-block="{_escape(block.block_id)}" '
-                    f'data-page="{block.page}">',
+                    f'data-page="{block.page}"{page_header_attribute}>',
                     1,
                 )
-        article_rows.extend(
-            self._render_assets(workspace, pending_assets, caption_links)
-        )
+        flush_inserts(None)
 
         authors = "、".join(metadata.authors)
         details = [
@@ -910,19 +1051,21 @@ class FullReadRenderer:
         raw_indices: dict[tuple[str, int, int], int] = {}
         for index, item in enumerate(items):
             kind = item.get("type")
-            if kind not in {"image", "table"}:
+            if kind not in {"image", "chart", "table"}:
                 continue
             page = int(item["page_idx"]) + 1
-            key = (kind, page)
+            asset_kind = "figure" if kind in {"image", "chart"} else "table"
+            key = (asset_kind, page)
             counts[key] = counts.get(key, 0) + 1
-            raw_indices[(kind, page, counts[key])] = index
+            raw_indices[(asset_kind, page, counts[key])] = index
         result: dict[str, int] = {}
         for asset in assets:
-            kind = "image" if asset.kind == "figure" else "table"
             match = re.search(r"(?:img|table)([0-9]{4})", asset.asset_id)
             if match is None:
                 raise ValueError("active_asset_order_ambiguous")
-            index = raw_indices.get((kind, asset.page, int(match.group(1))))
+            index = raw_indices.get(
+                (asset.kind, asset.page, int(match.group(1)))
+            )
             if index is None:
                 raise ValueError("active_asset_order_ambiguous")
             result[asset.asset_id] = index

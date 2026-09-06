@@ -18,6 +18,8 @@ assert.equal(Object.hasOwn(manifest.peerDependencies ?? {}, 'schemastery'), fals
 assert.equal(Object.hasOwn(manifest.devDependencies ?? {}, 'schemastery'), false)
 
 const expectedDependencies = {
+  '@deepseek-ai/dsh-agent': '0.1.0-rc.7',
+  '@deepseek-ai/dsh-subagent': '0.1.0-rc.7',
   '@deepseek-ai/dsh-tools': '0.1.0-rc.7',
   '@deepseek-ai/dsh-llm': '0.1.0-rc.7',
   '@deepseek-ai/dsh-scope': '0.1.0-rc.7',
@@ -51,6 +53,8 @@ function readInstalledPackage(name, expectedName) {
 }
 
 for (const [name, expectedName, version] of [
+  ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-agent', '0.1.0-rc.7'],
+  ['@deepseek-ai/dsh-subagent', '@deepseek-ai/dsh-subagent', '0.1.0-rc.7'],
   ['@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-tools', '0.1.0-rc.7'],
   ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-llm', '0.1.0-rc.7'],
   ['@deepseek-ai/dsh-scope', '@deepseek-ai/dsh-scope', '0.1.0-rc.7'],

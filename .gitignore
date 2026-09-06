@@ -11,6 +11,10 @@ _scratch/
 /engine/*.egg-info/
 /.pytest_cache/
 /engine/.pytest_cache/
+/outputs/
+/*.tgz
+/docs/superpowers/executions/
+/docs/survey.html
 .DS_Store
 Thumbs.db
 desktop.ini

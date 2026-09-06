@@ -9,7 +9,7 @@
 3. **生成精读 HTML**：取得并校验 PDF 后，由持久 parent job 依次完成 MinerU、翻译和 reader 生成。
 4. **维护个人文献库**：SQLite 保存系统事实；DSH 文献页负责导航和归类；美观的 Excel 工作簿提供长期表格化查看，并只允许白名单用户字段回写。
 
-首个发布版不包含文献发现、推荐、引用网络、知识图谱或综述生成。飞书退出产品路线；现存飞书代码仅作为待删除的遗留实现，不属于发布验收合同。
+首个发布版不包含文献发现、推荐、引用网络、知识图谱或综述生成。飞书退出当前产品路线；现行运行面不提供飞书能力，遗留字段和历史资料仅作兼容与追溯。
 
 ## 2. 用户界面责任
 
@@ -55,7 +55,7 @@ DSH 对话 / 文献页
 - Python 引擎不依赖 DSH UI，不读取用户日常 Chrome Profile。
 - SQLite 是系统事实来源；Excel、metadata 和 manifest 是派生视图或资产索引。
 - Excel 不是第二套完整数据库，只能通过明确白名单回写用户拥有字段。
-- 旧记录系统和飞书字段只作迁移期只读兼容；当前发布路线不再扩展它们。
+- 旧记录系统和飞书遗留字段只作兼容与追溯；当前发布路线不再扩展它们。
 
 ## 4. Excel 所有权合同
 
@@ -124,4 +124,4 @@ papers/<paper_id>/generations/<source_sha16>/
 
 这两个方向不进入首个发布版的实现和验收范围。
 
-设置页、双 MinerU 后端、安全密钥和文献页的详细合同见[V1 收口设计](superpowers/specs/2026-08-27-v1-settings-library-ui-design.md)。
+设置页、双 MinerU 后端、安全密钥和文献页的详细合同见[V1 收口设计](superpowers/specs/2026-08-27-v1-settings-library-ui-design.md)。当前代码已整合，统一验收结果见[可靠性整合验收记录](superpowers/executions/2026-09-05-reliability-integration.md)。

@@ -106,10 +106,15 @@ def validate_generation_package_manifest(
             if not isinstance(relative, str) or relative in seen:
                 raise ValueError
             seen.add(relative)
-            component = workspace.root / relative
+            if Path(relative).is_absolute():
+                raise ValueError
+            root = workspace.root.resolve()
+            candidate = root / relative
+            component = candidate.resolve()
             if (
-                not component.is_file()
-                or component.is_symlink()
+                not component.is_relative_to(root)
+                or not component.is_file()
+                or candidate.is_symlink()
                 or _sha256(component) != entry["sha256"]
             ):
                 raise ValueError

@@ -10,6 +10,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
+from zipfile import BadZipFile
 
 from .background_launcher import BackgroundLaunchError, BackgroundLauncher
 from .background_models import BackgroundRequest
@@ -22,8 +23,18 @@ from .background_store import (
 from .derived_pipeline import DerivedPipeline
 from .export_service import ExportService
 from .foreground import ForegroundTimer
+from .full_read_models import (
+    FULL_REVIEW_CONTRACT_VERSION,
+    FULL_TRANSLATION_CONTRACT_VERSION,
+)
 from .models import PaperMetadata
 from .workspace import PaperWorkspace, atomic_write_json
+from .scope import environment_scope, current_scope, require_global, capture_scope, ScopeError, publication_lock
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 def _load_metadata(path: Path) -> PaperMetadata:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -375,25 +386,21 @@ def _validated_artifact(data_root: Path, paper_id: str, rel_path: str, kind: str
     if not allowed or not relative_parts or has_symlink or not path.is_relative_to(paper_root) or not path.exists():
         raise ValueError("artifact_invalid")
     manifest_path = path.with_name("reader-manifest.json") if kind == "reader" else path / "manifest.json"
-    if kind == "reader" and (normalized.endswith("/output/reader_full.html") or normalized == "reader_full.html"):
-        result = {
-            "paper_id": paper_id,
-            "kind": kind,
-            "rel_path": normalized,
-            "legacy": True,
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        }
-        if normalized == "reader_full.html":
-            result["legacy_audited"] = True
-        return result
+    if kind == "reader" and normalized == "reader_full.html":
+        raise ValueError("artifact_not_ready")
+    if kind == "reader" and normalized.endswith("/output/reader_full.html"):
+        manifest_path = path.parent.parent / "reading/reader-manifest.json"
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise ValueError("artifact_invalid")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if kind == "reader":
-        from .migration_audit import validate_reader_manifest_shape
+        from .library_service import LibraryService
 
-        if not validate_reader_manifest_shape(manifest):
-            raise ValueError("artifact_invalid")
+        library = LibraryService(data_root)
+        try:
+            library.validate_reader(paper_id, normalized)
+        finally:
+            library.close()
         if manifest.get("paper_id") != paper_id or manifest.get("source_pdf_sha256") != expected_source_sha256 or hashlib.sha256(path.read_bytes()).hexdigest() != manifest.get("reader_sha256"):
             raise ValueError("artifact_invalid")
     else:
@@ -517,14 +524,13 @@ def _resolve_artifact(data_root: Path, paper_id: str, kind: str) -> dict:
             else:
                 selected, source_sha, *_ = ExportService._active_workspace(base, metadata)
             if selected is None or selected.root == base.root:
-                from .migration_audit import audited_legacy_pdf_sha
-
-                audited_sha = audited_legacy_pdf_sha(data_root, paper_id)
+                # 新挂接的 PDF 尚无解析代；下方仍须匹配 SQLite 附件的 SHA 和大小。
+                attached_sha = hashlib.sha256(base.source_pdf.read_bytes()).hexdigest()
                 return _validated_pdf_artifact(
                     data_root,
                     paper_id,
                     "source.pdf",
-                    audited_sha,
+                    attached_sha,
                     allow_audited_root=True,
                 )
             relative = selected.root.relative_to(base.root).as_posix()
@@ -567,7 +573,7 @@ def _resolve_artifact(data_root: Path, paper_id: str, kind: str) -> dict:
             resolved = _validated_artifact(data_root, paper_id, "reader_full.html", kind, allow_audited_root=True)
             if audit_sha == resolved.get("sha256"):
                 return resolved
-        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (ImportError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
             pass
         raise ValueError("artifact_not_ready")
     selected, source_sha, *_ = ExportService._active_workspace(base, metadata)
@@ -727,6 +733,8 @@ def _run_navigation_command(args) -> int:
                 result = service.create_folder(args.name)
             elif args.command == "folder-rename":
                 result = service.rename_folder(args.folder_id, args.name)
+            elif args.command == "library-search-rebuild":
+                result = service.rebuild_search_index()
             elif args.command == "classification-apply":
                 try:
                     for entry in proposals:
@@ -814,6 +822,15 @@ def _build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("library-ingest")
+    backup = commands.add_parser("library-backup")
+    backup.add_argument("--output", type=Path, required=True)
+    backup.add_argument("--timeout", type=float, default=30.0)
+    restore = commands.add_parser("library-restore")
+    restore.add_argument("--archive", type=Path, required=True)
+    restore.add_argument("--target", type=Path, required=True)
+    restore.add_argument("--timeout", type=float, default=30.0)
+    download_save = commands.add_parser("download-job-save")
+    download_save.add_argument("--job-id", required=True)
     listing = commands.add_parser("library-list-v2")
     listing.add_argument("--page", type=int, default=1)
     listing.add_argument("--page-size", type=int, default=50)
@@ -825,11 +842,15 @@ def _build_parser() -> argparse.ArgumentParser:
     item = commands.add_parser("library-item-v2")
     item.add_argument("--paper-id", required=True)
     commands.add_parser("folder-list")
+    folder_scope = commands.add_parser("scope-folder-state")
+    folder_scope.add_argument("--folder-id", required=True)
+    folder_scope.add_argument("--archived", choices=("true", "false"), required=True)
     folder_create = commands.add_parser("folder-create")
     folder_create.add_argument("--name", required=True)
     folder_rename = commands.add_parser("folder-rename")
     folder_rename.add_argument("--folder-id", required=True)
     folder_rename.add_argument("--name", required=True)
+    commands.add_parser("library-search-rebuild")
     apply = commands.add_parser("classification-apply")
     apply.add_argument("--input", type=Path)
     apply.add_argument("--minimum-confidence", type=float, default=0.70)
@@ -879,6 +900,21 @@ def _build_parser() -> argparse.ArgumentParser:
     xlsx_locate = commands.add_parser("xlsx-locate")
     xlsx_locate.add_argument("--paper-id", required=True)
     commands.add_parser("xlsx-import-user-fields")
+    commands.add_parser("xlsx-refresh")
+    commands.add_parser("review-session-get")
+    commands.add_parser("review-session-bind")
+    commands.add_parser("review-context")
+    commands.add_parser("review-confirm")
+    evidence = commands.add_parser("evidence-locate")
+    evidence.add_argument("--paper-id", required=True)
+    evidence.add_argument("--block-id", required=True)
+    evidence.add_argument("--quote", required=True)
+    evidence.add_argument("--page", type=int)
+    conclusion = commands.add_parser("resolve-conclusion")
+    conclusion.add_argument("--conclusion-id", required=True)
+    candidate = commands.add_parser("candidate-rebuild")
+    candidate.add_argument("--paper-id", required=True)
+    candidate.add_argument("--target-root", type=Path, required=True)
 
     batch = commands.add_parser("batch-submit")
     return parser
@@ -974,11 +1010,81 @@ def _run_xlsx(args) -> int:
     from .xlsx_snapshot import XlsxSnapshotService
 
     service = XlsxSnapshotService(args.data_root)
-    result = (
-        service.locate(args.paper_id)
-        if args.command == "xlsx-locate"
-        else service.import_user_fields()
-    )
+    if args.command == "xlsx-locate":
+        result = service.locate(args.paper_id)
+    elif args.command == "xlsx-import-user-fields":
+        result = service.import_user_fields()
+    else:
+        result = service.refresh()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _run_review(args) -> int:
+    from .review_service import ReviewService
+
+    payload = json.load(sys.stdin)
+    if not isinstance(payload, dict):
+        raise ValueError("review_payload_invalid")
+    service = ReviewService(args.data_root)
+    try:
+        if args.command == "review-session-get":
+            if set(payload) != {"parent_session_id", "paper_id"}:
+                raise ValueError("review_payload_invalid")
+            result = service.open_state(
+                payload["parent_session_id"], payload["paper_id"]
+            )
+        elif args.command == "review-session-bind":
+            if set(payload) != {
+                "parent_session_id", "paper_id", "review_session_id"
+            }:
+                raise ValueError("review_payload_invalid")
+            result = service.bind_session(
+                payload["parent_session_id"],
+                payload["paper_id"],
+                payload["review_session_id"],
+            )
+        elif args.command == "review-context":
+            if set(payload) != {"review_session_id"}:
+                raise ValueError("review_payload_invalid")
+            result = service.context_for_session(payload["review_session_id"])
+        else:
+            if set(payload) != {"review_session_id", "conclusions"}:
+                raise ValueError("review_payload_invalid")
+            result = service.confirm_conclusions(
+                payload["review_session_id"], payload["conclusions"]
+            )
+    finally:
+        service.close()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _run_evidence(args) -> int:
+    if args.command == "evidence-locate":
+        from .evidence_locator import build_locator
+
+        result = build_locator(
+            args.data_root,
+            args.paper_id,
+            args.block_id,
+            args.quote,
+            page=args.page,
+        )
+    elif args.command == "resolve-conclusion":
+        from .review_service import ReviewService
+
+        service = ReviewService(args.data_root)
+        try:
+            result = service.resolve_conclusion(args.conclusion_id)
+        finally:
+            service.close()
+    else:
+        from .candidate_rebuild import prepare_rebuild
+
+        result = prepare_rebuild(
+            args.data_root, args.paper_id, args.target_root
+        )
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -1000,14 +1106,85 @@ def _run_library_pdf_attach(args) -> int:
 
 def run_cli(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    from .data_guard import DataRootBusy, data_root_operation
+
+    try:
+        if args.command == "scope-folder-state":
+            require_global("folder_archive")
+            from .library_service import LibraryService
+            library = LibraryService(args.data_root)
+            try:
+                with data_root_operation(args.data_root), publication_lock(args.data_root), library.conn:
+                    library._require_folder(args.folder_id)
+                    key = "csr.scope.archived." + args.folder_id
+                    value = "1" if args.archived == "true" else "0"
+                    previous = library.conn.execute("SELECT value FROM library_meta WHERE key=?", (key,)).fetchone()
+                    library.conn.execute("INSERT INTO library_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+                    if value != (previous[0] if previous else "0"):
+                        for row in library.conn.execute("SELECT paper_id FROM items WHERE folder_id=?", (args.folder_id,)).fetchall():
+                            library.conn.execute("INSERT INTO library_meta(key,value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)", ("csr.scope.paper." + row[0],))
+                print(json.dumps({"folder_id": args.folder_id, "archived": args.archived == "true"}))
+                return 0
+            finally:
+                library.close()
+        if current_scope() is not None:
+            allowed = {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue", "job-status", "full-read-pipeline-start", "full-read-pipeline-resume", "full-read-pdf-attach-resume", "pdf-attach-library", "artifact-resolve", "export-assets", "abstract-read-submit", "review-session-get", "review-session-bind", "review-context", "review-confirm", "evidence-locate", "resolve-conclusion"}
+            if args.command not in allowed:
+                raise ScopeError("scope_command_forbidden")
+            if getattr(args, "paper_id", None):
+                capture_scope(args.data_root, args.paper_id)
+            if getattr(args, "job_id", None):
+                store = BackgroundJobStore(args.data_root)
+                job = store.load_request(args.job_id)
+                scope = capture_scope(args.data_root, job.paper_id)
+                status = store.load_status(args.job_id)
+                if args.command != "job-status" and status.state != "completed" and status.scope != scope:
+                    raise ScopeError("scope_job_conflict")
+        if args.command in {"library-backup", "library-restore"}:
+            from .library_backup import backup_library, restore_library
+            result = (
+                backup_library(args.data_root, args.output, timeout=args.timeout)
+                if args.command == "library-backup"
+                else restore_library(args.archive, args.target, timeout=args.timeout)
+            )
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        with data_root_operation(args.data_root):
+            return _dispatch(args)
+    except DataRootBusy as error:
+        print(json.dumps({"status": "failed", "error": str(error), "retryable": True}))
+        return 4
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        sqlite3.Error,
+        BadZipFile,
+    ) as error:
+        print(json.dumps({"status": "failed", "error": str(error)}, ensure_ascii=False))
+        return 4
+
+
+def _dispatch(args) -> int:
     timer = ForegroundTimer()
     try:
+        if args.command == "download-job-save":
+            if re.fullmatch(r"job_[0-9a-f]{16}", args.job_id) is None:
+                raise ValueError("download_job_id_invalid")
+            value = json.load(sys.stdin)
+            if not isinstance(value, dict) or value.get("status") not in {"queued", "running", "completed", "failed"}:
+                raise ValueError("download_job_payload_invalid")
+            atomic_write_json(args.data_root / "jobs" / "downloads" / (args.job_id + ".json"), value)
+            print(json.dumps({"status": "saved", "job_id": args.job_id}))
+            return 0
         if args.command == "library-ingest":
             metadata = PaperMetadata.from_dict(json.load(sys.stdin))
             return _run_library_ingest(args, metadata, deprecated=False)
         if args.command in {
             "library-list-v2", "library-item-v2", "folder-list", "folder-create",
-            "folder-rename", "classification-apply", "classification-undo",
+            "folder-rename", "library-search-rebuild", "classification-apply",
+            "classification-undo",
         }:
             return _run_navigation_command(args)
         if args.command == "derived-enqueue":
@@ -1034,8 +1211,16 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             return _run_environment(args)
         if args.command in {"mineru-secret-save", "mineru-secret-delete"}:
             return _run_mineru_secret(args)
-        if args.command in {"xlsx-locate", "xlsx-import-user-fields"}:
+        if args.command in {"xlsx-locate", "xlsx-import-user-fields", "xlsx-refresh"}:
             return _run_xlsx(args)
+        if args.command in {
+            "review-session-get", "review-session-bind", "review-context", "review-confirm"
+        }:
+            return _run_review(args)
+        if args.command in {
+            "evidence-locate", "resolve-conclusion", "candidate-rebuild"
+        }:
+            return _run_evidence(args)
         if args.command == "pdf-attach-library":
             return _run_library_pdf_attach(args)
         if args.command == "batch-submit":
@@ -1045,6 +1230,7 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
         return 4
     raise AssertionError("unreachable")
 
+@environment_scope
 def main() -> None:
     raise SystemExit(run_cli())
 

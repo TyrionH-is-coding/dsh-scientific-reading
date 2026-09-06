@@ -12,12 +12,14 @@ from typing import Any
 
 from PIL import Image
 
+from .data_guard import data_root_method_operation, workspace_operation
 from .mineru_models import MineruContentItem
 from .models import AssetRecord, PaperMetadata
 from .assets import AssetManifest
 from .mineru_artifacts import MineruArtifactValidator
 from .workspace import PaperWorkspace, validate_explicit_workspace
 from .package_manifest import refresh_generation_package_manifest
+from .scope import workspace_write
 
 
 EXPORT_CONTRACT_VERSION = "asset-export-v1"
@@ -40,6 +42,7 @@ class ExportResult:
 
 
 class ExportService:
+    @data_root_method_operation
     def export_for_paper(self, data_root: Path, paper_id: str, *, force: bool = False) -> ExportResult:
         if not isinstance(paper_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", paper_id) or ".." in paper_id:
             raise ValueError("paper_id_invalid")
@@ -51,6 +54,8 @@ class ExportService:
         workspace = PaperWorkspace.create_for_paper_id(data_root, paper_id, metadata)
         return self.export(workspace, force=force)
 
+    @workspace_operation
+    @workspace_write
     def export(self, workspace: PaperWorkspace, *, force: bool = False) -> ExportResult:
         metadata = PaperMetadata.from_dict(
             json.loads(workspace.metadata_path.read_text(encoding="utf-8"))
@@ -168,9 +173,13 @@ class ExportService:
         rows = []
         for source_index, value in enumerate(payload):
             item = MineruContentItem.from_dict(value, index=source_index)
-            if item.item_type not in {"image", "table"}:
+            if item.item_type not in {"image", "chart", "table"}:
                 continue
-            kind = "figure" if item.item_type == "image" else "table"
+            kind = (
+                "figure"
+                if item.item_type in {"image", "chart"}
+                else "table"
+            )
             page_counts = counts[kind]
             page_counts[item.page] = page_counts.get(item.page, 0) + 1
             suffix = "img" if kind == "figure" else "table"

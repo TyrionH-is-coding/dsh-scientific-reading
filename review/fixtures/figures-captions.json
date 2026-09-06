@@ -1,0 +1,55 @@
+{
+  "contract_version": "reader-review-fixture-v1",
+  "case": "figures-captions",
+  "paper_id": "fixture_figures_captions",
+  "metadata": {
+    "title": "Figures, Tables, and Long Captions in an Offline Reader",
+    "authors": ["Grace Fixture", "Alan Layout"],
+    "year": 2026,
+    "journal": "Offline Asset Fixtures"
+  },
+  "content_items": [
+    {"type": "header", "page_idx": 0, "bbox": [40, 40, 560, 70], "text": "Figures, Tables, and Long Captions in an Offline Reader", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 75, 560, 100], "text": "Grace Fixture and Alan Layout"},
+    {"type": "header", "page_idx": 0, "bbox": [40, 115, 560, 140], "text": "Abstract", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 145, 560, 190], "text": "This compact fixture verifies image placement, table rendering, long captions, and nearby highlighted evidence."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 205, 560, 230], "text": "1 Results", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 235, 560, 280], "text": "The first visual summarizes a deterministic three-stage engineering pipeline and is the primary result in this fixture."},
+    {"type": "image", "page_idx": 0, "bbox": [80, 290, 520, 500], "img_path": "assets/figure.svg", "image_caption": ["A deliberately long engineering caption explains input normalization, deterministic rendering, and final visual inspection without hiding the relationship between the figure and its supporting paragraph."], "image_footnote": [], "is_body": true},
+    {"type": "text", "page_idx": 0, "bbox": [40, 510, 560, 550], "text": "The paragraph immediately after the figure should remain adjacent when the reader switches to focus mode."},
+    {"type": "table", "page_idx": 0, "bbox": [80, 565, 520, 720], "img_path": "assets/table.svg", "table_caption": ["Table 1. Deterministic timing checkpoints for the three review stages."], "table_footnote": [], "table_body": "<table><caption>Review timings</caption><tr><th>Stage</th><th>Target</th></tr><tr><td>Load</td><td>1 s</td></tr><tr><td>Render</td><td>5 s</td></tr><tr><td>Review</td><td>interactive</td></tr></table>", "is_body": true},
+    {"type": "text", "page_idx": 0, "bbox": [40, 730, 560, 770], "text": "The structured table remains readable and does not force the article to overflow horizontally."},
+    {"type": "text", "page_idx": 0, "bbox": [40, 775, 560, 815], "text": "Together, the visual assets provide a stable regression case for captions and modal enlargement."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 830, 560, 855], "text": "References", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 860, 560, 890], "text": "[1] Fixture G. Offline asset verification. 2026."}
+  ],
+  "asset_files": {
+    "assets/figure.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"480\" height=\"220\" viewBox=\"0 0 480 220\"><rect width=\"480\" height=\"220\" fill=\"#f4f1e8\"/><rect x=\"35\" y=\"75\" width=\"100\" height=\"70\" rx=\"8\" fill=\"#f0bf3b\"/><rect x=\"190\" y=\"75\" width=\"100\" height=\"70\" rx=\"8\" fill=\"#4c8ed9\"/><rect x=\"345\" y=\"75\" width=\"100\" height=\"70\" rx=\"8\" fill=\"#2f5d50\"/><path d=\"M135 110h55M290 110h55\" stroke=\"#26352f\" stroke-width=\"5\"/><text x=\"85\" y=\"116\" text-anchor=\"middle\" font-size=\"16\">INPUT</text><text x=\"240\" y=\"116\" text-anchor=\"middle\" font-size=\"16\">RENDER</text><text x=\"395\" y=\"116\" text-anchor=\"middle\" fill=\"white\" font-size=\"16\">REVIEW</text></svg>",
+    "assets/table.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"150\" viewBox=\"0 0 360 150\"><rect width=\"360\" height=\"150\" fill=\"#faf9f5\"/><path d=\"M10 10h340v130H10zM10 55h340M180 10v130\" fill=\"none\" stroke=\"#365b50\" stroke-width=\"2\"/><text x=\"90\" y=\"40\" text-anchor=\"middle\">Stage</text><text x=\"265\" y=\"40\" text-anchor=\"middle\">Target</text></svg>"
+  },
+  "translations": [
+    {"block_id": "p0001-m0001", "translation_zh": "离线阅读器中的图、表与长图注", "highlight": "none"},
+    {"block_id": "p0001-m0002", "translation_zh": "Grace Fixture、Alan Layout", "highlight": "none"},
+    {"block_id": "p0001-m0003", "translation_zh": "摘要", "highlight": "none"},
+    {"block_id": "p0001-m0004", "translation_zh": "该紧凑样例验证图片位置、表格渲染、长图注和邻近重点证据。", "highlight": "none"},
+    {"block_id": "p0001-m0005", "translation_zh": "1 结果", "highlight": "none"},
+    {"block_id": "p0001-m0006", "translation_zh": "第一幅图概括确定性的三阶段工程流程，是本样例的主要结果。", "highlight": "result"},
+    {"block_id": "p0001-c0007", "translation_zh": "长图注说明输入归一化、确定性渲染和最终视觉检查，并保持图与支撑段落之间的关系。", "highlight": "none"},
+    {"block_id": "p0001-m0007", "translation_zh": "紧邻图片的段落在切换到重点模式时仍应保持相邻。", "highlight": "none"},
+    {"block_id": "p0001-c0009", "translation_zh": "表1：三个审核阶段的确定性时间检查点。", "highlight": "none"},
+    {"block_id": "p0001-m0008", "translation_zh": "结构化表格保持可读，并且不会迫使正文横向溢出。", "highlight": "none"},
+    {"block_id": "p0001-m0009", "translation_zh": "这些视觉资产共同构成图注和弹窗放大的稳定回归案例。", "highlight": "none"},
+    {"block_id": "p0001-m0010", "translation_zh": "参考文献", "highlight": "none"},
+    {"block_id": "p0001-m0011", "translation_zh": "", "highlight": "none"}
+  ],
+  "review": {
+    "contract_version": "full-review-v2",
+    "highlights": [],
+    "guide": {
+      "research_question": [{"text": "图表、长图注和邻近重点能否在离线 reader 中稳定呈现？", "source_block_ids": ["p0001-m0004"]}],
+      "key_methods": [{"text": "使用一张矢量图和一个结构化表格覆盖两类资产。", "source_block_ids": ["p0001-c0007", "p0001-c0009"]}],
+      "core_results": [{"text": "图、表、图注和支撑段落形成可重复的布局案例。", "source_block_ids": ["p0001-m0006", "p0001-m0007"]}],
+      "limitations": [{"text": "微型资产只用于回归，不评估真实论文图像质量。", "source_block_ids": ["p0001-m0009"]}]
+    }
+  }
+}

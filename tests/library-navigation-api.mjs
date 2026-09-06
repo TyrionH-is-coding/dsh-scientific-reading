@@ -23,13 +23,15 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   'payload = sys.stdin.read()',
   'with open(log_path, "a", encoding="utf-8") as log: log.write(json.dumps({"args": args, "response_ended": os.path.exists(marker_path)}) + "\\n")',
   'command = next((x for x in args if x in {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue"}), "")',
-  'if command == "library-list-v2": print(json.dumps({"items": [{"paper_id": "library_demo"}], "page": 2, "page_size": 7}))',
+  'if command == "library-list-v2": print(json.dumps({"items": [{"paper_id": "library_demo", "search_matches": [{"content_type":"metadata","snippet":"cell match"},{"content_type":"conclusion","snippet":"stored conclusion","conclusion_id":"review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","basis":"paper","evidence_status":"location_verified","scientific_validity":"not_assessed","claim_support":"location_only"},{"content_type":"conclusion","snippet":"unsafe","conclusion_id":"../escape","basis":"paper","evidence_status":"location_verified","claim_support":"location_only"}]}], "page": 2, "page_size": 7}))',
   'elif command == "library-item-v2":',
   '  paper_id = args[args.index("--paper-id") + 1]',
   '  items = {',
   '    "library_missing": {"paper_id": paper_id, "abstract_en": None, "abstract_zh": None, "abstract_status": "missing", "active_job_id": None, "last_error": None},',
   '    "library_completed": {"paper_id": paper_id, "abstract_en": "English abstract", "abstract_zh": "中文摘要", "abstract_status": "completed", "active_job_id": None, "last_error": None},',
   '    "library_stale": {"paper_id": paper_id, "abstract_en": "Changed abstract", "abstract_zh": "旧译文", "abstract_status": "stale", "active_job_id": "job_0123456789abcdef", "last_error": "source_changed"},',
+  '    "library_unprocessed": {"paper_id": paper_id, "abstract_en": "The level of IL6 did not increase.", "abstract_zh": None, "abstract_status": None, "active_job_id": None, "last_error": None},',
+  '    "library_bad_status": {"paper_id": paper_id, "abstract_en": "Text", "abstract_zh": None, "abstract_status": {}},',
   '  }',
   '  print(json.dumps(items[paper_id])) if paper_id in items else sys.exit(2)',
   'elif command == "folder-list": print(json.dumps([{"folder_id": "f1", "name": "Inbox"}]))',
@@ -66,9 +68,24 @@ try {
     items: [{
       paper_id: 'library_demo', title: '', authors_short: '', year: null, journal: '', folder: null, tags: [],
       abstract_status: '', full_read_status: '', has_pdf: false, has_reader: false, last_error: '',
+      search_matches: [
+        { content_type: 'metadata', snippet: 'cell match' },
+        {
+          content_type: 'conclusion', snippet: 'stored conclusion',
+          conclusion_id: 'review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', basis: 'paper',
+          evidence_status: 'location_verified', scientific_validity: 'not_assessed',
+          claim_support: 'location_only',
+          evidence_url: '/sr/evidence?conclusion_id=review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      ],
     }],
     page: 2, page_size: 7, total: 1, jobs: { running: 0, queued: 0 },
   })
+
+  const unqueried = response()
+  await route('exact', '/sr/api/library').handler({ method: 'GET', url: '/sr/api/library?page=2&page_size=7' }, unqueried)
+  assert.equal(unqueried.statusCode, 200)
+  assert.equal(Object.hasOwn(JSON.parse(unqueried.body).items[0], 'search_matches'), false)
 
   const folders = response()
   await route('exact', '/sr/api/folders').handler({ method: 'GET', url: '/sr/api/folders' }, folders)
@@ -84,6 +101,7 @@ try {
     { paper_id: 'library_missing', abstract_en: null, abstract_zh: null, status: 'missing', active_job_id: null, last_error: null },
     { paper_id: 'library_completed', abstract_en: 'English abstract', abstract_zh: '中文摘要', status: 'completed', active_job_id: null, last_error: null },
     { paper_id: 'library_stale', abstract_en: 'Changed abstract', abstract_zh: '旧译文', status: 'stale', active_job_id: 'job_0123456789abcdef', last_error: 'source_changed' },
+    { paper_id: 'library_unprocessed', abstract_en: 'The level of IL6 did not increase.', abstract_zh: null, status: null, active_job_id: null, last_error: null },
   ]) {
     const abstract = response()
     await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: `/sr/api/abstract/${expected.paper_id}` }, abstract)
@@ -95,6 +113,11 @@ try {
   await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: '/sr/api/abstract/library_absent' }, absent)
   assert.equal(absent.statusCode, 502)
   assert.deepEqual(JSON.parse(absent.body), { error: 'abstract_unavailable', detail: 'library_item_failed' })
+
+  const badStatus = response()
+  await route('prefix', '/sr/api/abstract').handler({ method: 'GET', url: '/sr/api/abstract/library_bad_status' }, badStatus)
+  assert.equal(badStatus.statusCode, 502)
+  assert.deepEqual(JSON.parse(badStatus.body), { error: 'abstract_unavailable', detail: 'library_item_failed' })
 
   rmSync(responseMarker, { force: true })
   const ingest = response()

@@ -123,6 +123,7 @@ class MineruNormalizer:
                     "text",
                     "header",
                     "aside_text",
+                    "ref_text",
                     "page_number",
                     "page_footnote",
                 }
@@ -194,7 +195,7 @@ class MineruNormalizer:
                 )
                 if item.page <= 3:
                     first_pages.append(text)
-            if item.item_type == "image":
+            if item.item_type in {"image", "chart"}:
                 image_counts[item.page] = image_counts.get(item.page, 0) + 1
                 asset_id = (
                     f"mineru-p{item.page:04d}-"
@@ -341,7 +342,7 @@ class MineruNormalizer:
 
     @staticmethod
     def _block_text(item: MineruContentItem) -> str | None:
-        if item.item_type in {"text", "header", "aside_text"}:
+        if item.item_type in {"text", "header", "aside_text", "ref_text"}:
             return item.text
         if item.item_type == "list":
             return "\n".join(f"- {value}" for value in item.list_items)

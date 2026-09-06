@@ -353,15 +353,14 @@ def verify(python: Path) -> dict[str, object]:
                 raise RuntimeError(f"job_completion_timeout: {last_status}")
             if not observed_running:
                 raise RuntimeError("running_state_not_observed")
-            code, items, stderr = run_json(
+            code, item, stderr = run_json(
                 python,
-                ["-m", "scientific_reading", "--data-root", str(data_root), "library-list"],
+                ["-m", "scientific_reading", "--data-root", str(data_root), "library-item-v2", "--paper-id", paper_id],
                 env=cli_env,
             )
-            if code or not isinstance(items, list):
-                raise RuntimeError(f"library_list_failed: {stderr.strip()}")
-            item = next((entry for entry in items if entry.get("paper_id") == paper_id), None)
-            library_status = item.get("status") if isinstance(item, dict) else None
+            if code or not isinstance(item, dict):
+                raise RuntimeError(f"library_item_failed: {stderr.strip()}")
+            library_status = item.get("status")
             if library_status != EXPECTED_LIBRARY_STATUS:
                 raise RuntimeError(f"library_status_mismatch: {library_status}")
             return {

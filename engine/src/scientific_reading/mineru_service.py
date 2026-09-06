@@ -15,13 +15,14 @@ from typing import Callable
 from . import __version__
 from .assets import AssetManifest
 from .background_models import AgentRequired
+from .data_guard import data_root_method_operation
 from .mineru_api import API_CONTRACT_VERSION
 from .mineru_models import MINERU_NORMALIZATION_VERSION
 from .mineru_normalizer import MineruNormalizer
 from .mineru_local import LocalMineruProvider
 from .mineru_provider import ApiMineruProvider, choose_provider
 from .models import AssetRecord, PaperMetadata, StageRecord
-from .mineru_artifacts import MineruArtifactValidator
+from .mineru_artifacts import MineruArtifactValidator, _resolve_provider_version
 from .package_manifest import refresh_generation_package_manifest
 from .pdf_validation import validate_pdf
 from .workspace import (
@@ -128,6 +129,7 @@ class MineruParseService:
         self.api_client_factory = api_client_factory
         self.provider_factory = provider_factory
 
+    @data_root_method_operation
     def run(
         self,
         data_root: Path,
@@ -180,7 +182,7 @@ class MineruParseService:
         else:
             selected_provider = choose_provider(
                 provider_strategy,
-                local=LocalMineruProvider(),
+                local=LocalMineruProvider(data_root=data_root),
                 api=ApiMineruProvider(
                     data_root,
                     data_id=workspace.root.name,
@@ -240,7 +242,7 @@ class MineruParseService:
             )
             workspace.save_job(running_state)
             staging = (
-                workspace.parsed_dir
+                Path(data_root).resolve()
                 / f".mineru-staging-{uuid.uuid4().hex}"
             )
             manifest_backup = (
@@ -381,6 +383,14 @@ class MineruParseService:
                 manifest_path=workspace.manifest_path,
                 metadata=metadata,
             )
+            if not (
+                isinstance(report_payload.get("provider_version"), str)
+                and report_payload["provider_version"]
+            ):
+                report_payload["provider_version"] = _resolve_provider_version(
+                    report_payload, mineru_version
+                )
+                atomic_write_json(target / "parse_report.json", report_payload)
             stage = workspace.load_job().stages.get("paper_parse_upgrade")
             if stage is None or stage.input_hash != identity:
                 raise ValueError("MinerU 缓存 identity 不匹配")

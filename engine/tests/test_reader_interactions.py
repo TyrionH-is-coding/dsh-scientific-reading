@@ -107,6 +107,8 @@ def test_reader_has_wide_responsive_and_print_contract(rendered_html):
     assert "--asset-width: 1020px" in css
     assert "@media (max-width: 1000px)" in css
     assert "@media (max-width: 680px)" in css
+    assert ".reader-main { width: 100%; max-width: 100%; overflow: clip; }" in css
+    assert ".reader-main { width: 100vw" not in css
     assert "overflow-x: auto" in css
     assert ".asset-dialog-trigger" in css
     assert "@media print" in css

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .scope import workspace_publication, workspace_write
 
 import hashlib
 import json
@@ -13,6 +14,7 @@ from typing import Any
 from reader.build_reader import READER_BUILD_VERSION
 
 from . import __version__
+from .data_guard import workspace_operation
 from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
     FULL_TRANSLATION_CONTRACT_VERSION,
@@ -93,6 +95,7 @@ class FullReadService:
     def __init__(self) -> None:
         self._prepared: dict[Path, FullReadPlanResult] = {}
 
+    @workspace_operation
     def prepare(self, workspace: PaperWorkspace) -> FullReadPlanResult:
         active = self._inspect_active_mineru(workspace)
         batches = self._build_batches(active)
@@ -147,6 +150,7 @@ class FullReadService:
         self._prepared[workspace.root] = result
         return result
 
+    @workspace_operation
     def next_batch(
         self,
         workspace: PaperWorkspace,
@@ -165,8 +169,6 @@ class FullReadService:
                 if pending is None:
                     pending = source
                 continue
-            if pending is not None:
-                raise FullReadError("full_read_artifact_inconsistent")
             try:
                 submission = TranslationBatchSubmission.from_dict(
                     json.loads(
@@ -176,16 +178,16 @@ class FullReadService:
                     expected_batch_id=batch["batch_id"],
                     expected_source_sha256=source["source_sha256"],
                 )
-            except (OSError, json.JSONDecodeError, ValueError) as error:
-                raise FullReadError(
-                    "full_read_artifact_inconsistent"
-                ) from error
-            if submission.to_dict() != json.loads(
-                translation_path.read_text(encoding="utf-8")
-            ):
+            except (OSError, json.JSONDecodeError, ValueError):
+                translation_path.unlink(missing_ok=True)
+                if pending is None:
+                    pending = source
+                continue
+            if pending is not None:
                 raise FullReadError("full_read_artifact_inconsistent")
         return pending
 
+    @workspace_operation
     def save_next_translation(
         self,
         workspace: PaperWorkspace,
@@ -196,6 +198,7 @@ class FullReadService:
             raise ValueError("full_translation_already_complete")
         return self.save_translation_batch(workspace, value)
 
+    @workspace_operation
     def save_translation_batch(
         self,
         workspace: PaperWorkspace,
@@ -270,6 +273,7 @@ class FullReadService:
         workspace.save_job(state)
         return destination
 
+    @workspace_operation
     def review_context(
         self,
         workspace: PaperWorkspace,
@@ -334,6 +338,8 @@ class FullReadService:
             "maximum_highlight_ratio": "25%",
         }
 
+    @workspace_operation
+    @workspace_write
     def finalize(
         self,
         workspace: PaperWorkspace,
@@ -482,7 +488,8 @@ class FullReadService:
                     **terminal_stage.result,
                     "cached": True,
                 }
-            self._publish_staged(staging, publications)
+            with workspace_publication(workspace):
+                self._publish_staged(staging, publications)
         finally:
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
@@ -731,7 +738,10 @@ class FullReadService:
             for source_index, item in enumerate(raw_items):
                 block = by_source_index.get(source_index)
                 if block is not None:
-                    if block.source_type == "header":
+                    if (
+                        block.source_type == "header"
+                        or block.heading_level is not None
+                    ):
                         in_references = bool(
                             re.fullmatch(
                                 r"(?:\d+(?:\.\d+)*[.)]?\s*)?"
@@ -746,7 +756,9 @@ class FullReadService:
                             "page": block.page,
                             "source_type": (
                                 "reference"
-                                if in_references
+                                if block.source_type == "ref_text"
+                                or in_references
+                                and block.heading_level is None
                                 and block.source_type != "header"
                                 else block.source_type
                             ),
@@ -755,8 +767,8 @@ class FullReadService:
                         }
                     )
                 item_type = item.get("type")
-                if item_type in {"image", "table"}:
-                    prefix = "image" if item_type == "image" else "table"
+                if item_type in {"image", "chart", "table"}:
+                    prefix = item_type
                     captions = item.get(f"{prefix}_caption", [])
                     if isinstance(captions, list):
                         caption = "\n".join(

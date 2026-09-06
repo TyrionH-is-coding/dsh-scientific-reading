@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reader Proof Desk</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17231f;
+      --muted: #69736f;
+      --paper: #fffefb;
+      --desk: #e9e7df;
+      --desk-deep: #d8d5cb;
+      --rule: rgba(23, 35, 31, .14);
+      --green: #285a4b;
+      --green-soft: #dce8e2;
+      --yellow: #f3bf31;
+      --red: #a53b30;
+      --frame-width: 100%;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 11% 8%, rgba(255, 255, 255, .76), transparent 25rem),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(23, 35, 31, .025) 48px),
+        var(--desk);
+      font-family: "Aptos", "Noto Sans CJK SC", "Microsoft YaHei UI", sans-serif;
+      overflow: hidden;
+    }
+
+    button, select { font: inherit; }
+
+    .proof-bar {
+      position: relative;
+      z-index: 10;
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: auto minmax(190px, 1fr) auto auto minmax(220px, auto);
+      align-items: center;
+      gap: 14px;
+      padding: 10px 18px;
+      background: rgba(250, 249, 244, .96);
+      border-bottom: 1px solid var(--rule);
+      box-shadow: 0 6px 22px rgba(25, 33, 29, .07);
+      backdrop-filter: blur(14px);
+    }
+
+    .identity {
+      min-width: 146px;
+      padding-right: 16px;
+      border-right: 1px solid var(--rule);
+    }
+
+    .identity-kicker {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--green);
+      font: 700 10px/1.1 ui-monospace, "Cascadia Code", monospace;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .identity-title {
+      font-family: "Iowan Old Style", "Palatino Linotype", "Noto Serif CJK SC", serif;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .field label,
+    .group-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+
+    select {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      color: var(--ink);
+      background: var(--paper);
+      border: 1px solid var(--rule);
+      border-radius: 7px;
+      padding: 0 30px 0 10px;
+      outline: none;
+    }
+
+    select:focus-visible,
+    button:focus-visible {
+      outline: 3px solid rgba(243, 191, 49, .42);
+      outline-offset: 2px;
+    }
+
+    .control-group {
+      display: grid;
+      grid-template-columns: auto auto;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .segmented {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      background: #eceae3;
+      border: 1px solid rgba(23, 35, 31, .08);
+      border-radius: 9px;
+    }
+
+    .segmented button {
+      min-height: 29px;
+      padding: 4px 10px;
+      color: #53605b;
+      background: transparent;
+      border: 0;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      color: #fff;
+      background: var(--green);
+      box-shadow: 0 2px 7px rgba(40, 90, 75, .2);
+    }
+
+    .status-stack {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      padding-left: 13px;
+      border-left: 1px solid var(--rule);
+      font: 11px/1.25 ui-monospace, "Cascadia Code", monospace;
+    }
+
+    #build-status {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #test-status { color: var(--green); }
+    #test-status[data-status="failed"] { color: var(--red); }
+    #test-status[data-status="pending"] { color: #82681f; }
+
+    .failure-banner {
+      position: fixed;
+      z-index: 9;
+      top: 78px;
+      left: 50%;
+      max-width: min(700px, calc(100vw - 32px));
+      transform: translateX(-50%);
+      padding: 9px 14px;
+      color: #702c25;
+      background: #fff0e8;
+      border: 1px solid rgba(165, 59, 48, .24);
+      border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(82, 35, 29, .12);
+      font-size: 13px;
+    }
+
+    .failure-banner[hidden] { display: none; }
+
+    .desk {
+      height: calc(100vh - 68px);
+      padding: 18px;
+      overflow: auto;
+      scrollbar-color: rgba(40, 90, 75, .38) transparent;
+    }
+
+    .frame-shell {
+      width: var(--frame-width);
+      max-width: 100%;
+      min-width: 0;
+      height: calc(100vh - 104px);
+      min-height: 520px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid rgba(23, 35, 31, .12);
+      border-radius: 6px;
+      box-shadow:
+        0 24px 60px rgba(32, 42, 37, .13),
+        0 3px 8px rgba(32, 42, 37, .08);
+      overflow: hidden;
+      transition: width 180ms ease, box-shadow 180ms ease;
+    }
+
+    .frame-shell[data-viewport="mobile"] {
+      box-shadow:
+        0 0 0 7px #24322d,
+        0 24px 60px rgba(32, 42, 37, .24);
+      border-radius: 12px;
+    }
+
+    iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+    }
+
+    @media (max-width: 1080px) {
+      .proof-bar {
+        grid-template-columns: auto minmax(180px, 1fr) auto auto;
+      }
+      .status-stack {
+        grid-column: 1 / -1;
+        grid-template-columns: 1fr auto;
+        border-left: 0;
+        border-top: 1px solid var(--rule);
+        padding: 7px 0 0;
+      }
+      .desk { height: calc(100vh - 101px); }
+      .frame-shell { height: calc(100vh - 135px); }
+    }
+
+    @media (max-width: 720px) {
+      body { overflow: auto; }
+      .proof-bar {
+        position: sticky;
+        top: 0;
+        grid-template-columns: 1fr;
+        gap: 9px;
+        padding: 11px 12px;
+      }
+      .identity {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        padding: 0 0 8px;
+        border-right: 0;
+        border-bottom: 1px solid var(--rule);
+      }
+      .control-group { grid-template-columns: 68px minmax(0, 1fr); }
+      .segmented { display: grid; grid-auto-flow: column; }
+      .segmented button { width: 100%; }
+      .status-stack { grid-template-columns: 1fr; }
+      .desk {
+        height: auto;
+        min-height: 600px;
+        padding: 12px;
+      }
+      .frame-shell { height: 78vh; min-height: 600px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .frame-shell { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="proof-bar" aria-label="Reader 审核工具栏">
+    <div class="identity">
+      <span class="identity-kicker">Reader proof</span>
+      <span class="identity-title">校样台</span>
+    </div>
+
+    <div class="field">
+      <label for="case-select">案例</label>
+      <select id="case-select" aria-label="选择审核案例"></select>
+    </div>
+
+    <div class="control-group">
+      <span class="group-label">版本</span>
+      <div class="segmented" role="group" aria-label="切换版本">
+        <button id="version-baseline" type="button" aria-pressed="false">修改前</button>
+        <button id="version-candidate" type="button" aria-pressed="true">修改后</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="group-label">画幅</span>
+      <div class="segmented" role="group" aria-label="模拟页面宽度">
+        <button id="viewport-desktop" type="button" data-width="100%" aria-pressed="true">桌面</button>
+        <button id="viewport-tablet" type="button" data-width="900px" aria-pressed="false">平板</button>
+        <button id="viewport-mobile" type="button" data-width="390px" aria-pressed="false">手机</button>
+      </div>
+    </div>
+
+    <div class="status-stack" aria-live="polite">
+      <span id="build-status">等待审核产物…</span>
+      <span id="test-status" data-status="pending">结构测试待运行</span>
+    </div>
+  </header>
+
+  <div id="failure-banner" class="failure-banner" role="status" hidden></div>
+
+  <main class="desk">
+    <div id="frame-shell" class="frame-shell" data-viewport="desktop">
+      <iframe id="reader-frame" title="Reader 审核内容"></iframe>
+    </div>
+  </main>
+
+  <script>
+    const VIEWPORT_WIDTHS = Object.freeze({
+      desktop: '100%',
+      tablet: '900px',
+      mobile: '390px',
+    })
+    const POSITION_ANCHOR_SELECTOR = [
+      'article .reading-block[data-block]',
+      'article h2[id]',
+      'article h3[id]',
+      'article h4[id]',
+      'article h5[id]',
+      'article h6[id]',
+    ].join(', ')
+
+    function viewportWidth(name) {
+      return VIEWPORT_WIDTHS[name] || VIEWPORT_WIDTHS.desktop
+    }
+
+    function candidateUrl(entry, revision) {
+      const url = new URL(entry.candidate_url, location.origin)
+      url.searchParams.set('revision', String(revision))
+      return `${url.pathname}${url.search}`
+    }
+
+    function urlForVersion(entry, version, revision) {
+      return version === 'baseline'
+        ? new URL(entry.baseline_url, location.origin).pathname
+        : candidateUrl(entry, revision)
+    }
+
+    globalThis.__readerReviewTest = Object.freeze({
+      candidateUrl,
+      positionAnchorSelector: POSITION_ANCHOR_SELECTOR,
+      urlForVersion,
+      viewportWidth,
+    })
+
+    function bootReviewPage() {
+      const elements = {
+        caseSelect: document.getElementById('case-select'),
+        frame: document.getElementById('reader-frame'),
+        frameShell: document.getElementById('frame-shell'),
+        buildStatus: document.getElementById('build-status'),
+        testStatus: document.getElementById('test-status'),
+        failureBanner: document.getElementById('failure-banner'),
+      }
+      const versionButtons = {
+        baseline: document.getElementById('version-baseline'),
+        candidate: document.getElementById('version-candidate'),
+      }
+      const viewportButtons = {
+        desktop: document.getElementById('viewport-desktop'),
+        tablet: document.getElementById('viewport-tablet'),
+        mobile: document.getElementById('viewport-mobile'),
+      }
+      const state = {
+        manifest: null,
+        revision: null,
+        selectedCase: null,
+        version: 'candidate',
+        viewport: 'desktop',
+        currentUrl: '',
+        pendingPosition: null,
+      }
+
+      function caseEntry() {
+        return state.manifest?.cases?.[state.selectedCase] || null
+      }
+
+      function capturePosition() {
+        try {
+          const frameWindow = elements.frame.contentWindow
+          const frameDocument = elements.frame.contentDocument
+          if (!frameWindow || !frameDocument?.documentElement) return null
+          const maximum = Math.max(
+            0,
+            frameDocument.documentElement.scrollHeight - frameWindow.innerHeight,
+          )
+          const anchors = [
+            ...frameDocument.querySelectorAll(POSITION_ANCHOR_SELECTOR),
+          ]
+          const anchor = anchors.find((element) => {
+            const rect = element.getBoundingClientRect()
+            return rect.bottom > 16 && rect.top < frameWindow.innerHeight * .38
+          })
+          return {
+            block: anchor?.dataset?.block || null,
+            id: anchor?.id || null,
+            hash: frameWindow.location.hash || '',
+            scrollRatio: maximum > 0 ? frameWindow.scrollY / maximum : 0,
+          }
+        } catch {
+          return null
+        }
+      }
+
+      function restorePosition(position) {
+        if (!position) return
+        try {
+          const frameWindow = elements.frame.contentWindow
+          const frameDocument = elements.frame.contentDocument
+          if (!frameWindow || !frameDocument?.documentElement) return
+          let anchor = null
+          if (position.block) {
+            anchor = [...frameDocument.querySelectorAll('[data-block]')].find(
+              (element) => element.dataset.block === position.block,
+            )
+          }
+          if (!anchor && position.id) anchor = frameDocument.getElementById(position.id)
+          if (!anchor && position.hash.startsWith('#')) {
+            anchor = frameDocument.getElementById(position.hash.slice(1))
+          }
+          if (anchor) {
+            anchor.scrollIntoView({ block: 'start' })
+            return
+          }
+          const maximum = Math.max(
+            0,
+            frameDocument.documentElement.scrollHeight - frameWindow.innerHeight,
+          )
+          frameWindow.scrollTo(0, maximum * Math.max(0, Math.min(1, position.scrollRatio || 0)))
+        } catch {
+          // A missing or not-yet-readable iframe degrades to its normal initial position.
+        }
+      }
+
+      function updateVersionButtons() {
+        for (const [name, button] of Object.entries(versionButtons)) {
+          button.setAttribute('aria-pressed', String(state.version === name))
+        }
+      }
+
+      function updateViewport(name) {
+        state.viewport = name
+        elements.frameShell.style.setProperty('--frame-width', viewportWidth(name))
+        elements.frameShell.dataset.viewport = name
+        for (const [candidate, button] of Object.entries(viewportButtons)) {
+          button.setAttribute('aria-pressed', String(candidate === name))
+        }
+      }
+
+      function updateCases() {
+        const cases = Object.keys(state.manifest?.cases || {})
+        if (!cases.length) return
+        if (!cases.includes(state.selectedCase)) {
+          state.selectedCase = state.manifest.selected_case && cases.includes(state.manifest.selected_case)
+            ? state.manifest.selected_case
+            : cases[0]
+        }
+        const fragment = document.createDocumentFragment()
+        for (const caseName of cases) {
+          const option = document.createElement('option')
+          option.value = caseName
+          option.textContent = caseName
+          option.selected = caseName === state.selectedCase
+          fragment.append(option)
+        }
+        elements.caseSelect.replaceChildren(fragment)
+      }
+
+      function updateStatus() {
+        const manifest = state.manifest
+        const commit = String(manifest?.repository_commit || 'unknown').slice(0, 7)
+        const built = manifest?.built_at
+          ? new Date(manifest.built_at).toLocaleTimeString('zh-CN', { hour12: false })
+          : '—'
+        elements.buildStatus.textContent = `构建 ${commit} · ${built} · r${manifest?.revision ?? '—'}`
+        const tests = manifest?.tests || {}
+        elements.testStatus.dataset.status = tests.status || 'pending'
+        elements.testStatus.textContent = tests.status === 'passed'
+          ? `结构测试 ${tests.passed || 0}/${tests.passed || 0}`
+          : tests.status === 'failed'
+            ? `结构测试失败 ${tests.failed || 0}`
+            : '结构测试待运行'
+        const failed = manifest?.status === 'failed' || manifest?.candidate_stale
+        elements.failureBanner.hidden = !failed
+        elements.failureBanner.textContent = failed
+          ? '本次构建失败；当前仍显示上一个成功的修改后版本。请查看终端中的稳定错误码。'
+          : ''
+      }
+
+      function setFrameSource(force = false) {
+        const entry = caseEntry()
+        if (!entry) return
+        const next = urlForVersion(entry, state.version, state.revision)
+        if (!force && next === state.currentUrl) return
+        state.pendingPosition = capturePosition()
+        state.currentUrl = next
+        elements.frame.src = next
+      }
+
+      async function pollManifest() {
+        try {
+          const response = await fetch('/api/review-manifest', { cache: 'no-store' })
+          if (!response.ok) throw new Error(`manifest ${response.status}`)
+          const manifest = await response.json()
+          if (
+            manifest.contract_version !== 'reader-review-manifest-v1'
+            || !Number.isInteger(manifest.revision)
+            || !manifest.cases
+          ) throw new Error('manifest invalid')
+          const previousRevision = state.revision
+          state.manifest = manifest
+          state.revision = manifest.revision
+          if (!state.selectedCase) state.selectedCase = manifest.selected_case
+          updateCases()
+          updateStatus()
+          if (previousRevision === null) {
+            setFrameSource(true)
+          } else if (
+            previousRevision !== state.revision
+            && state.version === 'candidate'
+            && !manifest.candidate_stale
+          ) {
+            setFrameSource()
+          }
+        } catch {
+          elements.testStatus.dataset.status = 'failed'
+          elements.testStatus.textContent = '审核 manifest 暂不可用'
+        }
+      }
+
+      elements.frame.addEventListener('load', () => {
+        const pending = state.pendingPosition
+        state.pendingPosition = null
+        requestAnimationFrame(() => restorePosition(pending))
+      })
+
+      elements.caseSelect.addEventListener('change', () => {
+        state.selectedCase = elements.caseSelect.value
+        setFrameSource(true)
+      })
+
+      for (const [name, button] of Object.entries(versionButtons)) {
+        button.addEventListener('click', () => {
+          if (state.version === name) return
+          state.version = name
+          updateVersionButtons()
+          setFrameSource(true)
+        })
+      }
+
+      for (const [name, button] of Object.entries(viewportButtons)) {
+        button.addEventListener('click', () => updateViewport(name))
+      }
+
+      updateVersionButtons()
+      updateViewport('desktop')
+      pollManifest()
+      setInterval(pollManifest, 800)
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bootReviewPage, { once: true })
+    } else {
+      bootReviewPage()
+    }
+  </script>
+</body>
+</html>

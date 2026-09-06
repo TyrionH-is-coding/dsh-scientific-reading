@@ -1,21 +1,28 @@
 {
   "name": "@dsh-external/dsh-scientific-reading",
-  "version": "0.0.1",
+  "version": "0.1.0-rc.1",
   "description": "DSH 文献工作流：合法下载、MinerU 解析、精读 HTML、本地库与 Excel 总表",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
-    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "types": "./lib/types/index.d.ts",
   "files": [
     "lib",
+    "preset",
     "dist/python/*.whl",
     "scripts/scansci_wrap.py",
+    "scripts/oa-requirements.txt",
     "cordis.patch.yml",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
@@ -38,7 +45,9 @@
     "@deepseek-ai/dsh-llm": ">=0.0.1-rc <2",
     "@deepseek-ai/dsh-tools": ">=0.0.1-rc <2",
     "cordis": ">=4.0.0-rc <5",
-    "@deepseek-ai/schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@deepseek-ai/dsh-agent": ">=0.1.0-rc.7 <2",
+    "@deepseek-ai/dsh-subagent": ">=0.1.0-rc.7 <2"
   },
   "dshCompatibility": {
     "testedHost": "0.1.0-rc.7",
@@ -56,7 +65,9 @@
     "@deepseek-ai/schemastery": "3.18.1",
     "@types/node": "24.13.3",
     "cordis": "npm:@deepseek-ai/cordis@4.0.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-subagent": "0.1.0-rc.7"
   },
   "scripts": {
     "build": "node scripts/build-engine.mjs && tsc -p tsconfig.json && node scripts/build-client.mjs",
@@ -74,11 +85,18 @@
     "test:full-read-routes": "node tests/full-read-routes.mjs",
     "test:hidden-subprocess": "node tests/task7-hidden-subprocess.mjs",
     "test:asset-export-routes": "node tests/asset-export-routes.mjs",
-    "test:engine": "python -m pip install -e \"engine[dev]\" && python -m pytest -q engine/tests",
+    "test:engine": "node scripts/run-python.mjs -m pytest -q engine/tests",
     "test:wheel": "node tests/bundled-engine.mjs",
-    "test:offline": "node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/client-actions.mjs && node tests/client-batch-actions.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/reading-routes.mjs && node tests/full-read-pipeline.mjs && node tests/full-read-routes.mjs && node tests/asset-export-routes.mjs && node tests/batch-contract.mjs && node tests/download-batch.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/settings-status-routes.mjs && node tests/excel-actions.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/task7-hidden-subprocess.mjs && node tests/ci-workflow.mjs && node tests/harness.mjs && node tests/feishu-retired.mjs && node tests/mineru-secret-boundary.mjs && node tests/current-runtime-boundary.mjs && node tests/bundled-engine.mjs && node scripts/plugin-check.mjs",
-    "verify:restart-recovery": "python scripts/verify_restart_recovery.py --full-read",
+    "test:offline": "node tests/client-build.mjs && node tests/client-ui-contract.mjs && node tests/client-actions.mjs && node tests/client-batch-actions.mjs && node tests/dsh-compat.mjs && node tests/bundle-contract.mjs && node tests/package-contents.mjs && node tests/reading-routes.mjs && node tests/full-read-pipeline.mjs && node tests/full-read-routes.mjs && node tests/asset-export-routes.mjs && node tests/batch-contract.mjs && node tests/download-batch.mjs && node tests/oa-download-boundary.mjs && node tests/two-stage-ingest.mjs && node tests/phase1-plugin-contract.mjs && node tests/library-navigation-api.mjs && node tests/settings-status-routes.mjs && node tests/settings-page-ui.mjs && node tests/excel-actions.mjs && node tests/restart-recovery-pid-safety.mjs && node tests/task7-hidden-subprocess.mjs && node tests/ci-workflow.mjs && node tests/literature-preset.mjs && node tests/harness.mjs && node tests/feishu-retired.mjs && node tests/mineru-secret-boundary.mjs && node tests/current-runtime-boundary.mjs && node tests/bundled-engine.mjs && node scripts/plugin-check.mjs && node tests/client-review-actions.mjs && node tests/review-engine-adapter.mjs && node tests/review-session-routes.mjs && node tests/review-tools.mjs && node tests/reader-review-server.mjs && node tests/reader-review-ui.mjs && node tests/reader-review-cli.mjs && node tests/reader-review-qa.mjs && node tests/reader-acceptance.mjs --self-check && node tests/acceptance-dsh.mjs --self-check",
+    "verify:restart-recovery": "node scripts/run-python.mjs scripts/verify_restart_recovery.py --full-read",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && npm run test:engine && npm run test:offline"
+    "test": "npm run build && npm run test:engine && npm run test:offline && npm run test:assets",
+    "test:assets": "node tests/library-assets-tools.mjs && node tests/evidence-engine-adapter.mjs && node tests/evidence-routes.mjs && node tests/library-search-ui.mjs",
+    "test:client-review": "node tests/client-review-actions.mjs",
+    "test:review": "node tests/review-engine-adapter.mjs && node tests/review-session-routes.mjs && node tests/review-tools.mjs",
+    "reader:review": "node scripts/reader-review.mjs",
+    "reader:acceptance": "node scripts/reader-acceptance.mjs",
+    "reader:review:qa": "node scripts/reader-review-qa.mjs",
+    "acceptance:dsh": "node scripts/acceptance-dsh.mjs"
   }
 }

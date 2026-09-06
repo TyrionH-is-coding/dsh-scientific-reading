@@ -11,6 +11,7 @@ from typing import Callable
 
 from .background_models import BackgroundRequest, JobStatus
 from .background_store import BackgroundJobStore, JobClaimUnavailable
+from .data_guard import root_operation
 from .workspace import atomic_write_json
 
 
@@ -84,10 +85,12 @@ class BackgroundLauncher:
         self.store = BackgroundJobStore(self.data_root)
         self.popen = popen
 
+    @root_operation
     def enqueue(self, request: BackgroundRequest) -> LaunchResult:
         handle = self.store.create_or_get(request)
         return self._start(handle.job_id, recover_terminal=not handle.created)
 
+    @root_operation
     def launch_existing(self, job_id: str) -> LaunchResult:
         return self._start(job_id, recover_terminal=True, strict=True)
 
@@ -189,6 +192,7 @@ class BackgroundLauncher:
                         shell=False,
                         start_new_session=os.name != "nt",
                         creationflags=creationflags,
+                        env=self._worker_environment(),
                     )
                 atomic_write_json(
                     launch_marker,
@@ -216,3 +220,12 @@ class BackgroundLauncher:
             status=self.store.load_status(job_id),
             process_started=True,
         )
+
+    def _worker_environment(self) -> dict[str, str]:
+        from .secret_store import resolve_mineru_token
+
+        env = {key: value for key, value in os.environ.items() if value is not None}
+        token, _source = resolve_mineru_token(self.data_root)
+        if token:
+            env["MINERU_API_TOKEN"] = token
+        return env

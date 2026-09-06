@@ -1,4 +1,5 @@
 import type { Context } from 'cordis'
+import { isAbsolute } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config } from './config.js'
 import { resolveDataRoot } from './config.js'
@@ -13,6 +14,7 @@ import {  engineJobStatus,  engineLibraryIngest,
   engineExportAssets,
   engineAttachAndResumeFullReadPdf,
   engineJson,
+  runEngine,
 } from './cli.js'
 import { isPaperId } from './papers.js'
 import { readDownloadJob, submitDownloadBatch } from './download_batch.js'
@@ -57,6 +59,24 @@ function scheduleDerived(config: Config, paperId: string, logger?: (message: str
   })
 }
 
+function fullReadGateGuidance(reasonCode: string): string {
+  if (reasonCode === 'translate_full_read' || reasonCode === 'full_translation_revision_required') {
+    return [
+      '翻译 gate：读取 required_input.source_manifest_path；按其中 blocks 原顺序逐项提交，block_id 和 source_text（blocks[].english）必须原样保留。',
+      'reference 块必须 translation_zh=""、highlight="none"；其他块填写中文译文，highlight 只能是 result、method 或 none。',
+      '调用 sr_continue_full_read，input={"full_translation":{"contract_version":源文件.translation_contract_version,"batch_id":required_input.batch_id,"source_sha256":required_input.source_sha256,"translations":[{"block_id":"...","source_text":"...","translation_zh":"...","highlight":"none"}]}}。',
+    ].join('\n')
+  }
+  if (reasonCode === 'review_full_read' || reasonCode === 'full_review_revision_required' || reasonCode === 'full_read_artifact_inconsistent') {
+    return [
+      '复核 gate：读取 required_input.translations_json；仅使用 available_source_block_ids，并遵守 maximum_full_review_highlights 与 guide_limits。',
+      'highlights 每项为 {"block_id","kind":"result|method","reason"}；guide 必须含 research_question、key_methods、core_results、limitations 四个数组，每项为 {"text","source_block_ids"}（1-3 个来源块）。',
+      '调用 sr_continue_full_read，input={"full_review":{"contract_version":required_input.contract_version,"highlights":[],"guide":{"research_question":[{"text":"...","source_block_ids":["从 available_source_block_ids 选择"]}],"key_methods":[],"core_results":[],"limitations":[]}}}。',
+    ].join('\n')
+  }
+  return ''
+}
+
 export function registerLibraryTools(ctx: Context, config: Config): void {
 
   const requirePaperId = (value: string): void => {
@@ -67,8 +87,44 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   }
 
   ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_library_backup',
+    description: '等待活动写入结束后创建整库备份。output 必须是库外的新绝对路径；保留阅读资产和用户记录，排除运行环境及凭据。',
+    parameters: { output: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { output: string }) {
+      if (typeof args.output !== 'string' || !isAbsolute(args.output)) throw new Error('absolute_output_required')
+      const result = await runEngine(config, ['library-backup', '--output', args.output], { timeoutMs: 900_000 })
+      return (result.json ?? { status: 'failed', error: result.stderr || 'library_backup_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_library_backup')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_library_restore',
+    description: '校验整库备份并恢复到新建或空的绝对目录。不会切换当前库；未完成任务需显式继续，凭据需重新配置。',
+    parameters: { archive: { type: 'string', required: true }, target: { type: 'string', required: true } },
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute(args: { archive: string; target: string }) {
+      if (typeof args.archive !== 'string' || !isAbsolute(args.archive)) throw new Error('absolute_archive_required')
+      if (typeof args.target !== 'string' || !isAbsolute(args.target)) throw new Error('absolute_target_required')
+      const result = await runEngine(config, ['library-restore', '--archive', args.archive, '--target', args.target], { timeoutMs: 900_000 })
+      return (result.json ?? { status: 'failed', error: result.stderr || 'library_restore_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_library_restore')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
+    name: 'sr_library_search_rebuild',
+    description: '从 SQLite 原始记录重建元数据、摘要和已确认结论的搜索索引；不改写原始记录。',
+    parameters: {},
+    output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text(JSON.stringify(value)) },
+    async execute() {
+      const result = await runEngine(config, ['library-search-rebuild'], { timeoutMs: 900_000 })
+      return (result.json ?? { status: 'failed', error: result.stderr || 'library_search_rebuild_failed' }) as never
+    },
+  })), '@dsh-external/dsh-scientific-reading: sr_library_search_rebuild')
+
+  ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_download_papers',
-    description: '在后台为一篇或多篇已入库文献补齐 PDF；先直连/OA，再整批复用一次机构会话。',
+    description: '在后台为一篇或多篇已入库文献补齐 PDF；仅尝试 OA，未取得时保留条目并等待本地文件，不阻塞其他文献。',
     parameters: { paper_ids: { type: 'array', items: { type: 'string' }, required: true } },
     output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('PDF 批次：' + JSON.stringify(value)) },
     async execute(args: { paper_ids: string[] }) {
@@ -92,7 +148,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_continue_full_read',
-    description: '仅按当前 needs_user/waiting_agent gate 合同继续精读父任务。',
+    description: '仅按 sr_job_status 当前 gate 继续精读父任务；翻译 gate 的 input 仅含 full_translation，复核 gate 的 input 仅含 full_review，具体字段和源文件约束见状态输出。',
     parameters: { job_id: { type: 'string', required: true }, input: { type: 'object', required: true, additionalProperties: true } },
     output: { schema: { type: 'json' }, render: (_args: unknown, value: unknown) => text('精读继续：' + JSON.stringify(value)) },
     async execute(args: { job_id: string; input: Record<string, unknown> }) {
@@ -172,7 +228,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
   // ── sr_init：初始化论文工作区 ──────────────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'sr_library_list',
-    description: '分页列出本地文献库（支持 page/page_size/query/folder/tags/status）。文献页数据源。',
+    description: '分页列出本地文献库（支持 page/page_size/query/folder/tags/status）。query 检索元数据、摘要和已确认结论，并返回分类片段及证据状态。',
     parameters: {
       page: { type: 'integer' },
       page_size: { type: 'integer' },
@@ -264,14 +320,21 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
         const d = (v.detail ?? {}) as Record<string, unknown>
         const reasonCode = d.reason_code ? String(d.reason_code) : ''
         const mineruHints: Record<string, string> = {
-          mineru_api_token_required: '未配置 MINERU_API_TOKEN，请设置宿主环境变量并重启 DSH',
+          mineru_api_token_required: '未保存 MinerU API Key，请在【设置与状态】页粘贴并保存',
           mineru_api_auth_failed: 'MinerU API 凭证无效或已过期',
           mineru_api_quota_exceeded: 'MinerU API 今日额度或任务数已达上限',
           mineru_api_timeout: 'MinerU 解析仍未完成，可稍后继续',
           mineru_api_unavailable: 'MinerU 服务或网络暂时不可用，可稍后重试',
         }
         const reason = reasonCode ? '（' + (mineruHints[reasonCode] || reasonCode) + '）' : ''
-        return text('任务 ' + String(v.job_id) + '：' + String(v.status) + '，next_action=' + String(v.next_action) + reason)
+        const lines = ['任务 ' + String(v.job_id) + '：' + String(v.status) + '，next_action=' + String(v.next_action) + reason]
+        const requiredInput = d.required_input
+        if (requiredInput && typeof requiredInput === 'object' && !Array.isArray(requiredInput)) {
+          lines.push('required_input=' + JSON.stringify(requiredInput, null, 2))
+        }
+        const guidance = fullReadGateGuidance(reasonCode)
+        if (guidance) lines.push(guidance)
+        return text(lines.join('\n'))
       },
     },
     async execute(args: { job_id: string }) {

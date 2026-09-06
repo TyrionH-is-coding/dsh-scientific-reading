@@ -13,8 +13,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .data_guard import data_root_operation
 
-TARGET_VERSION = 2
+
+TARGET_VERSION = 4
 
 _V1_SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -101,6 +103,24 @@ _V2_REQUIRED_COLUMNS = {
     "library_meta": {"key", "value"},
 }
 
+_V3_REQUIRED_COLUMNS = {
+    **_V2_REQUIRED_COLUMNS,
+    "review_sessions": {
+        "parent_session_id", "paper_id", "review_session_id", "created_at", "updated_at",
+    },
+    "review_conclusions": {
+        "conclusion_id", "parent_session_id", "paper_id", "review_session_id",
+        "conclusion_type", "conclusion_text", "evidence_locator", "confirmed_at",
+        "created_at", "updated_at",
+    },
+}
+
+_V4_REQUIRED_COLUMNS = {
+    **_V3_REQUIRED_COLUMNS,
+    "review_conclusions": _V3_REQUIRED_COLUMNS["review_conclusions"]
+    | {"evidence_json", "basis"},
+}
+
 _V1_REQUIRED_FOREIGN_KEYS = {
     "attachments": {("paper_id", "items", "paper_id")},
     "item_tags": {
@@ -130,8 +150,17 @@ _V2_REQUIRED_PRIMARY_KEYS = {
     "library_meta": ("key",),
 }
 
+_V3_REQUIRED_PRIMARY_KEYS = {
+    **_V2_REQUIRED_PRIMARY_KEYS,
+    "review_sessions": ("parent_session_id", "paper_id"),
+    "review_conclusions": ("conclusion_id",),
+}
+_V4_REQUIRED_PRIMARY_KEYS = dict(_V3_REQUIRED_PRIMARY_KEYS)
+
 _V1_REQUIRED_UNIQUE_KEYS = {"items": "library_key"}
 _V2_REQUIRED_UNIQUE_KEYS = {**_V1_REQUIRED_UNIQUE_KEYS, "folders": "name"}
+_V3_REQUIRED_UNIQUE_KEYS = {**_V2_REQUIRED_UNIQUE_KEYS, "review_sessions": "review_session_id"}
+_V4_REQUIRED_UNIQUE_KEYS = dict(_V3_REQUIRED_UNIQUE_KEYS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +236,50 @@ def _add_v2_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE items ADD COLUMN {name} {declaration}")
 
 
+def _create_v3_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS review_sessions ("
+        "parent_session_id TEXT NOT NULL, "
+        "paper_id TEXT NOT NULL REFERENCES items(paper_id), "
+        "review_session_id TEXT NOT NULL UNIQUE, "
+        "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+        "PRIMARY KEY (parent_session_id, paper_id), "
+        "UNIQUE (parent_session_id, paper_id, review_session_id))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS review_conclusions ("
+        "conclusion_id TEXT PRIMARY KEY, "
+        "parent_session_id TEXT NOT NULL, paper_id TEXT NOT NULL, "
+        "review_session_id TEXT NOT NULL, "
+        "conclusion_type TEXT NOT NULL, conclusion_text TEXT NOT NULL, "
+        "evidence_locator TEXT NOT NULL DEFAULT '', "
+        "confirmed_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+        "FOREIGN KEY (parent_session_id, paper_id, review_session_id) "
+        "REFERENCES review_sessions(parent_session_id, paper_id, review_session_id))"
+    )
+
+
+def _add_v4_columns(conn: sqlite3.Connection) -> None:
+    existing = {
+        row[1] for row in conn.execute("PRAGMA table_info(review_conclusions)")
+    }
+    if "evidence_json" not in existing:
+        conn.execute(
+            "ALTER TABLE review_conclusions ADD COLUMN evidence_json TEXT"
+        )
+    if "basis" not in existing:
+        conn.execute(
+            "ALTER TABLE review_conclusions ADD COLUMN basis TEXT "
+            "NOT NULL DEFAULT 'legacy'"
+        )
+
+
+def _ensure_search_index(conn: sqlite3.Connection) -> None:
+    from .library_search import ensure_search_schema
+
+    ensure_search_schema(conn)
+
+
 def _store_warnings(conn: sqlite3.Connection, warnings: tuple[str, ...]) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO library_meta (key, value) VALUES (?, ?)",
@@ -263,9 +336,12 @@ def _foreign_keys(conn: sqlite3.Connection, table: str) -> set[tuple[str, str, s
 
 def _validate_structural_constraints(conn: sqlite3.Connection, label: str) -> None:
     problems: list[str] = []
-    required_primary_keys = (
-        _V2_REQUIRED_PRIMARY_KEYS if label == "v2" else _V1_REQUIRED_PRIMARY_KEYS
-    )
+    required_primary_keys = {
+        "v1": _V1_REQUIRED_PRIMARY_KEYS,
+        "v2": _V2_REQUIRED_PRIMARY_KEYS,
+        "v3": _V3_REQUIRED_PRIMARY_KEYS,
+        "v4": _V4_REQUIRED_PRIMARY_KEYS,
+    }[label]
     for table, required in required_primary_keys.items():
         actual = tuple(
             row[1]
@@ -277,9 +353,12 @@ def _validate_structural_constraints(conn: sqlite3.Connection, label: str) -> No
         if actual != required:
             problems.append(f"{table}.primary_key:{actual!r}")
 
-    required_unique_keys = (
-        _V2_REQUIRED_UNIQUE_KEYS if label == "v2" else _V1_REQUIRED_UNIQUE_KEYS
-    )
+    required_unique_keys = {
+        "v1": _V1_REQUIRED_UNIQUE_KEYS,
+        "v2": _V2_REQUIRED_UNIQUE_KEYS,
+        "v3": _V3_REQUIRED_UNIQUE_KEYS,
+        "v4": _V4_REQUIRED_UNIQUE_KEYS,
+    }[label]
     for table, column in required_unique_keys.items():
         if not _has_single_column_unique_index(conn, table, column):
             problems.append(f"{table}.{column}_unique")
@@ -295,8 +374,15 @@ def _validate_structural_constraints(conn: sqlite3.Connection, label: str) -> No
         problems.append("fulltext_fts5")
 
     required_foreign_keys = dict(_V1_REQUIRED_FOREIGN_KEYS)
-    if label == "v2":
+    if label in {"v2", "v3", "v4"}:
         required_foreign_keys["items"] = {("folder_id", "folders", "folder_id")}
+    if label in {"v3", "v4"}:
+        required_foreign_keys["review_sessions"] = {("paper_id", "items", "paper_id")}
+        required_foreign_keys["review_conclusions"] = {
+            ("parent_session_id", "review_sessions", "parent_session_id"),
+            ("paper_id", "review_sessions", "paper_id"),
+            ("review_session_id", "review_sessions", "review_session_id"),
+        }
     for table, required in required_foreign_keys.items():
         missing = required - _foreign_keys(conn, table)
         if missing:
@@ -314,27 +400,30 @@ def _validate_foreign_keys(conn: sqlite3.Connection) -> None:
         raise sqlite3.DatabaseError(f"foreign_key_check_failed:{failures!r}")
 
 
-def _initialize_v2(path: Path) -> MigrationResult:
+def _initialize_v4(path: Path) -> MigrationResult:
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(_V1_SCHEMA)
         _create_v2_tables(conn)
         _add_v2_columns(conn)
+        _create_v3_tables(conn)
+        _add_v4_columns(conn)
+        _ensure_search_index(conn)
         _store_warnings(conn, ())
-        _validate_schema(conn, _V2_REQUIRED_COLUMNS, "v2")
+        _validate_schema(conn, _V4_REQUIRED_COLUMNS, "v4")
         _validate_foreign_keys(conn)
         conn.execute(f"PRAGMA user_version = {TARGET_VERSION}")
         conn.commit()
     return MigrationResult(0, TARGET_VERSION, None, ())
 
 
-def _backup_v1(conn: sqlite3.Connection, data_root: Path) -> Path:
+def _backup_version(conn: sqlite3.Connection, data_root: Path, version: int) -> Path:
     backup_dir = data_root / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     while True:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
         token = uuid.uuid4().hex[:12]
-        backup_path = backup_dir / f"library-{timestamp}-{token}-v1.sqlite3"
+        backup_path = backup_dir / f"library-{timestamp}-{token}-v{version}.sqlite3"
         try:
             descriptor = os.open(backup_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
@@ -417,9 +506,35 @@ def _migrate_v1(conn: sqlite3.Connection) -> tuple[str, ...]:
         _store_warnings(conn, warnings)
         _validate_schema(conn, _V2_REQUIRED_COLUMNS, "v2")
         _validate_foreign_keys(conn)
-        conn.execute(f"PRAGMA user_version = {TARGET_VERSION}")
+        conn.execute("PRAGMA user_version = 2")
         conn.commit()
         return warnings
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    conn.execute("BEGIN")
+    try:
+        _create_v3_tables(conn)
+        _validate_schema(conn, _V3_REQUIRED_COLUMNS, "v3")
+        _validate_foreign_keys(conn)
+        conn.execute("PRAGMA user_version = 3")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    conn.execute("BEGIN")
+    try:
+        _add_v4_columns(conn)
+        _validate_schema(conn, _V4_REQUIRED_COLUMNS, "v4")
+        _validate_foreign_keys(conn)
+        conn.execute(f"PRAGMA user_version = {TARGET_VERSION}")
+        conn.commit()
     except Exception:
         conn.rollback()
         raise
@@ -428,7 +543,7 @@ def _migrate_v1(conn: sqlite3.Connection) -> tuple[str, ...]:
 def _migrate_library_locked(root: Path) -> MigrationResult:
     library = _library_path(root)
     if not library.exists():
-        return _initialize_v2(library)
+        return _initialize_v4(library)
 
     conn = sqlite3.connect(library)
     backup_path: Path | None = None
@@ -438,17 +553,31 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
         if raw_version == TARGET_VERSION:
             _create_v2_tables(conn)
             _add_v2_columns(conn)
-            _validate_schema(conn, _V2_REQUIRED_COLUMNS, "v2")
+            _create_v3_tables(conn)
+            _add_v4_columns(conn)
+            _ensure_search_index(conn)
+            _validate_schema(conn, _V4_REQUIRED_COLUMNS, "v4")
             _validate_foreign_keys(conn)
             conn.commit()
             return MigrationResult(TARGET_VERSION, TARGET_VERSION, None, ())
-        if raw_version not in (0, 1):
+        if raw_version not in (0, 1, 2, 3):
             raise sqlite3.DatabaseError(f"unsupported_library_schema_version:{raw_version}")
-        backup_path = _backup_v1(conn, root)
-        _validate_schema(conn, _V1_REQUIRED_COLUMNS, "v1")
+        backup_version = 1 if raw_version in (0, 1) else raw_version
+        backup_path = _backup_version(conn, root, backup_version)
+        if raw_version in (0, 1):
+            _validate_schema(conn, _V1_REQUIRED_COLUMNS, "v1")
+        elif raw_version == 2:
+            _validate_schema(conn, _V2_REQUIRED_COLUMNS, "v2")
+        else:
+            _validate_schema(conn, _V3_REQUIRED_COLUMNS, "v3")
         _validate_foreign_keys(conn)
-        warnings = _migrate_v1(conn)
-        return MigrationResult(1, TARGET_VERSION, backup_path, warnings)
+        warnings = _migrate_v1(conn) if raw_version in (0, 1) else ()
+        if raw_version in (0, 1, 2):
+            _migrate_v2(conn)
+        _migrate_v3(conn)
+        _ensure_search_index(conn)
+        conn.commit()
+        return MigrationResult(backup_version, TARGET_VERSION, backup_path, warnings)
     except Exception as original:
         if backup_path is not None:
             conn.close()
@@ -465,8 +594,9 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
 
 
 def migrate_library(data_root: Path) -> MigrationResult:
-    """初始化新库，或在可验证备份保护下将既有 v1 库迁移到 v2。"""
+    """初始化新库，或在可验证备份保护下将既有 v1-v3 库迁移到 v4。"""
     root = Path(data_root).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    with _migration_lock(root):
-        return _migrate_library_locked(root)
+    with data_root_operation(root):
+        root.mkdir(parents=True, exist_ok=True)
+        with _migration_lock(root):
+            return _migrate_library_locked(root)

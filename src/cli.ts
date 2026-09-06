@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
+import { engineScopeEnvironment } from './engine_scope.js'
 import { access, mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -108,36 +109,31 @@ export function wrapScriptPath(): string {
   return fileURLToPath(new URL(WRAP_REL, import.meta.url))
 }
 
-/** 解析装有 scansci-pdf 的 Python：显式配置 → uv tool 环境 → PATH python */
+/** OA 使用显式解释器或插件托管环境，不自动复用用户级 ScanSci 工具。 */
 export async function resolveScansciPython(config: Config): Promise<string | null> {
   if (config.scansciPython.trim()) {
     try { await access(config.scansciPython.trim()); return config.scansciPython.trim() } catch { /* fallthrough */ }
   }
-  const candidates = [
-    join(process.env.APPDATA ?? '', 'uv', 'tools', 'scansci-pdf', 'Scripts', 'python.exe'),
-    join(process.env.USERPROFILE ?? '', '.local', 'share', 'uv', 'tools', 'scansci-pdf', 'Scripts', 'python.exe'),
-  ]
+  const candidates = [config.enginePython?.trim(), engineVenvPython(resolveDataRoot(config))].filter((value): value is string => Boolean(value))
   for (const c of candidates) {
     try { await access(c); return c } catch { /* 继续 */ }
   }
   return null
 }
 
-/** fetch 类命令用垫片 Python 运行（避免未配置机构时浏览器崩溃），其余走 exe */
+/** A 的下载只能走固定 OA wrapper，缺失时不回退综合下载器。 */
 export async function runScansci(
   exe: string,
   args: string[],
   config: Config,
-  opts: { timeoutMs?: number; useWrap?: boolean; env?: NodeJS.ProcessEnv } = {},
+  opts: { timeoutMs?: number; useWrap?: boolean; env?: NodeJS.ProcessEnv; input?: string } = {},
 ): Promise<RunResult> {
-  if (opts.useWrap) {
-    const python = await resolveScansciPython(config)
-    const wrap = wrapScriptPath()
-    if (python) {
-      try { await access(wrap); return await runCommand(python, [wrap, ...args], opts) } catch { /* 回退 exe */ }
-    }
-  }
-  return runCommand(exe, args, opts)
+  if (args[0] !== 'fetch') return { exitCode: 1, stdout: '', stderr: 'oa_only_operation_not_supported' }
+  const python = await resolveScansciPython(config)
+  const wrap = wrapScriptPath()
+  if (!python) return { exitCode: 1, stdout: '', stderr: 'oa_provider_unavailable' }
+  try { await access(wrap) } catch { return { exitCode: 1, stdout: '', stderr: 'oa_provider_unavailable' } }
+  return runCommand(python, [wrap, ...args], { ...opts, env: { ...opts.env, SR_SCANSCI_DISABLE_INSTITUTION: '1' } })
 }
 
 // ── scansci-pdf 探活 ──────────────────────────────────────────────
@@ -145,6 +141,14 @@ export async function runScansci(
 export async function probeScansci(exe: string): Promise<boolean> {
   const r = await runCommand(exe, ['--help'], { timeoutMs: 15_000 })
   return r.exitCode === 0
+}
+
+export async function probeOaProvider(config: Config): Promise<boolean> {
+  const python = await resolveScansciPython(config)
+  if (!python) return false
+  const result = await runCommand(python, [wrapScriptPath(), 'check'], { timeoutMs: 15_000 })
+  const status = extractJson(result.stdout)
+  return result.exitCode === 0 && status?.status === 'ready' && status?.version === '1.9.0'
 }
 
 export async function doctorScansci(exe: string): Promise<string> {
@@ -155,10 +159,8 @@ export async function doctorScansci(exe: string): Promise<string> {
 // ── 安装 ──────────────────────────────────────────────────────────
 
 export async function installScansci(python: string): Promise<RunResult> {
-  // 优先 uv tool（隔离、官方推荐），失败退回 python -m pip --user
-  const uv = await runCommand('uv', ['tool', 'install', 'scansci-pdf'], { timeoutMs: 10 * 60_000 })
-  if (uv.exitCode === 0) return uv
-  return runCommand(python, ['-m', 'pip', 'install', '--user', 'scansci-pdf'], {
+  const requirements = fileURLToPath(new URL('../scripts/oa-requirements.txt', import.meta.url))
+  return runCommand(python, ['-m', 'pip', 'install', '--disable-pip-version-check', '--require-hashes', '--no-deps', '--no-index', '-r', requirements], {
     timeoutMs: 10 * 60_000,
   })
 }
@@ -174,8 +176,8 @@ export interface LegalConfigState {
   changed: boolean
 }
 
-export async function readScansciConfig(): Promise<Record<string, unknown>> {
-  const file = join(scansciDataDir(), 'config.json')
+export async function readScansciConfig(config: Config): Promise<Record<string, unknown>> {
+  const file = join(scansciDataDir(config), 'config.json')
   try {
     return JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
   } catch {
@@ -184,7 +186,7 @@ export async function readScansciConfig(): Promise<Record<string, unknown>> {
 }
 
 export async function ensureScansciConfig(config: Config): Promise<LegalConfigState> {
-  const dir = scansciDataDir()
+  const dir = scansciDataDir(config)
   const file = join(dir, 'config.json')
   let existed = true
   let current: Record<string, unknown>
@@ -195,26 +197,11 @@ export async function ensureScansciConfig(config: Config): Promise<LegalConfigSt
     current = {}
   }
   const target: Record<string, unknown> = {
-    ...current,
-    // email 缺失时 fetch 会交互询问导致子进程挂起；预置官方默认占位
-    email: typeof current.email === 'string' && current.email
-      ? current.email
-      : 'scansci-pdf@example.invalid',
-    download_strategy: config.legalOnly ? 'legal_only' : 'fastest',
-    scihub_enabled: !config.legalOnly,
-    // 未配学校时禁止自动弹浏览器重新登录（过期 cookie 会让 fetch 以空 URL 崩溃）
-    auto_relogin: config.school.trim() ? true : false,
+    download_strategy: 'oa_only',
+    scihub_enabled: false,
+    auto_relogin: false,
   }
-  if (config.school.trim()) {
-    target.vpnsci_school = config.school.trim()
-    target.carsi_enabled = true
-    target.carsi_idp_name = config.school.trim()
-  }
-  const changed = existed
-    ? current.download_strategy !== target.download_strategy ||
-      current.scihub_enabled !== target.scihub_enabled ||
-      current.carsi_idp_name !== target.carsi_idp_name
-    : true
+  const changed = !existed || JSON.stringify(current) !== JSON.stringify(target)
   if (changed) {
     await mkdir(dir, { recursive: true })
     const tmp = file + '.tmp'
@@ -223,8 +210,8 @@ export async function ensureScansciConfig(config: Config): Promise<LegalConfigSt
   }
   return {
     path: file,
-    legalOnly: config.legalOnly,
-    school: config.school.trim(),
+    legalOnly: true,
+    school: '',
     outputDir: resolveOutputDir(config),
     existed,
     changed,
@@ -258,10 +245,9 @@ export async function fetchPaper(
   identifier: string,
   outputDir: string,
   config: Config,
-  options: { suppressBrowserLogin?: boolean } = {},
 ): Promise<FetchOutcome> {
   await mkdir(outputDir, { recursive: true })
-  // 走垫片：未配置机构时跳过浏览器登录，开放论文也能稳定输出 JSON
+  // 固定 OA 入口；调用方无机构模式参数。
   const r = await runScansci(
     exe,
     ['fetch', identifier, '--output', outputDir, '--format', 'json'],
@@ -269,16 +255,16 @@ export async function fetchPaper(
     {
       timeoutMs: 10 * 60_000,
       useWrap: true,
-      env: options.suppressBrowserLogin ? { SR_SCANSCI_DISABLE_INSTITUTION: '1' } : undefined,
+      env: { SR_SCANSCI_DISABLE_INSTITUTION: '1' },
     },
   )
   const parsed = extractJson(r.stdout)
   if (!parsed) {
     return {
-      status: 'cli_error',
+      status: 'manual_required',
       quality: 'none',
       reason: r.exitCode !== 0 ? 'scansci_fetch_failed' : 'unparseable_output',
-      raw: { exit_code: r.exitCode, stderr: r.stderr.slice(-2000) },
+      next_action: { kind: 'local_pdf', message: 'OA 获取不可用，请补入本地 PDF 后继续。' },
     }
   }
   const paper = parsed.paper as Record<string, unknown> | undefined
@@ -312,14 +298,11 @@ export async function loginScansci(
   loginType: string,
   url?: string,
 ): Promise<RunResult> {
-  const args = ['login', '--login-type', loginType]
-  if (url) args.push('--url', url)
-  // 登录要弹浏览器并等用户交互，给足时间
-  return runCommand(exe, args, { timeoutMs: 10 * 60_000 })
+  return { exitCode: 1, stdout: '', stderr: 'oa_only_operation_not_supported' }
 }
 
 export async function setSchoolScansci(exe: string, school: string): Promise<RunResult> {
-  return runCommand(exe, ['setup', '--school', school], { timeoutMs: 60_000 })
+  return { exitCode: 1, stdout: '', stderr: 'oa_only_operation_not_supported' }
 }
 
 export async function defaultDownloadDir(): Promise<string> {
@@ -389,7 +372,7 @@ export async function runEngine(
   const r = await runCommand(python, ['-m', 'scientific_reading', '--data-root', dataRoot, ...args], {
     timeoutMs: opts.timeoutMs ?? 60_000,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
-    ...(opts.env ? { env: opts.env } : {}),
+    env: { ...opts.env, ...engineScopeEnvironment() },
   })
   const parsed = extractJson(r.stdout)
   // 0=成功；2=user gate；3=agent gate（协议合法状态，job-status 对 gate 返回非零退出）
@@ -434,6 +417,7 @@ export async function engineStartDetached(
           TERM: 'dumb',
           NO_COLOR: '1',
           PYTHONIOENCODING: 'utf-8',
+          ...engineScopeEnvironment(),
         },
       },
     )
@@ -518,7 +502,7 @@ export async function engineJobStatus(config: Config, jobId: string): Promise<{ 
 }
 
 async function trustedProviderEnv(config: Config): Promise<NodeJS.ProcessEnv> {
-  const sanitized: NodeJS.ProcessEnv = {}
+  const sanitized: NodeJS.ProcessEnv = { SR_SCANSCI_DISABLE_INSTITUTION: '1' }
   const python = await resolveScansciPython(config)
   if (!python) return sanitized
   const wrapper = wrapScriptPath()
@@ -568,5 +552,35 @@ export async function engineExportAssets(config: Config, paperId: string) {
 export async function engineResolveArtifact(config: Config, paperId: string, kind: 'pdf' | 'reader' | 'exports') {
   const r = await engineJson(config, ['artifact-resolve', '--paper-id', paperId, '--kind', kind])
   return { ok: r.ok, json: r.json, stderr: r.stderr }
+}
+
+export async function engineReviewOpenState(config: Config, parentSessionId: string, paperId: string) {
+  return engineJson(config, ['review-session-get'], {
+    parent_session_id: parentSessionId,
+    paper_id: paperId,
+  })
+}
+
+export async function engineReviewBind(config: Config, parentSessionId: string, paperId: string, reviewSessionId: string) {
+  return engineJson(config, ['review-session-bind'], {
+    parent_session_id: parentSessionId,
+    paper_id: paperId,
+    review_session_id: reviewSessionId,
+  })
+}
+
+export async function engineReviewContext(config: Config, reviewSessionId: string) {
+  return engineJson(config, ['review-context'], { review_session_id: reviewSessionId })
+}
+
+export async function engineReviewConfirm(config: Config, reviewSessionId: string, conclusions: unknown[]) {
+  return engineJson(config, ['review-confirm'], {
+    review_session_id: reviewSessionId,
+    conclusions,
+  })
+}
+
+export async function engineXlsxRefresh(config: Config) {
+  return engineJson(config, ['xlsx-refresh'], {})
 }
 /** library-ensure --check：只读查重 */

@@ -13,9 +13,9 @@ export interface Config {
   python: string
   /** scansci-pdf 可执行文件：PATH 名或绝对路径 */
   scansciExe: string
-  /** 学校名（CARSI/WebVPN 显示用，可选） */
+  /** 旧配置兼容字段；A 不使用机构来源。 */
   school: string
-  /** 只走合法来源（关 Sci-Hub/LibGen）。默认 true */
+  /** 旧配置兼容字段；A 始终只自动获取 OA，false 不放宽限制。 */
   legalOnly: boolean
   /** 下载输出目录。空 = <dataRoot>/downloads */
   outputDir: string
@@ -25,6 +25,10 @@ export interface Config {
   scansciPython: string
   /** 装有 scientific-reading 引擎的 Python 解释器绝对路径。空 = 自动探测（优先复用 scansci 同环境） */
   enginePython: string
+  /** 安装到 `$DSH_HOME/.agent-presets/` 的预设目录名（文献模式） */
+  presetId: string
+  /** 启动时是否把打包的文献模式预设安装到用户 preset 根（幂等，不覆盖手改） */
+  installPreset: boolean
 }
 
 export const Config = z.object({
@@ -37,6 +41,8 @@ export const Config = z.object({
   loginType: z.string().default('carsi'),
   scansciPython: z.string().default(''),
   enginePython: z.string().default(''),
+  presetId: z.string().default('scientific-reading'),
+  installPreset: z.boolean().default(true),
 })
 
 export function resolveDataRoot(config: Config): string {
@@ -49,9 +55,7 @@ export function resolveOutputDir(config: Config): string {
   return join(resolveDataRoot(config), 'downloads')
 }
 
-/** scansci-pdf 用户级数据目录（含 config.json），尊重官方 env 覆盖 */
-export function scansciDataDir(): string {
-  return process.env.SCANSCI_PDF_DATA_DIR
-    ? process.env.SCANSCI_PDF_DATA_DIR
-    : join(homedir(), '.scansci-pdf')
+/** 插件自己的 OA 下载状态目录，不读取独立 ScanSci 的用户配置或登录态。 */
+export function scansciDataDir(config: Config): string {
+  return join(resolveDataRoot(config), 'oa-downloader')
 }

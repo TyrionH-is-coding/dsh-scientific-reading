@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .scope import publication_guard
 
 import hashlib
 import json
@@ -15,11 +16,16 @@ from typing import Protocol
 
 from . import __version__
 from .background_models import AgentRequired, UserRequired
+from .data_guard import root_operation
 from .models import PaperMetadata, StageRecord
 from .pdf_validation import PdfValidationResult, validate_pdf
 from .subprocess_utils import hidden_window_kwargs
 from .workspace import PaperWorkspace
 from .workspace import atomic_write_json
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class PdfAcquisitionError(RuntimeError):
@@ -76,7 +82,7 @@ class ScansciJsonProvider:
             encoding="utf-8",
             timeout=600,
             check=False,
-            env=dict(os.environ),
+            env={**os.environ, "SR_SCANSCI_DISABLE_INSTITUTION": "1"},
             **hidden_window_kwargs(),
         )
         try:
@@ -108,6 +114,7 @@ class TrustedPdfAcquisitionService:
         self.provider = provider
         self.claim_timeout = claim_timeout
 
+    @root_operation
     def ensure_pdf(self, paper_id: str) -> AcquisitionResult:
         from .background_models import UserActionRequired
         from .library_service import LibraryService
@@ -130,30 +137,31 @@ class TrustedPdfAcquisitionService:
         if workspace.source_pdf.is_file():
             validation = validate_pdf(workspace.source_pdf, metadata)
             if validation.valid:
-                previous = library.pdf_attachment(paper_id)
-                reader_paths = self._reader_paths(workspace)
-                changed = bool(
-                    previous and previous["sha256"] != validation.sha256
-                )
-                if changed and reader_paths:
-                    self._write_stale_manifest(
-                        workspace, validation.sha256, reader_paths, previous["sha256"]
+                with publication_guard(library.data_root, paper_id):
+                    previous = library.pdf_attachment(paper_id)
+                    reader_paths = self._reader_paths(workspace)
+                    changed = bool(
+                        previous and previous["sha256"] != validation.sha256
                     )
-                library.commit_pdf_publication(
-                    paper_id,
-                    validation.sha256,
-                    workspace.source_pdf.stat().st_size,
-                    source_changed=changed,
-                    reader_paths=reader_paths,
-                )
-                return AcquisitionResult(
-                    "pdf_ready",
-                    library.get_item(paper_id)["library_key"],
-                    validation.sha256,
-                    workspace.source_pdf,
-                    validation.page_count,
-                    True,
-                )
+                    if changed and reader_paths:
+                        self._write_stale_manifest(
+                            workspace, validation.sha256, reader_paths, previous["sha256"]
+                        )
+                    library.commit_pdf_publication(
+                        paper_id,
+                        validation.sha256,
+                        workspace.source_pdf.stat().st_size,
+                        source_changed=changed,
+                        reader_paths=reader_paths,
+                    )
+                    return AcquisitionResult(
+                        "pdf_ready",
+                        library.get_item(paper_id)["library_key"],
+                        validation.sha256,
+                        workspace.source_pdf,
+                        validation.page_count,
+                        True,
+                    )
         if self.provider is None:
             raise self._required()
         staging = workspace.root / f".source.{uuid.uuid4().hex}.pdf.staging"
@@ -174,6 +182,7 @@ class TrustedPdfAcquisitionService:
         finally:
             staging.unlink(missing_ok=True)
 
+    @root_operation
     def attach_local(self, paper_id: str, pdf_path: Path) -> AcquisitionResult:
         from .library_service import LibraryService
 
@@ -211,52 +220,53 @@ class TrustedPdfAcquisitionService:
 
         return UserActionRequired(
             "pdf_required",
-            {"kind": "pdf", "options": ["institution_browser", "local_pdf"]},
+            {"kind": "pdf", "options": ["local_pdf"]},
         )
 
     @staticmethod
     def _publish(library, paper_id, metadata, workspace, validation, staging):
-        previous = library.pdf_attachment(paper_id)
-        previous_sha = previous["sha256"] if previous else None
-        current_valid = False
-        if workspace.source_pdf.is_file():
-            current = validate_pdf(workspace.source_pdf, metadata)
-            current_valid = current.valid
-            if current_valid:
-                previous_sha = previous_sha or current.sha256
-        if current_valid and _sha256(workspace.source_pdf) == validation.sha256:
-            staging.unlink(missing_ok=True)
-            reused = True
-        else:
-            staging.replace(workspace.source_pdf)
-            reused = False
-        readback = validate_pdf(workspace.source_pdf, metadata)
-        if not readback.valid or readback.sha256 != validation.sha256:
-            raise ValueError("pdf_publish_readback_failed")
-        changed = bool(previous_sha and previous_sha != validation.sha256)
-        reader_paths = TrustedPdfAcquisitionService._reader_paths(workspace)
-        if changed and reader_paths:
-            TrustedPdfAcquisitionService._write_stale_manifest(
-                workspace, validation.sha256, reader_paths, previous_sha
+        with publication_guard(library.data_root, paper_id):
+            previous = library.pdf_attachment(paper_id)
+            previous_sha = previous["sha256"] if previous else None
+            current_valid = False
+            if workspace.source_pdf.is_file():
+                current = validate_pdf(workspace.source_pdf, metadata)
+                current_valid = current.valid
+                if current_valid:
+                    previous_sha = previous_sha or current.sha256
+            if current_valid and _sha256(workspace.source_pdf) == validation.sha256:
+                staging.unlink(missing_ok=True)
+                reused = True
+            else:
+                staging.replace(workspace.source_pdf)
+                reused = False
+            readback = validate_pdf(workspace.source_pdf, metadata)
+            if not readback.valid or readback.sha256 != validation.sha256:
+                raise ValueError("pdf_publish_readback_failed")
+            changed = bool(previous_sha and previous_sha != validation.sha256)
+            reader_paths = TrustedPdfAcquisitionService._reader_paths(workspace)
+            if changed and reader_paths:
+                TrustedPdfAcquisitionService._write_stale_manifest(
+                    workspace, validation.sha256, reader_paths, previous_sha
+                )
+            library.commit_pdf_publication(
+                paper_id,
+                validation.sha256,
+                workspace.source_pdf.stat().st_size,
+                source_changed=changed,
+                reader_paths=reader_paths,
             )
-        library.commit_pdf_publication(
-            paper_id,
-            validation.sha256,
-            workspace.source_pdf.stat().st_size,
-            source_changed=changed,
-            reader_paths=reader_paths,
-        )
-        persisted = library.pdf_attachment(paper_id)
-        if persisted is None or persisted["sha256"] != _sha256(workspace.source_pdf):
-            raise ValueError("pdf_database_readback_failed")
-        return AcquisitionResult(
-            "pdf_ready",
-            library.get_item(paper_id)["library_key"],
-            validation.sha256,
-            workspace.source_pdf,
-            validation.page_count,
-            reused,
-        )
+            persisted = library.pdf_attachment(paper_id)
+            if persisted is None or persisted["sha256"] != _sha256(workspace.source_pdf):
+                raise ValueError("pdf_database_readback_failed")
+            return AcquisitionResult(
+                "pdf_ready",
+                library.get_item(paper_id)["library_key"],
+                validation.sha256,
+                workspace.source_pdf,
+                validation.page_count,
+                reused,
+            )
 
     @staticmethod
     def _reader_paths(workspace: PaperWorkspace) -> tuple[str, ...]:

@@ -9,7 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 
-READER_BUILD_VERSION = "reader-html-v2.4.4-english-first"
+READER_BUILD_VERSION = "reader-html-v2.4.6-content-fidelity"
 ALLOWED_HIGHLIGHT_KINDS = frozenset({"result", "method"})
 ALLOWED_HIGHLIGHT_SOURCES = ALLOWED_HIGHLIGHT_KINDS
 
@@ -748,7 +748,7 @@ article.focus-only .reading-block.is-highlighted { break-inside: avoid; }
 @media (max-width: 680px) {
   body { overflow-x: hidden; }
   .reader-shell { width: 100%; padding: 0 0 28px; }
-  .reader-main { width: 100vw; max-width: 100vw; overflow: clip; }
+  .reader-main { width: 100%; max-width: 100%; overflow: clip; }
   .mobile-nav { margin: 10px 10px 8px; }
   .reader-toolbar { justify-content: space-between; gap: 5px; padding: 4px 8px; margin: 0; }
   .toolbar-controls { gap: 5px; }
@@ -1517,11 +1517,23 @@ def canonical_heading(value: str) -> str:
     return re.sub(r"[^a-z]+", " ", normalized).strip()
 
 
+def clean_display_text(value: str) -> str:
+    """Repair OCR typography for display without changing source identities."""
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
+    return re.sub(r"<sup>(fi|fl)</sup>", r"\1", value)
+
+
 def _render_safe_inline_scripts(soup: BeautifulSoup, article: Tag) -> None:
     pattern = re.compile(r"<(sup|sub)>([^<>]{1,64})</\1>", re.I)
-    for container in article.select(".source-primary"):
-        for node in list(container.find_all(string=True)):
-            value = str(node)
+    for node in list(article.find_all(string=True)):
+        if node.find_parent(["math", "pre", "code", "script", "style"]):
+            continue
+        value = clean_display_text(str(node))
+        if value != str(node):
+            cleaned = NavigableString(value)
+            node.replace_with(cleaned)
+            node = cleaned
+        if node.parent is not None:
             matches = list(pattern.finditer(value))
             if not matches:
                 continue
@@ -1588,6 +1600,10 @@ def _make_low_value_region(
 
 
 def _fold_low_value_regions(soup: BeautifulSoup, article: Tag) -> None:
+    _make_low_value_region(
+        soup, list(article.select('.reading-block[data-page-header="true"]')),
+        kind="page_headers", label="重复页眉", region_id="low-value-page-headers",
+    )
     label_by_kind = {
         "references": "参考文献",
         "acknowledgements": "致谢",
@@ -1696,46 +1712,47 @@ class ReferenceEntry:
 
 def extract_numbered_references(article: Tag) -> dict[str, ReferenceEntry]:
     entries: dict[str, ReferenceEntry] = {}
-    blocks = list(article.select(".reference-block"))
-    for block in article.select(
-        'details.low-value-region[data-kind="references"] .reading-block'
-    ):
-        if block not in blocks:
-            blocks.append(block)
+    raw_entries: dict[str, str] = {}
+    label: str | None = None
+    blocks = article.select(
+        '.reference-block, details.low-value-region[data-kind="references"] .reading-block'
+    )
     for block in blocks:
+        if block.get("data-page-header") or _direct_heading(block) is not None:
+            continue
         source = block.select_one(".source-primary")
-        raw_block = (source or block).get_text(" ", strip=True)
+        raw_block = clean_display_text((source or block).get_text(" ", strip=True))
         chunks = re.split(r"(?=\[\d+\]\s*)", raw_block)
         for raw in chunks:
             raw = raw.strip()
-            match = re.match(r"^\s*\[?(\d+)\]?[.)]?\s*(.+)$", raw)
+            match = re.match(r"^\s*(?:\[(\d+)\]|(\d+)[.)])\s*(.+)$", raw)
             if match is None:
+                if label is not None and raw:
+                    raw_entries[label] += " " + raw
                 continue
-            label = match.group(1)
-            if label in entries:
-                continue
-            doi_match = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+", raw, re.I)
-            doi = doi_match.group(0).rstrip(".,;)").casefold() if doi_match else None
-            arxiv_match = re.search(
-                r"\barxiv\s*:\s*(\d{4}\.\d{4,5}(?:v\d+)?)\b",
-                raw,
-                re.I,
-            )
-            year_match = re.search(r"\b(?:19|20)\d{2}\b", raw)
-            entries[label] = ReferenceEntry(
-                label=label,
-                raw_reference=raw,
-                doi=doi,
-                arxiv_id=arxiv_match.group(1) if arxiv_match else None,
-                year=year_match.group(0) if year_match else None,
-            )
+            label = match.group(1) or match.group(2)
+            raw_entries.setdefault(label, raw)
+    for label, raw in raw_entries.items():
+        # A numeric suffix after a DOI dot can be split at a PDF line boundary.
+        doi_source = re.sub(r"(\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\.)\s+(?=\d)", r"\1", raw, flags=re.I)
+        doi_match = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+", doi_source, re.I)
+        doi = doi_match.group(0).rstrip(".,;)").casefold() if doi_match else None
+        arxiv_match = re.search(
+            r"\barxiv\s*:\s*(\d{4}\.\d{4,5}(?:v\d+)?)\b", raw, re.I,
+        )
+        year_match = re.search(r"\b(?:19|20)\d{2}\b", raw)
+        entries[label] = ReferenceEntry(
+            label=label, raw_reference=raw, doi=doi,
+            arxiv_id=arxiv_match.group(1) if arxiv_match else None,
+            year=year_match.group(0) if year_match else None,
+        )
     return entries
 
 
 def _expand_reference_labels(value: str) -> list[str]:
     labels: list[str] = []
     for part in re.split(r"\s*,\s*", value):
-        range_match = re.fullmatch(r"(\d+)\s*[-–—]\s*(\d+)", part)
+        range_match = re.fullmatch(r"(\d+)\s*[-–—−]\s*(\d+)", part)
         if range_match is None:
             if part.isdigit():
                 labels.append(str(int(part)))
@@ -1754,7 +1771,7 @@ def decorate_numeric_citations(
     if not references:
         return
     citation_pattern = re.compile(
-        r"\[(\d+(?:\s*(?:,|[-–—])\s*\d+)*)\]"
+        r"\[(\d+(?:\s*(?:,|[-–—−])\s*\d+)*)\]"
     )
     for primary in article.select(".source-primary"):
         if primary.find_parent(
@@ -1876,6 +1893,8 @@ def build_reader(
         wrapper["class"] = ["reading-block"]
         wrapper["data-block"] = block_id
         wrapper["id"] = f"block-{block_id}"
+        if detail.get("data-page-header"):
+            wrapper["data-page-header"] = "true"
         content.wrap(wrapper)
         wrapper.append(detail.extract())
         if block_id in highlights:

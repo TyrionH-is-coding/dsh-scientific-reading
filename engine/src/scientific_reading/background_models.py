@@ -81,6 +81,7 @@ class JobStatus:
     required_input: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    scope: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

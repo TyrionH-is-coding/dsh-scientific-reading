@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .data_guard import data_root_operation, workspace_data_root
 from .identifiers import metadata_identity_compatible, stable_paper_id
 from .models import JobState, PaperMetadata
 
@@ -35,21 +36,23 @@ class PaperWorkspace:
 
     @classmethod
     def create(cls, data_root: Path, metadata: PaperMetadata) -> PaperWorkspace:
-        return cls._initialize(
-            Path(data_root).resolve() / "papers" / stable_paper_id(metadata),
-            metadata,
-        )
+        with data_root_operation(data_root):
+            return cls._initialize(
+                Path(data_root).resolve() / "papers" / stable_paper_id(metadata),
+                metadata,
+            )
 
     @classmethod
     def create_for_paper_id(
         cls, data_root: Path, paper_id: str, metadata: PaperMetadata
     ) -> PaperWorkspace:
         """按已验证的 SQLite paper_id 建立工作目录，不重新推导身份。"""
-        _validate_paper_id(paper_id)
-        return cls._initialize(
-            Path(data_root).resolve() / "papers" / paper_id,
-            metadata,
-        )
+        with data_root_operation(data_root):
+            _validate_paper_id(paper_id)
+            return cls._initialize(
+                Path(data_root).resolve() / "papers" / paper_id,
+                metadata,
+            )
 
     @classmethod
     def create_generation(
@@ -58,12 +61,13 @@ class PaperWorkspace:
         source_sha256: str,
         metadata: PaperMetadata,
     ) -> PaperWorkspace:
-        if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
-            raise ValueError("source_sha256_invalid")
-        return cls._initialize(
-            workspace.root / "generations" / source_sha256[:16],
-            metadata,
-        )
+        with data_root_operation(workspace_data_root(workspace)):
+            if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
+                raise ValueError("source_sha256_invalid")
+            return cls._initialize(
+                workspace.root / "generations" / source_sha256[:16],
+                metadata,
+            )
 
     @classmethod
     def _initialize(cls, root: Path, metadata: PaperMetadata) -> PaperWorkspace:
@@ -160,9 +164,10 @@ class PaperWorkspace:
         return None
 
     def save_job(self, state: JobState) -> None:
-        if state.paper_id != self.root.name:
-            raise ValueError("job state paper_id 与工作目录不一致")
-        atomic_write_json(self.job_path, state.to_dict())
+        with data_root_operation(workspace_data_root(self)):
+            if state.paper_id != self.root.name:
+                raise ValueError("job state paper_id 与工作目录不一致")
+            atomic_write_json(self.job_path, state.to_dict())
 
     def load_job(self) -> JobState:
         value = json.loads(self.job_path.read_text(encoding="utf-8"))

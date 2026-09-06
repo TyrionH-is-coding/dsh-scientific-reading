@@ -43,7 +43,7 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
 
   register('/sr/api/settings/status', async (req, res) => {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
-    const result = await engineJson(config, ['environment-status', '--school', config.school])
+    const result = await engineJson(config, ['environment-status'])
     if (!result.ok || !result.json) return sendJson(res, 502, { error: 'environment_status_unavailable' })
     sendJson(res, 200, result.json)
   })
@@ -54,7 +54,8 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
     try {
       const body = await readJson(req)
       const targets = Array.isArray(body.targets) ? body.targets.filter((value): value is string => typeof value === 'string') : []
-      const args = ['environment-recheck', '--school', config.school]
+      if (!targets.length || targets.some((target) => !['download', 'mineru_local', 'mineru_api'].includes(target))) return sendJson(res, 400, { error: 'environment_target_invalid' })
+      const args = ['environment-recheck']
       for (const target of targets) args.push('--target', target)
       const result = await engineJson(config, args)
       if (!result.ok || !result.json) return sendJson(res, 400, { error: 'environment_recheck_failed' })
@@ -70,7 +71,7 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
     try {
       const body = await readJson(req)
       if (body.version !== 'v1') return sendJson(res, 400, { error: 'onboarding_version_invalid' })
-      const result = await engineJson(config, ['environment-mark-presented', '--version', 'v1', '--school', config.school])
+      const result = await engineJson(config, ['environment-mark-presented', '--version', 'v1'])
       if (!result.ok || !result.json) return sendJson(res, 400, { error: 'onboarding_update_failed' })
       sendJson(res, 200, result.json)
     } catch (error) {
@@ -112,3 +113,4 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
     sendJson(res, 200, result.json)
   })
 }
+

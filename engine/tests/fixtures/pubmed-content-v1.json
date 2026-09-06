@@ -1,0 +1,85 @@
+{
+  "version": "pubmed-content-v1",
+  "provenance": "Original synthetic XML, 2026-09-05; reduced PubMed envelopes for offline provider tests, not real papers or DTD validation fixtures.",
+  "structure_reference": "https://dtd.nlm.nih.gov/ncbi/pubmed/doc/out/250101/el-AbstractText.html",
+  "cases": [
+    {
+      "id": "inline-negation-tail",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Expression of <i>IL6</i> in cells</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">The level of <i>IL6</i> did not increase.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Expression of IL6 in cells",
+      "abstract_en": "The level of IL6 did not increase."
+    },
+    {
+      "id": "nested-inline-and-tails",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle><b>Nested <i>β</i> signals</b> remain measurable</ArticleTitle><Abstract><AbstractText><b>The <i>α</i> signal</b> was <u>not <i>higher</i></u> after 24 h; <i>n</i> = 12.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Nested β signals remain measurable",
+      "abstract_en": "The α signal was not higher after 24 h; n = 12."
+    },
+    {
+      "id": "symbols-numbers-units",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>TiO<sub>2</sub> at 25 °C</ArticleTitle><Abstract><AbstractText>β remained ≤ 1.2 × 10<sup>−3</sup> mol L<sup>−1</sup>; H<sub>2</sub>O did not change by &gt; 5% (p &lt; 0.05).</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "TiO2 at 25 °C",
+      "abstract_en": "β remained ≤ 1.2 × 10−3 mol L−1; H2O did not change by > 5% (p < 0.05)."
+    },
+    {
+      "id": "structured-labels-order",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Structured report</ArticleTitle><Abstract><AbstractText Label=\"METHODS\" NlmCategory=\"METHODS\">We tested <i>n</i> = 12 samples at 5 mg L<sup>−1</sup>.</AbstractText><AbstractText Label=\"RESULTS\" NlmCategory=\"RESULTS\">The rate did <b>not</b> increase (2.1 ± 0.3 s<sup>−1</sup>).</AbstractText><AbstractText NlmCategory=\"CONCLUSIONS\">An association does not establish causation.</AbstractText><CopyrightInformation>Not abstract content.</CopyrightInformation></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Structured report",
+      "abstract_en": "METHODS: We tested n = 12 samples at 5 mg L−1.\n\nRESULTS: The rate did not increase (2.1 ± 0.3 s−1).\n\nAn association does not establish causation."
+    },
+    {
+      "id": "unlabelled-paragraphs",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Two paragraphs</ArticleTitle><Abstract><AbstractText>First paragraph.</AbstractText><AbstractText>Second <i>complete</i> paragraph.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Two paragraphs",
+      "abstract_en": "First paragraph.\n\nSecond complete paragraph."
+    },
+    {
+      "id": "primary-abstract-language-boundary",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>[English title]</ArticleTitle><Abstract><AbstractText>The main English abstract did <b>not</b> show an increase.</AbstractText></Abstract><Language>jpn</Language><VernacularTitle>Original language title</VernacularTitle></Article><OtherAbstract Type=\"Publisher\" Language=\"spa\"><AbstractText>Texto en español.</AbstractText></OtherAbstract><OtherAbstract Type=\"plain-language-summary\" Language=\"eng\"><AbstractText>Do not append this English summary.</AbstractText></OtherAbstract></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "[English title]",
+      "abstract_en": "The main English abstract did not show an increase."
+    },
+    {
+      "id": "other-abstract-only",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>No main abstract</ArticleTitle><Language>spa</Language></Article><OtherAbstract Type=\"Publisher\" Language=\"spa\"><AbstractText>No convertir en resumen inglés.</AbstractText></OtherAbstract><OtherAbstract Type=\"plain-language-summary\" Language=\"eng\"><AbstractText>Do not substitute a summary.</AbstractText></OtherAbstract></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "No main abstract",
+      "abstract_en": null
+    },
+    {
+      "id": "plain-text-compatible",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Plain title</ArticleTitle><Abstract><AbstractText>A &amp; B did not differ at 3.5 mm.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Plain title",
+      "abstract_en": "A & B did not differ at 3.5 mm."
+    },
+    {
+      "id": "missing-abstract",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Title alone is not an abstract</ArticleTitle></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Title alone is not an abstract",
+      "abstract_en": null
+    },
+    {
+      "id": "empty-abstract",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>Empty abstract</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">  <i/>  </AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Empty abstract",
+      "abstract_en": null
+    },
+    {
+      "id": "single-nonempty-labelled-section",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><ArticleTitle>One substantive section</ArticleTitle><Abstract><AbstractText Label=\"METHODS\"> <i/> </AbstractText><AbstractText Label=\"RESULTS\">Kept.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "One substantive section",
+      "abstract_en": "Kept."
+    },
+    {
+      "id": "mathml-lexical-limit",
+      "xml": "<PubmedArticleSet xmlns:mml=\"http://www.w3.org/1998/Math/MathML\"><PubmedArticle><MedlineCitation><Article><ArticleTitle>Ratio <mml:math><mml:mfrac><mml:mi>a</mml:mi><mml:mi>b</mml:mi></mml:mfrac></mml:math></ArticleTitle><Abstract><AbstractText>The ratio <mml:math><mml:mfrac><mml:mi>a</mml:mi><mml:mi>b</mml:mi></mml:mfrac></mml:math> did not change.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "title": "Ratio ab",
+      "abstract_en": "The ratio ab did not change."
+    },
+    {
+      "id": "book-document-compatible",
+      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument><ArticleTitle>Chapter on <i>β</i> signals</ArticleTitle><Abstract><AbstractText>A signal did <b>not</b> change.</AbstractText></Abstract></BookDocument></PubmedBookArticle></PubmedArticleSet>",
+      "title": "Chapter on β signals",
+      "abstract_en": "A signal did not change."
+    }
+  ]
+}

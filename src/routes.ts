@@ -33,9 +33,29 @@ import {
   engineExportAssets,
   engineResolveArtifact,
   engineAttachAndResumeFullReadPdf,
+  runEngine,
 } from './cli.js'
 
 const JOB_ID_RE = /^job_[0-9a-f]{16}$/
+const CONCLUSION_ID_RE = /^review_[0-9a-f]{32}$/
+
+type EvidenceEngineResult = {
+  ok: boolean
+  json: Record<string, unknown> | null
+  stderr: string
+}
+
+export interface EvidenceRouteDependencies {
+  resolveConclusion(config: Config, conclusionId: string): Promise<EvidenceEngineResult>
+}
+
+const defaultEvidenceDependencies: EvidenceRouteDependencies = {
+  async resolveConclusion(config, conclusionId) {
+    return runEngine(config, [
+      'resolve-conclusion', '--conclusion-id', conclusionId,
+    ])
+  },
+}
 
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
@@ -108,12 +128,50 @@ const safeError = (value: unknown): string => typeof value === 'string'
   : ''
 const safeNonnegativeInteger = (value: unknown, fallback: number): number => Number.isInteger(value) && Number(value) >= 0 ? Number(value) : fallback
 
-function navigationList(value: unknown, page: number, pageSize: number): Record<string, unknown> {
+function safeSearchMatches(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  const contentTypes = new Set(['metadata', 'abstract_en', 'abstract_zh', 'conclusion'])
+  const bases = new Set(['paper', 'personal', 'inference', 'question', 'legacy'])
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return []
+    const source = raw as Record<string, unknown>
+    const contentType = safeString(source.content_type)
+    const snippet = safeString(source.snippet)
+    if (!contentTypes.has(contentType) || !snippet) return []
+    const match: Record<string, unknown> = { content_type: contentType, snippet }
+    if (contentType !== 'conclusion') return [match]
+    const conclusionId = safeString(source.conclusion_id)
+    const basis = safeString(source.basis)
+    if (!CONCLUSION_ID_RE.test(conclusionId) || !bases.has(basis)) return []
+    const evidenceStatus = safeString(source.evidence_status)
+    const claimSupport = safeString(source.claim_support)
+    match.conclusion_id = conclusionId
+    match.basis = basis
+    match.evidence_status = evidenceStatus
+    match.scientific_validity = safeString(source.scientific_validity)
+    match.claim_support = claimSupport
+    if (
+      basis === 'paper'
+      && evidenceStatus === 'location_verified'
+      && claimSupport === 'location_only'
+    ) {
+      match.evidence_url = '/sr/evidence?conclusion_id=' + encodeURIComponent(conclusionId)
+    }
+    return [match]
+  })
+}
+
+function navigationList(
+  value: unknown,
+  page: number,
+  pageSize: number,
+  includeSearchMatches = false,
+): Record<string, unknown> {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const rawItems = Array.isArray(source.items) ? source.items : []
   const items = rawItems.map((raw) => {
     const sourceItem = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-    return {
+    const item: Record<string, unknown> = {
       paper_id: safeString(sourceItem.paper_id),
       title: safeString(sourceItem.title),
       authors_short: safeString(sourceItem.authors_short),
@@ -127,6 +185,10 @@ function navigationList(value: unknown, page: number, pageSize: number): Record<
       has_reader: typeof sourceItem.has_reader === 'boolean' ? sourceItem.has_reader : false,
       last_error: safeError(sourceItem.last_error),
     }
+    if (includeSearchMatches) {
+      item.search_matches = safeSearchMatches(sourceItem.search_matches)
+    }
+    return item
   })
   const jobs = source.jobs && typeof source.jobs === 'object' ? source.jobs as Record<string, unknown> : {}
   return {
@@ -165,7 +227,11 @@ function safeLibraryItem(value: unknown, field = ''): unknown {
  * 文献页 API 路由（只读数据 + 动作触发）。动作端点复用插件同一套引擎适配器。
  * 安全：paper_id / job_id 白名单校验；只读 dataRoot 内路径。
  */
-export function registerRoutes(ctx: Context, config: Config): void {
+export function registerRoutes(
+  ctx: Context,
+  config: Config,
+  evidenceDependencies: EvidenceRouteDependencies = defaultEvidenceDependencies,
+): void {
   const dataRoot = () => resolveDataRoot(config)
   const paperRoot = (id: string) => join(dataRoot(), 'papers', id)
 
@@ -225,19 +291,24 @@ export function registerRoutes(ctx: Context, config: Config): void {
         if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100 || (recentDays !== undefined && (!Number.isInteger(recentDays) || recentDays < 0))) {
           return sendJson(res, 400, { error: 'invalid_pagination' })
         }
+        const query = url.searchParams.get('q') ?? url.searchParams.get('query') ?? undefined
         const tags = [...url.searchParams.getAll('tags'), ...url.searchParams.getAll('tag')]
           .flatMap((value) => value.split(',').map((tag) => tag.trim()).filter(Boolean))
         const r = await listNavigation(config, {
           page,
           pageSize,
-          query: url.searchParams.get('q') ?? url.searchParams.get('query') ?? undefined,
+          query,
           folder: url.searchParams.get('folder') ?? url.searchParams.get('folder_id') ?? undefined,
           tags,
           status: url.searchParams.get('status') ?? undefined,
           recentDays,
         })
         if (!r.ok) return sendJson(res, 502, { error: 'library_unavailable', detail: 'library_list_failed' })
-        return sendJson(res, 200, navigationList(r.json, page, pageSize))
+        return sendJson(
+          res,
+          200,
+          navigationList(r.json, page, pageSize, Boolean(query?.trim())),
+        )
       }
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' })
       const body = await readJsonBody(req, 1 * 1024 * 1024)
@@ -322,13 +393,10 @@ export function registerRoutes(ctx: Context, config: Config): void {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const jobId = decodeURIComponent((req.url ?? '').slice('/sr/api/download-batch'.length)).split('/').filter(Boolean)[0] ?? ''
     if (!JOB_ID_RE.test(jobId)) return sendJson(res, 404, { error: 'bad_job_id' })
-    try {
-      const path = join(dataRoot(), 'jobs', 'downloads', jobId + '.json')
-      const value = JSON.parse(await readFile(path, 'utf8'))
-      return sendJson(res, 200, withoutSensitiveFields(value))
-    } catch {
-      return sendJson(res, 404, { error: 'download_job_not_found' })
-    }
+    const value = await readDownloadJob(config, jobId)
+    return value
+      ? sendJson(res, 200, withoutSensitiveFields(value))
+      : sendJson(res, 404, { error: 'download_job_not_found' })
   })
 
   prefix('/sr/api/abstract', async (req, res) => {
@@ -338,7 +406,7 @@ export function registerRoutes(ctx: Context, config: Config): void {
     try {
       const r = await engineLibraryItem(config, id)
       const item = r.json
-      if (!r.ok || !item || typeof item.abstract_status !== 'string') {
+      if (!r.ok || !item || (item.abstract_status !== null && typeof item.abstract_status !== 'string')) {
         return sendJson(res, 502, { error: 'abstract_unavailable', detail: 'library_item_failed' })
       }
       sendJson(res, 200, {
@@ -384,9 +452,9 @@ export function registerRoutes(ctx: Context, config: Config): void {
         const jobId = String(body.job_id ?? '')
         if (!identifier || !await requirePdfGate(id, jobId)) return sendJson(res, 409, { error: 'pdf_gate_required' })
         const outcome = await fetchPaper(config.scansciExe, identifier, resolveOutputDir(config), config)
-        if (outcome.status !== 'success' || !outcome.paper?.pdf_path) return sendJson(res, 502, { error: 'pdf_download_failed', options: ['institution_browser', 'local_pdf'] })
+        if (outcome.status !== 'success' || !outcome.paper?.pdf_path) return sendJson(res, 502, { error: 'pdf_download_failed', options: ['local_pdf'] })
         const attached = await engineAttachAndResumeFullReadPdf(config, id, jobId, outcome.paper.pdf_path)
-        if (!attached.ok || !attached.json) return sendJson(res, 502, { error: 'pdf_attach_failed', options: ['institution_browser', 'local_pdf'] })
+        if (!attached.ok || !attached.json) return sendJson(res, 502, { error: 'pdf_attach_failed', options: ['local_pdf'] })
         sendJson(res, 200, safePdfResult(id, jobId, attached.json, attached.json))
         return
       }
@@ -560,6 +628,80 @@ export function registerRoutes(ctx: Context, config: Config): void {
     if (download) return sendJson(res, 200, withoutSensitiveFields(download))
     const r = await engineJobStatus(config, id)
     sendJson(res, r.ok && r.json ? 200 : 502, r.ok && r.json ? withoutSensitiveFields(r.json) : { error: 'job_unavailable', detail: 'engine_rejected_request' })
+  })
+
+  // ── 动态证据回跳：每次读取存储定位并重新校验当前来源 ──────────────
+  exact('/sr/evidence', async (req, res) => {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
+    const url = new URL(req.url ?? '/sr/evidence', 'http://localhost')
+    const ids = url.searchParams.getAll('conclusion_id')
+    if (ids.length !== 1 || !CONCLUSION_ID_RE.test(ids[0])) {
+      return sendJson(res, 400, { error: 'invalid_conclusion_id' })
+    }
+    const conclusionId = ids[0]
+    try {
+      const result = await evidenceDependencies.resolveConclusion(config, conclusionId)
+      if (!result.ok || !result.json) {
+        const missing = result.json?.error === 'conclusion_not_found'
+        return sendJson(res, missing ? 404 : 502, {
+          error: missing ? 'evidence_not_found' : 'evidence_unavailable',
+        })
+      }
+      const value = result.json
+      const evidenceStatus = safeString(value.evidence_status)
+      if (
+        value.basis !== 'paper'
+        || evidenceStatus !== 'location_verified'
+        || value.claim_support !== 'location_only'
+      ) {
+        return sendJson(res, 409, {
+          error: evidenceStatus === 'stale' ? 'evidence_stale' : 'evidence_unavailable',
+          conclusion_id: conclusionId,
+          evidence_status: evidenceStatus,
+        })
+      }
+      const paperId = safeString(value.paper_id)
+      if (!isPaperId(paperId)) {
+        return sendJson(res, 409, { error: 'evidence_invalid' })
+      }
+      const links = value.links && typeof value.links === 'object'
+        ? value.links as Record<string, unknown>
+        : {}
+      const reader = links.reader && typeof links.reader === 'object'
+        ? links.reader as Record<string, unknown>
+        : {}
+      const fragment = safeString(reader.fragment)
+      if (
+        reader.available === true
+        && /^block-p[0-9]{4}-(?:m|c)[0-9]{4}$/.test(fragment)
+      ) {
+        res.writeHead(302, {
+          Location: `/sr/reader/${encodeURIComponent(paperId)}#${encodeURIComponent(fragment)}`,
+          'Cache-Control': 'no-store',
+        })
+        res.end()
+        return
+      }
+      const pdf = links.pdf && typeof links.pdf === 'object'
+        ? links.pdf as Record<string, unknown>
+        : {}
+      const page = Number(pdf.page)
+      if (pdf.available === true && Number.isInteger(page) && page >= 1) {
+        res.writeHead(302, {
+          Location: `/sr/api/paper/${encodeURIComponent(paperId)}/pdf#page=${page}`,
+          'Cache-Control': 'no-store',
+        })
+        res.end()
+        return
+      }
+      sendJson(res, 409, {
+        error: 'evidence_link_unavailable',
+        conclusion_id: conclusionId,
+        evidence_status: evidenceStatus,
+      })
+    } catch {
+      sendJson(res, 502, { error: 'evidence_unavailable' })
+    }
   })
 
   // ── 精读 HTML（Phase 3 产物，存在即服务）──────────────────────────

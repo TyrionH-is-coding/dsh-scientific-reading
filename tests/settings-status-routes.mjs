@@ -39,6 +39,7 @@ async function call(path, method = 'GET', value = undefined, headers = {}) {
 
 try {
   registerStatusRoutes(ctx, config)
+  assert.ok(!routes.some((route) => route.path.startsWith('/sr/api/settings/institution/')))
   const snapshot = await call('/sr/api/settings/status')
   assert.equal(snapshot.statusCode, 200)
   assert.equal(JSON.parse(snapshot.body).contract_version, 'environment-status-v1')
@@ -46,10 +47,12 @@ try {
   assert.deepEqual(log.map((entry) => entry.args.find((arg) => arg.startsWith('environment-'))), ['environment-status'])
 
   const sameOrigin = { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080', 'x-sr-csrf': '1', 'content-type': 'application/json' }
-  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['institution'] }, { ...sameOrigin, origin: 'https://evil.invalid' })).statusCode, 403)
-  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['institution'] }, { host: sameOrigin.host, origin: sameOrigin.origin })).statusCode, 403)
-  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['institution'] }, sameOrigin)).statusCode, 200)
+  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['download'] }, { ...sameOrigin, origin: 'https://evil.invalid' })).statusCode, 403)
+  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['download'] }, { host: sameOrigin.host, origin: sameOrigin.origin })).statusCode, 403)
+  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['download'] }, sameOrigin)).statusCode, 200)
   assert.equal((await call('/sr/api/settings/mark-presented', 'POST', { version: 'v1' }, sameOrigin)).statusCode, 200)
+  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['institution'] }, sameOrigin)).statusCode, 400)
+  assert.equal((await call('/sr/api/settings/recheck', 'POST', { targets: ['cloak'] }, sameOrigin)).statusCode, 400)
   log = readFileSync(logPath, 'utf8').trim().split(/\r?\n/).map(JSON.parse)
   assert.deepEqual(log.map((entry) => entry.args.find((arg) => arg.startsWith('environment-'))), [
     'environment-status', 'environment-recheck', 'environment-mark-presented',

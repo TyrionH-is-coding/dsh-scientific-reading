@@ -1,0 +1,46 @@
+{
+  "contract_version": "reader-review-fixture-v1",
+  "case": "superscript-text",
+  "paper_id": "fixture_superscript_text",
+  "metadata": {
+    "title": "Safe Scripts and Word Boundaries in Technical Text",
+    "authors": ["Niki Example", "Jakob Sample"],
+    "year": 2026,
+    "journal": "Offline Typography Fixtures"
+  },
+  "content_items": [
+    {"type": "header", "page_idx": 0, "bbox": [40, 40, 560, 70], "text": "Safe Scripts and Word Boundaries in Technical Text", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 75, 560, 105], "text": "Niki Example<sup>*</sup> and Jakob Sample<sup>†</sup>"},
+    {"type": "header", "page_idx": 0, "bbox": [40, 120, 560, 145], "text": "Abstract", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 150, 560, 200], "text": "The explicit forms H<sub>2</sub>O and x<sup>2</sup> must render as scripts without changing ordinary words."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 215, 560, 240], "text": "1 Introduction", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 245, 560, 290], "text": "The signal was modified by a deterministic cleanup step and remained readable."},
+    {"type": "text", "page_idx": 0, "bbox": [40, 295, 560, 340], "text": "The evaluation firmly established that letters inside ordinary words are not superscripts."},
+    {"type": "text", "page_idx": 0, "bbox": [40, 345, 560, 390], "text": "A final sentence preserves spaces between every word and keeps punctuation next to the intended token. The level of β did not increase at 1.2 × 10<sup>−3</sup> mol L<sup>−1</sup> (n = 12). An association does not establish causation."},
+    {"type": "header", "page_idx": 0, "bbox": [40, 405, 560, 430], "text": "Acknowledgements", "text_level": 1},
+    {"type": "text", "page_idx": 0, "bbox": [40, 435, 560, 475], "text": "This deliberately low-value section exists only to test default folding."}
+  ],
+  "asset_files": {},
+  "translations": [
+    {"block_id": "p0001-m0001", "translation_zh": "技术文本中的安全角标与单词边界", "highlight": "none"},
+    {"block_id": "p0001-m0002", "translation_zh": "Niki Example、Jakob Sample", "highlight": "none"},
+    {"block_id": "p0001-m0003", "translation_zh": "摘要", "highlight": "none"},
+    {"block_id": "p0001-m0004", "translation_zh": "显式的化学式和平方项应渲染为角标，同时不能改变普通单词。", "highlight": "method"},
+    {"block_id": "p0001-m0005", "translation_zh": "1 引言", "highlight": "none"},
+    {"block_id": "p0001-m0006", "translation_zh": "信号经过确定性清理后仍保持可读。", "highlight": "none"},
+    {"block_id": "p0001-m0007", "translation_zh": "评估明确证明普通单词中的字母不应成为上标。", "highlight": "none"},
+    {"block_id": "p0001-m0008", "translation_zh": "最后一句保留所有单词间空格，并让标点紧邻正确的词。在 1.2 × 10⁻³ mol L⁻¹ 时，β 水平没有升高（n = 12）。关联并不能确立因果关系。", "highlight": "none"},
+    {"block_id": "p0001-m0009", "translation_zh": "致谢", "highlight": "none"},
+    {"block_id": "p0001-m0010", "translation_zh": "该低价值区域只用于验证默认折叠。", "highlight": "none"}
+  ],
+  "review": {
+    "contract_version": "full-review-v2",
+    "highlights": [],
+    "guide": {
+      "research_question": [{"text": "如何只渲染明确的上下标并保留普通单词？", "source_block_ids": ["p0001-m0004"]}],
+      "key_methods": [{"text": "使用包含合法标签和易误判单词的固定文本进行回归。", "source_block_ids": ["p0001-m0004", "p0001-m0007"]}],
+      "core_results": [{"text": "合法角标可见，modified 与 firmly 等普通词保持完整。", "source_block_ids": ["p0001-m0006", "p0001-m0007"]}],
+      "limitations": [{"text": "样例只覆盖显示合同，不替代真实解析校文。", "source_block_ids": ["p0001-m0008"]}]
+    }
+  }
+}

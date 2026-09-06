@@ -23,12 +23,15 @@ assert.deepEqual(uses, [
 ], 'workflow 只能使用允许的 actions')
 assert.deepEqual(runs, [
   'npm ci --ignore-scripts --legacy-peer-deps',
+  'python -m pip install -e "engine[dev]"',
   'npm run build:ci',
   'npm run test:engine',
   'npm run test:offline',
+  'npm run test:assets',
 ], 'workflow 必须构建单仓库包并运行引擎与插件测试')
 assert.match(manifest.scripts?.['build:ci'] ?? '', /build-engine\.mjs/)
-assert.match(manifest.scripts?.['test:engine'] ?? '', /pytest -q engine\/tests/)
+assert.equal(manifest.scripts?.['test:engine'], 'node scripts/run-python.mjs -m pytest -q engine/tests')
+assert.equal(manifest.scripts?.['verify:restart-recovery'], 'node scripts/run-python.mjs scripts/verify_restart_recovery.py --full-read')
 assert.match(manifest.scripts?.['test:offline'] ?? '', /tests\/bundled-engine\.mjs/)
 assert.doesNotMatch(manifest.scripts?.['test:offline'] ?? '', /profile|foundation-integration|full-read-integration/)
 

@@ -90,8 +90,21 @@ class NCBIProvider(_UrlProvider):
         try:
             url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=" + pmid + "&retmode=xml"
             root = ET.fromstring(self._get(url, "application/xml"))
-            text = " ".join(root.findall(".//AbstractText")[i].text or "" for i in range(len(root.findall(".//AbstractText"))))
-            title = root.findtext(".//ArticleTitle")
+            # Main Abstract is English; OtherAbstract may use another language or scope.
+            sections = root.findall(".//Abstract/AbstractText")
+            paragraphs = []
+            for section in sections:
+                body = "".join(section.itertext()).strip()
+                if not body:
+                    continue
+                label = section.get("Label", "").strip()
+                paragraphs.append((label, body))
+            text = "\n\n".join(
+                f"{label}: {body}" if len(paragraphs) > 1 and label else body
+                for label, body in paragraphs
+            )
+            title_element = root.find(".//ArticleTitle")
+            title = "".join(title_element.itertext()) if title_element is not None else None
             return ProviderResult.success({"pmid": pmid, "title": title, "abstract_en": text or None})
         except Exception as error:
             return ProviderResult.retry(f"ncbi:{type(error).__name__}")

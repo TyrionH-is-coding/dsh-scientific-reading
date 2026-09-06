@@ -31,7 +31,7 @@ export function registerSettings(ctx: Context, config: PluginConfig): void {
       try {
         const next = current()
         if (next && typeof next === 'object') Object.assign(config, next)
-        ctx.logger?.('scientific-reading 设置已更新（dataRoot: ' + (config.dataRoot || '(默认)') + '，legalOnly: ' + String(config.legalOnly) + '）')
+        ctx.logger?.('scientific-reading 设置已更新（dataRoot: ' + (config.dataRoot || '(默认)') + '，自动获取: OA-only' + '）')
       } catch (e) {
         ctx.logger?.('scientific-reading 设置同步失败: ' + (e instanceof Error ? e.message : String(e)))
       }

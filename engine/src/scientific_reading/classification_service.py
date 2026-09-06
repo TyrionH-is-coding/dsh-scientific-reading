@@ -1,6 +1,7 @@
 """验证并原子应用文件夹/标签归类提案。"""
 
 from __future__ import annotations
+from .scope import classification_write
 
 import json
 import sqlite3
@@ -47,6 +48,7 @@ class ClassificationService:
         self.library = library
         self.conn = library.conn
 
+    @classification_write
     def apply(
         self,
         proposals: tuple[ClassificationProposal, ...] | list[ClassificationProposal],
@@ -164,6 +166,7 @@ class ClassificationService:
             "chunk_count": len(chunks),
         }
 
+    @classification_write
     def undo(self, operation_id: str) -> dict[str, Any]:
         if not isinstance(operation_id, str) or not operation_id:
             raise ValueError("operation_id_invalid")
@@ -194,6 +197,7 @@ class ClassificationService:
             raise
         return {"operation_id": operation_id, "restored": len(before)}
 
+    @classification_write
     def apply_direct(
         self, action: str, paper_ids: tuple[str, ...], payload: dict[str, Any]
     ) -> dict[str, Any]:
@@ -252,6 +256,7 @@ class ClassificationService:
             raise
         return {"operation_id": operation_id, "paper_ids": list(ids)}
 
+    @classification_write
     def undo_direct(self, operation_id: str) -> dict[str, Any]:
         self.conn.execute("BEGIN IMMEDIATE")
         try:

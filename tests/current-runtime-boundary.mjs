@@ -5,15 +5,18 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const expectedTools = [
-  'sr_setup', 'sr_scansci_status', 'sr_scansci_fetch', 'sr_scansci_login', 'sr_scansci_set_school',
+  'sr_setup', 'sr_scansci_status', 'sr_scansci_fetch',
   'sr_download_papers', 'sr_start_full_read', 'sr_continue_full_read', 'sr_attach_pdf', 'sr_export_assets', 'sr_ingest',
   'sr_abstract_submit', 'sr_library_list', 'sr_folder_manage', 'sr_classification_apply',
-  'sr_classification_undo', 'sr_job_status',
+  'sr_classification_undo', 'sr_job_status', 'sr_review_context', 'sr_review_confirm',
+  'sr_library_backup', 'sr_library_restore', 'sr_library_search_rebuild',
+  'sr_evidence_locate', 'sr_candidate_rebuild',
 ]
 
 const toolSource = [
   readFileSync(join(root, 'src', 'tools.ts'), 'utf8'),
   readFileSync(join(root, 'src', 'library_tools.ts'), 'utf8'),
+  readFileSync(join(root, 'src', 'review_tools.ts'), 'utf8'),
 ].join('\n')
 const actualTools = [...toolSource.matchAll(/name:\s*'(sr_[^']+)'/g)].map((match) => match[1])
 assert.deepEqual(actualTools.sort(), expectedTools.sort(), '运行工具必须严格等于当前白名单')
