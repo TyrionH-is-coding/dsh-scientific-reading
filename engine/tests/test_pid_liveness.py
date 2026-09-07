@@ -1,4 +1,5 @@
 import ctypes
+from types import SimpleNamespace
 
 from scientific_reading import __main__ as cli
 
@@ -22,8 +23,10 @@ def test_cli_windows_pid_with_exit_code_is_not_alive(monkeypatch):
     kernel32.OpenProcess = Call(lambda *_args: 123)
     kernel32.GetExitCodeProcess = Call(set_exit_code)
     kernel32.CloseHandle = Call(lambda handle: closed.append(handle) or 1)
-    monkeypatch.setattr(cli.os, "name", "nt")
-    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel32)
+    # Replace only the CLI's OS view; mutating os.name also changes pathlib
+    # inside pytest and makes the test runner itself fail on Unix.
+    monkeypatch.setattr(cli, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel32, raising=False)
 
     assert cli._pid_is_alive(4321) is False
     assert closed == [123]
