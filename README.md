@@ -2,6 +2,8 @@
 
 面向 DSH 的个人文献库：通过对话快速入库，按需获取 OA 正文或补入本地 PDF，生成可追溯的精读 HTML，并用 SQLite 与 Excel 长期维护。
 
+当前 rc.4 源码补充 Excel/LibreOffice 占用标记保护：Windows、macOS、Linux 检测到工作簿仍在使用时返回 `pending / xlsx_in_use`，保留原表，待保存关闭后重试三列个人记录的回写。部分表格软件不生成占用标记，仍须先保存关闭；桌面软件编辑与自动选行需在对应机器单独验收。
+
 **0.1.0-rc.1 已撤回为草稿，暂未公开放行。** 修复源码已通过 CI，旧 tag 与最终放行提交仍需核对，见[发布修复记录](docs/releases/v0.1.0/RELEASE_GATE.md)。持有冻结构建包的测试用户可按[候选安装指南](docs/releases/v0.1.0/INSTALL.md)核对 SHA 后测试；[实现与验收状态](docs/releases/v0.1.0/IMPLEMENTATION_GAPS.md)分别记录原生插件 A 和独立 Codex 工作台 B。源码目录和 GitHub 自动生成的 Source code 压缩包不能代替安装包。
 
 ## 首个发布版范围

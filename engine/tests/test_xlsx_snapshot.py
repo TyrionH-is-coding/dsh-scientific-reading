@@ -18,6 +18,32 @@ def _seed(root: Path, count: int = 2) -> None:
     service.close()
 
 
+@pytest.mark.parametrize("lock_name", ["~$scientific-reading.xlsx", ".~lock.scientific-reading.xlsx#"])
+def test_open_spreadsheet_preserves_file_and_defers_import(tmp_path, lock_name):
+    _seed(tmp_path, 1)
+    service = XlsxSnapshotService(tmp_path)
+    assert service.refresh()["status"] == "success"
+    workbook = openpyxl.load_workbook(service.target)
+    sheet = workbook["文献"]
+    sheet.cell(2, XLSX_COLUMNS.index("用户笔记") + 1, "已保存但仍在编辑")
+    workbook.save(service.target)
+    workbook.close()
+    before = service.target.read_bytes()
+    lock = service.target.with_name(lock_name)
+    lock.write_text("office owner", encoding="utf-8")
+    for action in (service.import_user_fields, service.refresh):
+        result = action()
+        assert result["status"] == "pending"
+        assert result["error"]["code"] == "xlsx_in_use"
+        assert service.target.read_bytes() == before
+    with sqlite3.connect(tmp_path / "library.sqlite") as connection:
+        assert not connection.execute("SELECT user_notes FROM items").fetchone()[0]
+    lock.unlink()
+    assert service.refresh()["status"] == "success"
+    with sqlite3.connect(tmp_path / "library.sqlite") as connection:
+        assert connection.execute("SELECT user_notes FROM items").fetchone()[0] == "已保存但仍在编辑"
+
+
 def _seed_ready_reader_with_assets(root: Path) -> tuple[str, str]:
     service = LibraryService(root)
     try:

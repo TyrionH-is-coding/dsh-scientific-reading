@@ -62,6 +62,9 @@ class XlsxSnapshotService:
         temporary: Path | None = None
         try:
             temporary = self._write_temp(rows, review_rows, asset_rows)
+            if self._workbook_in_use():
+                temporary.unlink(missing_ok=True)
+                return self._pending_import("xlsx_in_use", "工作簿正在使用；请保存并关闭表格软件后重试。")
             os.replace(temporary, self.target)
         except PermissionError as error:
             if temporary is not None:
@@ -459,6 +462,8 @@ class XlsxSnapshotService:
 
     @root_operation
     def import_user_fields(self) -> dict[str, Any]:
+        if self._workbook_in_use():
+            return self._pending_import("xlsx_in_use", "工作簿正在使用；请保存并关闭表格软件后重试。")
         if not self.target.is_file():
             return {"status": "success", "updated": 0, "conflicts": 0}
         try:
@@ -554,6 +559,12 @@ class XlsxSnapshotService:
                 "已保留原工作簿和冲突行笔记；请修正文献 ID 与行身份的冲突后重试。",
             ))
         return result
+
+    def _workbook_in_use(self) -> bool:
+        # Unix permits replacing open files; Office owner files also protect that path.
+        return any(self.target.with_name(name).exists() for name in (
+            "~$" + self.target.name, ".~lock." + self.target.name + "#",
+        ))
 
     def _pending_import(self, code: str, detail: str) -> dict[str, Any]:
         self._set_meta("1", code)
