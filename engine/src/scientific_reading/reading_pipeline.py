@@ -510,7 +510,11 @@ class ReadingPipeline:
         }
 
     @root_operation
-    def start(self, paper_id: str, provider_profile: str = "none", *, expected_parent_job_id: str | None = None) -> PipelineResult:
+    def start(self, paper_id: str, provider_profile: str = "none", *, expected_parent_job_id: str | None = None, resume_job_id: str | None = None) -> PipelineResult:
+        if resume_job_id is not None:
+            if expected_parent_job_id is not None and expected_parent_job_id != resume_job_id:
+                raise RuntimeError("full_read_parent_mismatch")
+            expected_parent_job_id = resume_job_id
         if provider_profile not in {"none", "scansci"}:
             raise ValueError("trusted_provider_profile_invalid")
         library = LibraryService(self.data_root)
@@ -585,6 +589,26 @@ class ReadingPipeline:
                             "missing-after:"
                             + (active.source_pdf_sha256 or active.parent_job_id)
                         )
+                except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                    pass
+            if current_sha is not None:
+                missing_job_id = stable_job_id(
+                    self._parent_request(paper_id, None, provider_profile)
+                )
+                try:
+                    missing = self._load(missing_job_id, expected_paper_id=paper_id)
+                    missing_profile = self.job_store.load_request(missing_job_id).payload.get(
+                        "provider_profile", "none"
+                    )
+                    if missing.current_stage != "completed":
+                        if missing_profile != provider_profile:
+                            raise RuntimeError("provider_profile_conflict")
+                        if (
+                            missing.source_pdf_sha256 is None
+                            or missing.source_pdf_sha256 == current_sha
+                        ):
+                            self._sync_library(missing)
+                            return missing
                 except (FileNotFoundError, ValueError, json.JSONDecodeError):
                     pass
             if current_sha is not None:

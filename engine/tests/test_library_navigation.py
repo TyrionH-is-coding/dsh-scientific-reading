@@ -230,3 +230,18 @@ def test_navigation_rows_include_fixed_status_and_asset_contract(tmp_path: Path)
     assert item["has_pdf"] is True
     assert item["has_reader"] is True
     assert item["last_error"] == "retry later"
+
+
+def test_reingest_returns_existing_folder_id(tmp_path: Path) -> None:
+    service = LibraryService(tmp_path)
+    try:
+        folder = service.create_folder("Inbox")
+        first = service.ingest(PaperMetadata(title="Dedupe paper", doi="10.5555/folder"))
+        service.move_items((first["paper_id"],), folder["folder_id"])
+        again = service.ingest(PaperMetadata(title="Dedupe paper", doi="10.5555/folder"))
+    finally:
+        service.close()
+
+    assert first["folder_id"] is None
+    assert again["created"] is False
+    assert again["folder_id"] == folder["folder_id"]

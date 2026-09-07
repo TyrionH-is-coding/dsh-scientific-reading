@@ -346,7 +346,11 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
       const download = await readDownloadJob(config, args.job_id)
       if (download) return download as never
       const r = await engineJobStatus(config, args.job_id)
-      if (!r.ok || !r.json) throw new Error(r.stderr || 'job-status 失败')
+      if (!r.json) throw new Error(r.stderr || 'job-status 失败')
+      const failed = r.json.detail && typeof r.json.detail === 'object' && 'error' in r.json.detail
+        ? String((r.json.detail as { error?: unknown }).error ?? '')
+        : ''
+      if (!r.ok && !r.json.job_id) throw new Error(failed || r.stderr || 'job-status 失败')
       return r.json as never
     },
   })), '@dsh-external/dsh-scientific-reading: sr_job_status')

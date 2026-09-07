@@ -97,6 +97,21 @@ class EnvironmentStatusService:
         self._write(result)
         return result
 
+    def mark_mineru_api_verified(self) -> dict[str, object]:
+        result = self.snapshot()
+        api = result["mineru"]["api"] if isinstance(result.get("mineru"), dict) else {}
+        if not isinstance(api, dict):
+            api = {}
+        api = {
+            **api,
+            "status": api.get("status") if isinstance(api.get("status"), str) else "configured",
+            "api_call_verified": True,
+            "checked_at": self.now(),
+        }
+        result["mineru"]["api"] = api  # type: ignore[index]
+        self._write(result)
+        return result
+
     @staticmethod
     def _status(value: object, *, school: str | None = None) -> dict[str, object]:
         source = value if isinstance(value, dict) else {}
