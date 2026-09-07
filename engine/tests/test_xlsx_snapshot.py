@@ -269,9 +269,11 @@ def test_snapshot_lists_every_confirmed_review_conclusion_with_parent_scope(tmp_
     rows = list(sheet.iter_rows(values_only=True))
     assert rows[0] == REVIEW_COLUMNS
     assert len(rows) == 3
-    assert rows[1][1:6] == ("机制", "结论一", "历史记录", "历史确认 · 证据未核对", "Figure 2")
-    assert rows[2][1:3] == ("局限", "结论二")
-    assert rows[1][8] == paper_id
+    # 同批确认时间可能相同，结论 ID 不承诺输入顺序。
+    by_content = {row[2]: row for row in rows[1:]}
+    assert by_content["结论一"][1:6] == ("机制", "结论一", "历史记录", "历史确认 · 证据未核对", "Figure 2")
+    assert by_content["结论二"][1:6] == ("局限", "结论二", "历史记录", "历史确认 · 证据未核对", "Discussion")
+    assert all(row[8] == paper_id for row in rows[1:])
     assert "父会话 ID" not in rows[0]
     assert sheet.freeze_panes == "B2"
     assert sheet.protection.sheet is False
