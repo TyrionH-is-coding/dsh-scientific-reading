@@ -48,6 +48,16 @@ def test_locked_keyring_never_falls_back_to_plaintext(tmp_path, monkeypatch):
     assert not store.path.exists()
 
 
+def test_unconfigured_instance_does_not_open_or_unlock_the_keyring(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    class Unavailable:
+        def get_password(self, *args):
+            raise AssertionError("must not touch the desktop keyring before configuration")
+    store = MineruSecretStore(tmp_path, keyring_backend=Unavailable())
+    assert store.load() is None
+    store.delete()
+
+
 @pytest.mark.parametrize("platform,command", [("darwin", "/usr/bin/open"), ("linux", "/usr/bin/xdg-open")])
 def test_spreadsheet_opener_preserves_path_and_does_not_claim_row_selection(tmp_path, monkeypatch, platform, command):
     from scientific_reading import xlsx_snapshot

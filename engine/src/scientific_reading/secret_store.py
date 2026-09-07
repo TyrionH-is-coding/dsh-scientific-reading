@@ -54,6 +54,7 @@ class MineruSecretStore:
     def __init__(self, data_root: Path, *, protector: SecretProtector | None = None, keyring_backend=None) -> None:
         self.data_root = Path(data_root).resolve()
         self.path = self.data_root / "secrets" / "mineru-api-key.dpapi"
+        self.keyring_marker = self.data_root / "secrets" / "mineru-api-key.keyring"
         self.protector = protector or WindowsDpapiProtector()
         self.use_keyring = protector is None and sys.platform != "win32"
         self.keyring_backend = keyring_backend
@@ -86,6 +87,8 @@ class MineruSecretStore:
                 self._keyring().set_password(self.service, "mineru-api-token", token)
             except Exception as error:
                 raise RuntimeError("secure_store_unavailable") from None
+            self.keyring_marker.parent.mkdir(parents=True, exist_ok=True)
+            self.keyring_marker.write_text("native-keyring\n", encoding="utf-8")
         else:
             encrypted = self.protector.protect(token.encode("utf-8"))
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +100,8 @@ class MineruSecretStore:
 
     def load(self) -> str | None:
         if self.use_keyring:
+            if not self.keyring_marker.is_file():
+                return None
             try:
                 value = self._keyring().get_password(self.service, "mineru-api-token")
                 return value.strip() or None if isinstance(value, str) else None
@@ -113,13 +118,14 @@ class MineruSecretStore:
         return value or None
 
     def delete(self) -> None:
-        if self.use_keyring:
+        if self.use_keyring and self.keyring_marker.is_file():
             try:
                 backend = self._keyring()
                 if backend.get_password(self.service, "mineru-api-token") is not None:
                     backend.delete_password(self.service, "mineru-api-token")
             except Exception as error:
                 raise RuntimeError("secure_store_unavailable") from None
+            self.keyring_marker.unlink(missing_ok=True)
         self.path.unlink(missing_ok=True)
         from .environment_status import EnvironmentStatusService
         EnvironmentStatusService(self.data_root).recheck(("mineru_api",))
