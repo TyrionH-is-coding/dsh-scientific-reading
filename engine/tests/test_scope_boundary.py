@@ -30,6 +30,8 @@ def test_scoped_list_and_ingest_cannot_access_other_folder(tmp_path):
             library.get_item(paper)
         with pytest.raises(ValueError, match="scope"):
             library.ingest(PaperMetadata(title="overwrite", doi="10.5555/scope"))
+        with pytest.raises(ValueError, match="scope"):
+            library.update_personal_record(paper, {"user_notes": "不能跨分类写入"})
     assert library.get_item(paper)["title"] == "scope fixture"
     library.close()
 

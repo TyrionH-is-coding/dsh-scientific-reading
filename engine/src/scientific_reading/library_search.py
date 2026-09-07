@@ -22,6 +22,15 @@ def _schema_object_exists(
 
 def ensure_search_schema(conn: sqlite3.Connection) -> None:
     """幂等创建派生索引；仅首次建表时回填既有主记录。"""
+    schema = conn.execute("SELECT sql FROM sqlite_master WHERE name='library_search_documents'").fetchone()
+    if schema and "'personal'" not in schema[0]:
+        # 索引是派生数据；升级类型约束后，从保留的主记录重建。
+        triggers = conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'").fetchall()
+        for (name,) in triggers:
+            if re.fullmatch(r"library_search_[a-z_]+", name):
+                conn.execute(f'DROP TRIGGER "{name}"')
+        conn.execute("DROP TABLE library_search_documents")
+        conn.execute("DROP TABLE IF EXISTS library_search_fts")
     needs_backfill = not (
         _schema_object_exists(conn, "table", "library_search_documents")
         and _schema_object_exists(conn, "table", "library_search_fts")
@@ -32,7 +41,7 @@ def ensure_search_schema(conn: sqlite3.Connection) -> None:
           document_id TEXT PRIMARY KEY,
           paper_id TEXT NOT NULL REFERENCES items(paper_id) ON DELETE CASCADE,
           content_type TEXT NOT NULL CHECK (
-            content_type IN ('metadata','abstract_en','abstract_zh','conclusion')
+            content_type IN ('metadata','abstract_en','abstract_zh','conclusion','personal')
           ),
           content TEXT NOT NULL,
           conclusion_id TEXT,
@@ -198,6 +207,17 @@ def ensure_search_schema(conn: sqlite3.Connection) -> None:
         END;
         """
     )
+    from .personal_records import USER_FIELDS
+    expression = " || char(10) || ".join(f"coalesce(new.{name},'')" for name in USER_FIELDS.values())
+    for operation, event in (("ai", "INSERT"), ("au", "UPDATE OF " + ','.join(USER_FIELDS.values()))):
+        conn.executescript(f"""
+        CREATE TRIGGER IF NOT EXISTS library_search_personal_{operation}
+        AFTER {event} ON items BEGIN
+          DELETE FROM library_search_documents WHERE document_id='personal:' || new.paper_id;
+          INSERT INTO library_search_documents(document_id,paper_id,content_type,content,basis)
+          VALUES ('personal:' || new.paper_id,new.paper_id,'personal',{expression},'personal');
+        END;
+        """)
     if needs_backfill:
         rebuild_search_index(conn)
 
@@ -238,6 +258,10 @@ def rebuild_search_index(conn: sqlite3.Connection) -> dict[str, int]:
         "trim(conclusion_type || char(10) || conclusion_text), conclusion_id, basis "
         "FROM review_conclusions"
     )
+    from .personal_records import USER_FIELDS
+    expression = " || char(10) || ".join(f"coalesce({name},'')" for name in USER_FIELDS.values())
+    conn.execute("INSERT INTO library_search_documents(document_id,paper_id,content_type,content,basis) "
+                 "SELECT 'personal:' || paper_id,paper_id,'personal'," + expression + ",'personal' FROM items")
     return {
         "papers": conn.execute("SELECT COUNT(*) FROM items").fetchone()[0],
         "documents": conn.execute(

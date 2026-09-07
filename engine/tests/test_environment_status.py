@@ -66,6 +66,7 @@ def test_library_snapshot_reads_only_local_sqlite(tmp_path: Path) -> None:
 
     library = EnvironmentStatusService(tmp_path).snapshot()["library"]
     assert library == {"status": "ready", "papers": 3, "xlsx_pending": 2,
+                       "xlsx_status": "pending", "xlsx_error": None, "xlsx_last_export": None,
                        "data_root": str(tmp_path.resolve()), "database": str(db.resolve())}
 
 

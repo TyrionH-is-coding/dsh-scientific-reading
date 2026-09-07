@@ -88,6 +88,13 @@ def _job_foreground(store: BackgroundJobStore, job_id: str, timer: ForegroundTim
                 job_id, expected_paper_id=request.paper_id
             )
             detail["stage_timings"] = pipeline.stage_timings
+            child_id = pipeline.stage_outputs.get("schedule_derived_updates", {}).get("xlsx_job_id")
+            if child_id:
+                child_request = store.load_request(child_id)
+                if child_request.paper_id == request.paper_id and child_request.target_stage == "xlsx_snapshot":
+                    child = store.load_status(child_id)
+                    detail["xlsx"] = {"job_id": child_id, "status": child.state, "result": child.result,
+                                      "error": child.to_dict().get("error")}
         except (FileNotFoundError, OSError, TypeError, ValueError, json.JSONDecodeError):
             pass
     next_action = "done"
@@ -721,9 +728,17 @@ def _run_navigation_command(args) -> int:
                     tags=tuple(args.tag),
                     status=args.status,
                     recent_days=args.recent_days,
+                    reading_state=args.reading_state,
+                    personal_recent_days=args.personal_recent_days,
+                    order_by=args.order_by,
                 )
             elif args.command == "library-item-v2":
                 result = service.get_item(args.paper_id)
+            elif args.command == "personal-record-update":
+                payload = json.load(sys.stdin)
+                if not isinstance(payload, dict) or set(payload) != {"fields", "expected"} or not isinstance(payload["expected"], dict):
+                    raise ValueError("personal_payload_invalid")
+                result = service.update_personal_record(args.paper_id, payload["fields"], expected=payload["expected"])
             elif args.command == "folder-list":
                 result = service.list_folders()
             elif args.command == "folder-create":
@@ -829,6 +844,11 @@ def _build_parser() -> argparse.ArgumentParser:
     download_save = commands.add_parser("download-job-save")
     download_save.add_argument("--job-id", required=True)
     listing = commands.add_parser("library-list-v2")
+    listing.add_argument("--reading-state")
+    listing.add_argument("--personal-recent-days", type=int)
+    listing.add_argument("--order-by", default="updated_at")
+    personal = commands.add_parser("personal-record-update")
+    personal.add_argument("--paper-id", required=True)
     listing.add_argument("--page", type=int, default=1)
     listing.add_argument("--page-size", type=int, default=50)
     listing.add_argument("--query")
@@ -1125,7 +1145,7 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
             finally:
                 library.close()
         if current_scope() is not None:
-            allowed = {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue", "job-status", "full-read-pipeline-start", "full-read-pipeline-resume", "full-read-pdf-attach-resume", "pdf-attach-library", "artifact-resolve", "export-assets", "abstract-read-submit", "review-session-get", "review-session-bind", "review-context", "review-confirm", "evidence-locate", "resolve-conclusion"}
+            allowed = {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue", "job-status", "full-read-pipeline-start", "full-read-pipeline-resume", "full-read-pdf-attach-resume", "pdf-attach-library", "artifact-resolve", "export-assets", "abstract-read-submit", "review-session-get", "review-session-bind", "review-context", "review-confirm", "evidence-locate", "resolve-conclusion", "personal-record-update"}
             if args.command not in allowed:
                 raise ScopeError("scope_command_forbidden")
             if getattr(args, "paper_id", None):
@@ -1181,7 +1201,7 @@ def _dispatch(args) -> int:
         if args.command in {
             "library-list-v2", "library-item-v2", "folder-list", "folder-create",
             "folder-rename", "library-search-rebuild", "classification-apply",
-            "classification-undo",
+            "classification-undo", "personal-record-update",
         }:
             return _run_navigation_command(args)
         if args.command == "derived-enqueue":

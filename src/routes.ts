@@ -130,7 +130,7 @@ const safeNonnegativeInteger = (value: unknown, fallback: number): number => Num
 
 function safeSearchMatches(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return []
-  const contentTypes = new Set(['metadata', 'abstract_en', 'abstract_zh', 'conclusion'])
+  const contentTypes = new Set(['metadata', 'abstract_en', 'abstract_zh', 'conclusion', 'personal'])
   const bases = new Set(['paper', 'personal', 'inference', 'question', 'legacy'])
   return value.flatMap((raw) => {
     if (!raw || typeof raw !== 'object') return []

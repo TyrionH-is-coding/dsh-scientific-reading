@@ -174,7 +174,7 @@ def test_real_scheduled_worker_round_trips_only_user_owned_fields(
     sheet.cell(row_number, headers["个人理解程度"], "深入")
     sheet.cell(row_number, headers["用户笔记"], "保留用户笔记")
     sheet.cell(row_number, headers["文献名"], "不得回写的伪造标题")
-    sheet.cell(row_number, headers["阅读状态"], "不得回写的伪造状态")
+    sheet.cell(row_number, headers["处理进度"], "不得回写的伪造状态")
     workbook.save(snapshot.target)
     workbook.close()
 
@@ -205,7 +205,7 @@ def test_real_scheduled_worker_round_trips_only_user_owned_fields(
     workbook = openpyxl.load_workbook(snapshot.target, read_only=True)
     sheet, row_number, headers = _row_for_paper(workbook, paper_id)
     assert sheet.cell(row_number, headers["文献名"]).value == "虚构材料响应研究"
-    assert sheet.cell(row_number, headers["阅读状态"]).value == "full_read_ready"
+    assert sheet.cell(row_number, headers["处理进度"]).value == "Reader 可用"
     assert sheet.cell(row_number, headers["个人思考"]).value == "保留个人思考"
     assert sheet.cell(row_number, headers["个人理解程度"]).value == "深入"
     assert sheet.cell(row_number, headers["用户笔记"]).value == "保留用户笔记"
@@ -233,15 +233,15 @@ def test_published_reader_is_present_as_a_valid_excel_path(tmp_path, monkeypatch
 
     assert status["state"] == "completed", status
     workbook = openpyxl.load_workbook(
-        XlsxSnapshotService(tmp_path).target, read_only=True
+        XlsxSnapshotService(tmp_path).target
     )
     sheet, row_number, headers = _row_for_paper(workbook, paper_id)
-    stored_path = sheet.cell(row_number, headers["精读 HTML"]).value
+    stored_path = sheet.cell(row_number, headers["Reader"]).hyperlink.target
     workbook.close()
     assert stored_path
     candidate = Path(stored_path)
     if not candidate.is_absolute():
-        candidate = tmp_path / "papers" / paper_id / candidate
+        candidate = XlsxSnapshotService(tmp_path).target.parent / candidate
     assert candidate.resolve() == reader.resolve()
     assert candidate.is_file()
 

@@ -60,7 +60,7 @@ rc.4 已补充 Excel/LibreOffice 占用标记保护：Windows、macOS、Linux �
 
 高级部署可在 DSH 插件配置中指定 `dataRoot` 绝对路径；设置与状态页只读显示当前位置。已有库换位置应先做备份并恢复到新目录。SQLite 是系统事实来源；`metadata.json`、manifest 和 Excel 是派生视图或资产索引。
 
-- Excel 固定生成到 `<data-root>/library/scientific-reading.xlsx`。当前代码只允许个人思考、个人理解程度和用户笔记从 Excel 白名单回写；系统字段不得覆盖 SQLite。
+- Excel 固定生成到 `<data-root>/library/scientific-reading.xlsx`，包含文献、阅读成果、图表索引。固定回写阅读进度、课题关系、下一步、个人理解程度、个人思考、用户笔记六列，按稳定身份与导出基线防止旧表覆盖新记录。系统字段不回写；详见 [Excel 管理](docs/excel-library.md)。
 - 文件被 Excel 占用时记录 pending，稍后重试，不回滚入库、下载或精读。
 - PDF、全文翻译、解析图表、Excel 和浏览器会话必须留在仓库外，不提交到 Git。
 

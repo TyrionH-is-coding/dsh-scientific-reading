@@ -82,6 +82,15 @@ class LibraryService:
     def close(self) -> None:
         self.conn.close()
 
+    @root_operation
+    @paper_write
+    def update_personal_record(self, paper_id: str, fields: dict, *, expected=None) -> dict:
+        from .personal_records import update_personal
+
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            return update_personal(self.conn, paper_id, fields, expected=expected)
+
     # ── 条目 ────────────────────────────────────────────────────────
 
     @root_operation
@@ -372,6 +381,9 @@ class LibraryService:
         tags: tuple[str, ...] | list[str] = (),
         status: str | None = None,
         recent_days: int | None = None,
+        reading_state: str | None = None,
+        personal_recent_days: int | None = None,
+        order_by: str = "updated_at",
     ) -> dict[str, Any] | list[dict[str, Any]]:
         scope = current_scope()
         if scope is not None:
@@ -405,9 +417,22 @@ class LibraryService:
         ):
             raise ValueError("recent_days_invalid")
         normalized_tags = self._tags(tags, allow_empty=True)
+        from .personal_records import READING_STATES
+        if reading_state is not None and reading_state not in READING_STATES:
+            raise ValueError("reading_state_invalid")
+        if personal_recent_days is not None and (isinstance(personal_recent_days, bool) or not isinstance(personal_recent_days, int) or personal_recent_days < 1):
+            raise ValueError("personal_recent_days_invalid")
+        if order_by not in {"updated_at", "personal_updated_at"}:
+            raise ValueError("order_by_invalid")
 
         where: list[str] = []
         parameters: list[Any] = []
+        if reading_state is not None:
+            where.append("i.reading_state = ?")
+            parameters.append(reading_state)
+        if personal_recent_days is not None:
+            where.append("i.personal_updated_at >= ?")
+            parameters.append((datetime.now(UTC) - timedelta(days=personal_recent_days)).isoformat())
         if folder_id == "__unclassified__":
             where.append("i.folder_id IS NULL")
         elif folder_id is not None:
@@ -456,7 +481,7 @@ class LibraryService:
             "AND ar.kind='reader' AND ar.status='ready') AS navigation_has_reader "
             "FROM items i LEFT JOIN folders f ON f.folder_id=i.folder_id"
             + where_sql
-            + " ORDER BY i.updated_at DESC, i.paper_id LIMIT ? OFFSET ?",
+            + f" ORDER BY i.{order_by} DESC, i.paper_id LIMIT ? OFFSET ?",
             (*parameters, page_size, (page - 1) * page_size),
         ).fetchall()
         items = [self._navigation_row_to_item(row) for row in rows]
@@ -599,6 +624,9 @@ class LibraryService:
         if row is None:
             raise ValueError("paper_not_found")
         item = self._row_to_item(row)
+        from .personal_records import USER_FIELDS, normalize
+        item.update({name: normalize(name, row[name]) for name in USER_FIELDS.values()})
+        item["personal_updated_at"] = row["personal_updated_at"]
         item.update(
             abstract_en=row["abstract_en"],
             abstract_zh=row["abstract_zh"],
@@ -1206,6 +1234,10 @@ class LibraryService:
             "paper_id": row["paper_id"],
             "library_key": row["library_key"],
             "title": row["title"],
+            "reading_state": row["reading_state"],
+            "personal_updated_at": row["personal_updated_at"],
+            "project_relevance": row["project_relevance"],
+            "next_action": row["next_action"],
             "authors": authors,
             "authors_short": authors_short,
             "doi": row["doi"],

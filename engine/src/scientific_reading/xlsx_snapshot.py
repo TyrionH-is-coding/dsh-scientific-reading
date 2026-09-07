@@ -1,4 +1,4 @@
-"""从 SQLite 生成 XLSX，并只回写三个明确的用户字段。"""
+"""从 SQLite 生成长期管理工作簿，并安全回写固定个人字段。"""
 
 from __future__ import annotations
 
@@ -10,38 +10,20 @@ import subprocess
 import sqlite3
 import tempfile
 import re
+import time
+import hashlib
 from pathlib import Path
 from typing import Any
 
-from openpyxl import Workbook
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill, Protection
-from openpyxl.utils import get_column_letter
 
 from .library_service import library_path
 from .library_schema import migrate_library
-from .data_guard import root_operation
+from .data_guard import root_operation, _file_lock, _key
 
-XLSX_COLUMNS = (
-    "文献名", "作者", "主要研究单位", "年份", "期刊", "标签",
-    "个人思考", "个人理解程度", "用户笔记", "影响因子", "学科领域",
-    "主要内容", "解决方法", "实验假设", "创新", "不足之处", "文献链接", "DOI",
-    "PMID", "文献 ID", "主文件夹", "Abstract (EN)", "Abstract (ZH)",
-    "阅读状态", "PDF 路径", "精读 HTML", "图表资产路径", "创建时间", "更新时间",
-)
-USER_FIELDS = {
-    "个人思考": "personal_thoughts",
-    "个人理解程度": "understanding_level",
-    "用户笔记": "user_notes",
-}
-REVIEW_COLUMNS = (
-    "父会话 ID", "论文标题", "文献 ID", "整理子会话 ID", "结论类型",
-    "确认结论", "证据位置", "确认时间",
-)
-ASSET_COLUMNS = (
-    "文献 ID", "文献名", "资产 ID", "类型", "PDF 页码", "中文图注",
-    "源文图注", "图片路径", "表格 HTML 路径", "精读定位",
-)
+from .personal_records import USER_FIELDS, normalize
+from .xlsx_workbook import XLSX_COLUMNS, REVIEW_COLUMNS, ASSET_COLUMNS, write_workbook
+from .xlsx_sync import import_fields, archive_workbook
 
 
 class XlsxSnapshotService:
@@ -51,8 +33,15 @@ class XlsxSnapshotService:
 
     @root_operation
     def refresh(self) -> dict[str, Any]:
+        with _file_lock(_key(self.data_root), "xlsx", exclusive=True, deadline=time.monotonic() + 30):
+            return self._refresh_locked()
+
+    def _refresh_locked(self):
+        migrate_library(self.data_root)
+        original = hashlib.sha256(self.target.read_bytes()).hexdigest() if self.target.is_file() else None
+        imported = {"updated": 0}
         if self.target.is_file():
-            imported = self.import_user_fields()
+            imported = import_fields(self)
             if imported.get("status") == "pending":
                 return imported
         rows = self._rows()
@@ -65,6 +54,11 @@ class XlsxSnapshotService:
             if self._workbook_in_use():
                 temporary.unlink(missing_ok=True)
                 return self._pending_import("xlsx_in_use", "工作簿正在使用；请保存并关闭表格软件后重试。")
+            current = hashlib.sha256(self.target.read_bytes()).hexdigest() if self.target.is_file() else None
+            if current != original:
+                temporary.unlink(missing_ok=True)
+                return self._pending_import("xlsx_changed_during_export", "生成期间工作簿被修改，已保留较新的原表；请关闭后重试。")
+            archive_workbook(self)
             os.replace(temporary, self.target)
         except PermissionError as error:
             if temporary is not None:
@@ -85,58 +79,61 @@ class XlsxSnapshotService:
                 "error": {"code": "xlsx_snapshot_failed", "detail": str(error)},
             }
         self._set_meta("0", None)
-        return {"status": "success", "path": str(self.target), "rows": len(rows)}
+        from .environment_status import EnvironmentStatusService
+        status = EnvironmentStatusService(self.data_root)
+        with sqlite3.connect(str(library_path(self.data_root))) as conn:
+            conn.executemany("UPDATE items SET xlsx_sync_state='ready',xlsx_error=NULL WHERE paper_id=? "
+                             "AND coalesce(personal_updated_at,'')=? AND updated_at=?",
+                             [(r["文献 ID"], r["个人记录更新时间"], r["处理更新时间"]) for r in rows])
+            conn.execute("INSERT OR REPLACE INTO library_meta VALUES('xlsx_last_export',?)", (json.dumps({**self._receipt, "rows": len(rows)}, ensure_ascii=False),))
+        status._write(status.snapshot())
+        return {"status": "success", "path": str(self.target), "rows": len(rows),
+                "updated": imported["updated"], "conflicts": 0, **self._receipt}
 
-    def _review_rows(self) -> list[tuple[Any, ...]]:
-        migrate_library(self.data_root)
-        conn = sqlite3.connect(str(library_path(self.data_root)))
-        try:
-            return [
-                tuple(row)
-                for row in conn.execute(
-                    "SELECT rc.parent_session_id, i.title, rc.paper_id, "
-                    "rc.review_session_id, rc.conclusion_type, rc.conclusion_text, "
-                    "rc.evidence_locator, rc.confirmed_at "
-                    "FROM review_conclusions rc "
-                    "JOIN items i ON i.paper_id=rc.paper_id "
-                    "ORDER BY rc.confirmed_at, rc.rowid"
-                )
-            ]
-        finally:
-            conn.close()
+    def _review_rows(self):
+        from .xlsx_reading import reading_records
+        return reading_records(self)
 
-    def _rows(self) -> list[tuple[Any, ...]]:
+    def _rows(self):
         migrate_library(self.data_root)
-        conn = sqlite3.connect(str(library_path(self.data_root)))
-        conn.row_factory = sqlite3.Row
-        try:
-            result: list[tuple[Any, ...]] = []
-            query = (
-                "SELECT i.*, f.name AS folder_name, a.rel_path AS pdf_path, "
-                "(SELECT rel_path FROM artifacts WHERE paper_id=i.paper_id "
-                "AND kind IN ('reader','full_read_html','full_read') AND status='ready' "
-                "ORDER BY updated_at DESC LIMIT 1) AS html_path, "
-                "(SELECT GROUP_CONCAT(rel_path) FROM artifacts WHERE paper_id=i.paper_id "
-                "AND kind IN ('figure_asset','table_asset','asset')) AS asset_paths, "
-                "GROUP_CONCAT(DISTINCT it.tag) AS tags "
+        with sqlite3.connect(str(library_path(self.data_root))) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT i.*, f.name AS folder_name, a.rel_path AS pdf_path, a.sha256 AS pdf_sha, "
+                "(SELECT rel_path FROM artifacts WHERE paper_id=i.paper_id AND kind='reader' "
+                "AND status='ready' LIMIT 1) AS reader_path, "
+                "(SELECT GROUP_CONCAT(tag, ', ') FROM item_tags WHERE paper_id=i.paper_id) AS tags "
                 "FROM items i LEFT JOIN folders f ON f.folder_id=i.folder_id "
-                "LEFT JOIN attachments a ON a.paper_id=i.paper_id "
-                "LEFT JOIN item_tags it ON it.paper_id=i.paper_id "
-                "GROUP BY i.paper_id ORDER BY i.created_at, i.paper_id"
-            )
-            for row in conn.execute(query):
-                authors = json.loads(row["authors_json"] or "[]")
-                result.append((
-                    row["title"], "; ".join(authors), "", row["year"], row["journal"], row["tags"] or "",
-                    row["personal_thoughts"] or "", row["understanding_level"] or "", row["user_notes"] or "",
-                    "", "", "", "", "", "", "", row["source_url"] or "", row["doi"], row["pmid"], row["paper_id"],
-                    row["folder_name"] or "", row["abstract_en"] or "",
-                    row["abstract_zh"] or "", row["status"], row["pdf_path"] or "", row["html_path"] or "", row["asset_paths"] or "",
-                    row["created_at"], row["updated_at"],
-                ))
-            return result
-        finally:
-            conn.close()
+                "LEFT JOIN attachments a ON a.paper_id=i.paper_id ORDER BY i.created_at,i.paper_id"
+            ).fetchall()
+        result = []
+        for row in rows:
+            paper_root = self.data_root / "papers" / row["paper_id"]
+            reader = ""
+            if row["pdf_sha"] and row["reader_path"]:
+                reader = self._active_reader_rel(paper_root, paper_root / "generations" / row["pdf_sha"][:16], row["reader_path"])
+            if row["reader_path"] == "reading/reader.html":
+                from .library_service import LibraryService
+                library = LibraryService(self.data_root)
+                try:
+                    library.validate_reader(row["paper_id"], row["reader_path"])
+                    reader = row["reader_path"]
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    library.close()
+            processing = "Reader 可用" if reader else "缺 PDF" if not row["pdf_path"] else "待精读"
+            if row["last_error"]:
+                processing = "需处理"
+            paper = {"文献名": row["title"], "分类": row["folder_name"] or "未分类", "PDF": row["pdf_path"] or "",
+                     "Reader": reader, "年份": row["year"], "期刊": row["journal"], "标签": row["tags"] or "",
+                     "处理进度": processing, "个人记录更新时间": row["personal_updated_at"] or "",
+                     "作者": "; ".join(json.loads(row["authors_json"] or "[]")), "DOI": row["doi"], "PMID": row["pmid"],
+                     "Abstract (EN)": row["abstract_en"], "Abstract (ZH)": row["abstract_zh"], "文献链接": row["source_url"],
+                     "入库时间": row["created_at"], "处理更新时间": row["updated_at"], "文献 ID": row["paper_id"]}
+            paper.update({label: normalize(field, row[field]) for label, field in USER_FIELDS.items()})
+            result.append(paper)
+        return result
 
     def _asset_rows(self) -> list[tuple[Any, ...]]:
         migrate_library(self.data_root)
@@ -287,159 +284,17 @@ class XlsxSnapshotService:
             return ""
         return Path(rel_path).as_posix() if candidate.is_file() else ""
 
-    def _write_temp(
-        self,
-        rows: list[tuple[Any, ...]],
-        review_rows: list[tuple[Any, ...]],
-        asset_rows: list[tuple[Any, ...]],
-    ) -> Path:
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "文献"
-        sheet.append(XLSX_COLUMNS)
-        for row in rows:
-            sheet.append(row)
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = f"A1:{get_column_letter(len(XLSX_COLUMNS))}{max(1, sheet.max_row)}"
-        sheet.row_dimensions[1].height = 28
-        header_fill = PatternFill("solid", fgColor="1F4E78")
-        user_fill = PatternFill("solid", fgColor="FFF2CC")
-        for cell in sheet[1]:
-            cell.fill = header_fill
-            cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        widths = {
-            "文献名": 42, "作者": 24, "主要研究单位": 22, "期刊": 20, "标签": 18,
-            "个人思考": 32, "个人理解程度": 16, "用户笔记": 32,
-            "主要内容": 34, "解决方法": 30, "实验假设": 28, "创新": 26, "不足之处": 26,
-            "文献链接": 34, "Abstract (EN)": 44, "Abstract (ZH)": 44,
-            "PDF 路径": 34, "精读 HTML": 34, "图表资产路径": 34,
-        }
-        for column, name in enumerate(XLSX_COLUMNS, 1):
-            sheet.column_dimensions[get_column_letter(column)].width = widths.get(name, 15)
-            for cell in sheet.iter_cols(min_col=column, max_col=column, min_row=2):
-                for value in cell:
-                    value.alignment = Alignment(vertical="top", wrap_text=True)
-                    if name in USER_FIELDS:
-                        value.fill = user_fill
-                        value.protection = Protection(locked=False)
-        headers = {cell.value: cell.column for cell in sheet[1]}
-        asset_positions: dict[str, tuple[int, int]] = {}
-        for asset_row_number, asset_row in enumerate(asset_rows, 2):
-            paper_id = str(asset_row[0])
-            if paper_id in asset_positions:
-                first, count = asset_positions[paper_id]
-                asset_positions[paper_id] = (first, count + 1)
-            else:
-                asset_positions[paper_id] = (asset_row_number, 1)
-        for row_number in range(2, sheet.max_row + 1):
-            paper_id = sheet.cell(row_number, headers["文献 ID"]).value
-            for name in ("PDF 路径", "精读 HTML"):
-                cell = sheet.cell(row_number, headers[name])
-                target = self._paper_link(paper_id, cell.value)
-                if target:
-                    cell.hyperlink = target
-                    cell.style = "Hyperlink"
-            source_cell = sheet.cell(row_number, headers["文献链接"])
-            if isinstance(source_cell.value, str) and source_cell.value.startswith(("http://", "https://")):
-                source_cell.hyperlink = source_cell.value
-                source_cell.style = "Hyperlink"
-            if paper_id in asset_positions:
-                first, count = asset_positions[paper_id]
-                asset_cell = sheet.cell(row_number, headers["图表资产路径"])
-                asset_cell.value = f"查看 {count} 项"
-                asset_cell.hyperlink = f"#'图表资产'!A{first}"
-                asset_cell.style = "Hyperlink"
-        sheet.protection.sheet = True
-        sheet.protection.autoFilter = False
-        sheet.protection.selectUnlockedCells = False
-        asset_sheet = workbook.create_sheet("图表资产")
-        asset_sheet.append(ASSET_COLUMNS)
-        for row in asset_rows:
-            asset_sheet.append(row)
-        asset_sheet.freeze_panes = "A2"
-        asset_sheet.auto_filter.ref = (
-            f"A1:{get_column_letter(len(ASSET_COLUMNS))}{max(1, asset_sheet.max_row)}"
-        )
-        asset_sheet.row_dimensions[1].height = 28
-        asset_headers = {cell.value: cell.column for cell in asset_sheet[1]}
-        for cell in asset_sheet[1]:
-            cell.fill = header_fill
-            cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        asset_widths = (24, 42, 28, 10, 10, 38, 38, 42, 42, 42)
-        for column, width in enumerate(asset_widths, 1):
-            asset_sheet.column_dimensions[get_column_letter(column)].width = width
-            for cells in asset_sheet.iter_cols(min_col=column, max_col=column, min_row=2):
-                for cell in cells:
-                    cell.alignment = Alignment(vertical="top", wrap_text=True)
-        for row_number in range(2, asset_sheet.max_row + 1):
-            paper_id = asset_sheet.cell(row_number, asset_headers["文献 ID"]).value
-            page = asset_sheet.cell(row_number, asset_headers["PDF 页码"]).value
-            pdf_row = next((row for row in rows if row[19] == paper_id), None)
-            if pdf_row is not None:
-                page_cell = asset_sheet.cell(row_number, asset_headers["PDF 页码"])
-                target = self._paper_link(paper_id, pdf_row[24], f"page={page}")
-                if target:
-                    page_cell.hyperlink = target
-                    page_cell.style = "Hyperlink"
-            for name in ("图片路径", "表格 HTML 路径", "精读定位"):
-                cell = asset_sheet.cell(row_number, asset_headers[name])
-                value = cell.value
-                fragment = None
-                if isinstance(value, str) and "#" in value:
-                    value, fragment = value.split("#", 1)
-                target = self._paper_link(paper_id, value, fragment)
-                if target:
-                    cell.hyperlink = target
-                    cell.style = "Hyperlink"
-        asset_sheet.protection.sheet = True
-        asset_sheet.protection.autoFilter = False
-        review_sheet = workbook.create_sheet("整理结论")
-        review_sheet.append(REVIEW_COLUMNS)
-        for row in review_rows:
-            review_sheet.append(row)
-        review_sheet.freeze_panes = "A2"
-        review_sheet.auto_filter.ref = (
-            f"A1:{get_column_letter(len(REVIEW_COLUMNS))}{max(1, review_sheet.max_row)}"
-        )
-        review_widths = (24, 42, 24, 24, 16, 52, 28, 24)
-        for cell in review_sheet[1]:
-            cell.fill = header_fill
-            cell.font = Font(color="FFFFFF", bold=True)
-            cell.alignment = Alignment(
-                horizontal="center", vertical="center", wrap_text=True
-            )
-        for column, width in enumerate(review_widths, 1):
-            review_sheet.column_dimensions[get_column_letter(column)].width = width
-            for cells in review_sheet.iter_cols(
-                min_col=column, max_col=column, min_row=2
-            ):
-                for cell in cells:
-                    cell.alignment = Alignment(vertical="top", wrap_text=True)
-        review_sheet.protection.sheet = True
-        review_sheet.protection.autoFilter = False
-        identity = workbook.create_sheet("_身份")
-        identity.append(("row", "paper_id"))
-        paper_id_column = XLSX_COLUMNS.index("文献 ID") + 1
-        for row_number in range(2, sheet.max_row + 1):
-            identity.append((row_number, sheet.cell(row_number, paper_id_column).value))
-        identity.sheet_state = "veryHidden"
-        note = workbook.create_sheet("说明")
-        note.append(("说明",))
-        note.append(("仅“个人思考、个人理解程度、用户笔记”三列会回写 SQLite；其余字段由系统维护。",))
-        note.append(("“整理结论”来自论文整理子会话中经用户明确确认的结论，只读展示且逐条保留。",))
-        note.append(("“图表资产”从当前 PDF 对应的解析清单生成，为只读视图；路径可点击并保留为可复制文本。",))
+    def _write_temp(self, rows, review_rows, asset_rows) -> Path:
         handle, name = tempfile.mkstemp(prefix=".scientific-reading-", suffix=".xlsx", dir=self.target.parent)
         os.close(handle)
         path = Path(name)
         try:
-            workbook.save(path)
+            self._receipt = write_workbook(self, path, rows, review_rows, asset_rows)
             with path.open("r+b") as stream:
-                stream.flush()
                 os.fsync(stream.fileno())
-        finally:
-            workbook.close()
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
         return path
 
     def _paper_link(
@@ -461,104 +316,10 @@ class XlsxSnapshotService:
         return f"{target}#{fragment}" if fragment else target
 
     @root_operation
-    def import_user_fields(self) -> dict[str, Any]:
-        if self._workbook_in_use():
-            return self._pending_import("xlsx_in_use", "工作簿正在使用；请保存并关闭表格软件后重试。")
-        if not self.target.is_file():
-            return {"status": "success", "updated": 0, "conflicts": 0}
-        try:
-            workbook = load_workbook(self.target)
-        except PermissionError as error:
-            return self._pending_import("xlsx_read_permission_denied", str(error))
-        except Exception as error:
-            return self._pending_import("xlsx_read_failed", str(error))
-        conflicts: list[dict[str, Any]] = []
-        updates: list[tuple[str, str, str, str]] = []
-        try:
-            if "文献" not in workbook.sheetnames or "_身份" not in workbook.sheetnames:
-                return self._pending_import(
-                    "xlsx_required_sheets_missing",
-                    "已保留原工作簿；请恢复“文献”和“_身份”工作表后重试。",
-                )
-            sheet = workbook["文献"]
-            header_values = [cell.value for cell in sheet[1]]
-            required = {"文献 ID", *USER_FIELDS}
-            if not required.issubset(header_values):
-                return self._pending_import(
-                    "xlsx_user_columns_missing",
-                    "已保留原工作簿；请恢复文献 ID、个人思考、个人理解程度和用户笔记列名后重试。",
-                )
-            if any(header_values.count(name) > 1 for name in required):
-                return self._pending_import(
-                    "xlsx_user_columns_ambiguous",
-                    "已保留原工作簿；请删除文献 ID 或用户字段的重复表头后重试。",
-                )
-            headers = {cell.value: cell.column for cell in sheet[1]}
-            identity = workbook["_身份"]
-            if tuple(cell.value for cell in identity[1][:2]) != ("row", "paper_id"):
-                return self._pending_import(
-                    "xlsx_identity_columns_invalid",
-                    "已保留原工作簿；请恢复身份表的 row 和 paper_id 列名后重试。",
-                )
-            expected: dict[int, str] = {}
-            ambiguous_rows: set[int] = set()
-            for row in identity.iter_rows(min_row=2, values_only=True):
-                if not isinstance(row[0], int) or not isinstance(row[1], str):
-                    continue
-                row_number = int(row[0])
-                if row_number in expected or row_number in ambiguous_rows:
-                    expected.pop(row_number, None)
-                    ambiguous_rows.add(row_number)
-                else:
-                    expected[row_number] = str(row[1])
-            conflicts.extend(
-                {"row": row_number, "code": "identity_ambiguous"}
-                for row_number in sorted(ambiguous_rows)
-            )
-            conflicts.extend(
-                {"row": row_number, "code": "identity_missing"}
-                for row_number in sorted(set(expected).difference(range(2, sheet.max_row + 1)))
-            )
-            seen: set[str] = set()
-            for row_number in range(2, sheet.max_row + 1):
-                if row_number in ambiguous_rows:
-                    continue
-                paper_id = sheet.cell(row_number, headers["文献 ID"]).value
-                if not isinstance(paper_id, str) or expected.get(row_number) != paper_id:
-                    conflicts.append({"row": row_number, "code": "identity_changed"})
-                    continue
-                if paper_id in seen:
-                    conflicts.append({"row": row_number, "code": "identity_duplicate"})
-                    continue
-                seen.add(paper_id)
-                values = [sheet.cell(row_number, headers[name]).value for name in USER_FIELDS]
-                updates.append(tuple("" if value is None else str(value) for value in values) + (paper_id,))
-        finally:
-            workbook.close()
+    def import_user_fields(self):
         migrate_library(self.data_root)
-        with sqlite3.connect(str(library_path(self.data_root))) as conn:
-            known = {row[0] for row in conn.execute("SELECT paper_id FROM items")}
-            valid = []
-            for update in updates:
-                if update[-1] not in known:
-                    conflicts.append({"paper_id": update[-1], "code": "identity_unknown"})
-                else:
-                    valid.append(update)
-            conn.executemany(
-                "UPDATE items SET personal_thoughts=?, understanding_level=?, user_notes=? WHERE paper_id=?",
-                valid,
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO library_meta(key,value) VALUES('xlsx_conflicts',?)",
-                (json.dumps(conflicts, ensure_ascii=False),),
-            )
-        result = {"status": "success", "updated": len(valid), "conflicts": len(conflicts)}
-        if conflicts:
-            result.update(self._pending_import(
-                "xlsx_identity_conflict",
-                "已保留原工作簿和冲突行笔记；请修正文献 ID 与行身份的冲突后重试。",
-            ))
-        return result
+        with _file_lock(_key(self.data_root), "xlsx", exclusive=True, deadline=time.monotonic() + 30):
+            return import_fields(self)
 
     def _workbook_in_use(self) -> bool:
         # Unix permits replacing open files; Office owner files also protect that path.

@@ -151,35 +151,33 @@ def test_snapshot_links_pdf_reader_and_indexes_each_parsed_asset(tmp_path):
 
     assert result["status"] == "success"
     workbook = openpyxl.load_workbook(tmp_path / "library" / "scientific-reading.xlsx")
-    assert workbook.sheetnames == ["文献", "图表资产", "整理结论", "_身份", "说明"]
+    assert workbook.sheetnames == ["文献", "阅读成果", "图表索引", "说明", "_同步"]
     papers = workbook["文献"]
     paper_headers = {cell.value: cell.column for cell in papers[1]}
-    assert papers.cell(2, paper_headers["PDF 路径"]).hyperlink.target == (
+    assert papers.cell(2, paper_headers["PDF"]).hyperlink.target == (
         f"../papers/{paper_id}/source.pdf"
     )
-    assert papers.cell(2, paper_headers["精读 HTML"]).hyperlink.target == (
+    assert papers.cell(2, paper_headers["Reader"]).hyperlink.target == (
         f"../papers/{paper_id}/generations/{generation}/reading/reader.html"
     )
-    assert papers.cell(2, paper_headers["图表资产路径"]).value == "查看 2 项"
-    assert papers.cell(2, paper_headers["图表资产路径"]).hyperlink.target == (
-        "#'图表资产'!A2"
-    )
-    assets = workbook["图表资产"]
+    assert '"查看 2 项"' in papers.cell(2, paper_headers["图表索引"]).value
+    assert "MATCH(" in papers.cell(2, paper_headers["图表索引"]).value
+    assets = workbook["图表索引"]
     headers = {cell.value: cell.column for cell in assets[1]}
     assert assets.max_row == 3
     assert assets.cell(2, headers["资产 ID"]).value == "figure-1"
     assert assets.cell(2, headers["PDF 页码"]).value == 1
-    assert assets.cell(2, headers["中文图注"]).value == "图 1：中文图注。"
-    assert assets.cell(2, headers["图片路径"]).value.endswith("images/figure.jpg")
-    assert assets.cell(2, headers["表格 HTML 路径"]).value in (None, "")
+    assert assets.cell(2, headers["图注"]).value == "图 1：中文图注。"
+    assert assets.cell(2, headers["原图"]).hyperlink.target.endswith("images/figure.jpg")
+    assert assets.cell(2, headers["结构表格"]).value in (None, "", "未就绪")
     assert assets.cell(3, headers["资产 ID"]).value == "table-1"
     assert assets.cell(3, headers["PDF 页码"]).value == 2
-    assert assets.cell(3, headers["图片路径"]).value.endswith("tables/table.jpg")
-    assert assets.cell(3, headers["表格 HTML 路径"]).value.endswith("tables/table.html")
-    assert assets.cell(3, headers["表格 HTML 路径"]).hyperlink.target.endswith(
+    assert assets.cell(3, headers["原图"]).hyperlink.target.endswith("tables/table.jpg")
+    assert assets.cell(3, headers["结构表格"]).hyperlink.target.endswith("tables/table.html")
+    assert assets.cell(3, headers["结构表格"]).hyperlink.target.endswith(
         "tables/table.html"
     )
-    assert assets.cell(3, headers["精读定位"]).hyperlink.target.endswith(
+    assert assets.cell(3, headers["打开原文"]).hyperlink.target.endswith(
         "reader.html#block-table-caption"
     )
     workbook.close()
@@ -203,13 +201,13 @@ def test_asset_index_uses_active_source_generation_before_reader_is_ready(tmp_pa
     assert XlsxSnapshotService(tmp_path).refresh()["status"] == "success"
 
     workbook = openpyxl.load_workbook(tmp_path / "library" / "scientific-reading.xlsx")
-    assets = workbook["图表资产"]
+    assets = workbook["图表索引"]
     headers = {cell.value: cell.column for cell in assets[1]}
     assert [assets.cell(row, headers["资产 ID"]).value for row in (2, 3)] == [
         "figure-1", "table-1"
     ]
     assert all(
-        not assets.cell(row, headers["精读定位"]).value for row in (2, 3)
+        assets.cell(row, headers["打开原文"]).value == "未就绪" for row in (2, 3)
     )
     workbook.close()
 
@@ -219,14 +217,15 @@ def test_snapshot_has_fixed_columns_all_rows_and_readme_sheet(tmp_path):
     result = XlsxSnapshotService(tmp_path).refresh()
     assert result["status"] == "success"
     workbook = openpyxl.load_workbook(tmp_path / "library" / "scientific-reading.xlsx")
-    assert workbook.sheetnames == ["文献", "图表资产", "整理结论", "_身份", "说明"]
+    assert workbook.sheetnames == ["文献", "阅读成果", "图表索引", "说明", "_同步"]
     sheet = workbook["文献"]
     assert tuple(cell.value for cell in next(sheet.iter_rows())) == XLSX_COLUMNS
     rows = list(sheet.iter_rows(values_only=True))
     assert len(rows) == 4
     assert rows[1][0] == "中文文献 0"
-    assert sheet.freeze_panes == "A2"
-    assert sheet.auto_filter.ref == f"A1:{sheet.cell(1, len(XLSX_COLUMNS)).column_letter}{sheet.max_row}"
+    assert sheet.freeze_panes == "B2"
+    assert sheet.tables["Literature"].ref == f"A1:{sheet.cell(1, len(XLSX_COLUMNS)).column_letter}{sheet.max_row}"
+    assert sheet.auto_filter.ref is None
     assert sheet.column_dimensions["A"].width >= 30
     assert sheet["A1"].fill.fill_type == "solid"
     assert sheet["A2"].alignment.wrap_text is True
@@ -266,17 +265,16 @@ def test_snapshot_lists_every_confirmed_review_conclusion_with_parent_scope(tmp_
     workbook = openpyxl.load_workbook(
         tmp_path / "library" / "scientific-reading.xlsx"
     )
-    sheet = workbook["整理结论"]
+    sheet = workbook["阅读成果"]
     rows = list(sheet.iter_rows(values_only=True))
     assert rows[0] == REVIEW_COLUMNS
     assert len(rows) == 3
-    assert rows[1][0:7] == (
-        "metabolism-parent", "代谢论文", paper_id, "review-child",
-        "机制", "结论一", "Figure 2",
-    )
-    assert rows[2][4:7] == ("局限", "结论二", "Discussion")
-    assert sheet.freeze_panes == "A2"
-    assert sheet.protection.sheet is True
+    assert rows[1][1:6] == ("机制", "结论一", "历史记录", "历史确认 · 证据未核对", "Figure 2")
+    assert rows[2][1:3] == ("局限", "结论二")
+    assert rows[1][8] == paper_id
+    assert "父会话 ID" not in rows[0]
+    assert sheet.freeze_panes == "B2"
+    assert sheet.protection.sheet is False
     workbook.close()
 
 
@@ -316,15 +314,15 @@ def test_only_user_columns_are_imported_and_identity_conflicts_are_recorded(tmp_
     workbook.close()
 
     result = service.import_user_fields()
-    assert result["updated"] == 1
+    assert result["updated"] == 0
     assert result["conflicts"] == 1
     conn = sqlite3.connect(tmp_path / "library.sqlite")
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM items WHERE paper_id=?", (first_id,)).fetchone()
     assert row["title"] == original_title
-    assert row["personal_thoughts"] == "自己的判断"
-    assert row["understanding_level"] == "基本理解"
-    assert row["user_notes"] == "复习图 2"
+    assert not row["personal_thoughts"]
+    assert not row["understanding_level"]
+    assert not row["user_notes"]
     conflicts = conn.execute("SELECT value FROM library_meta WHERE key='xlsx_conflicts'").fetchone()[0]
     conn.close()
     assert "identity_changed" in conflicts
@@ -357,7 +355,7 @@ def test_permission_error_keeps_old_file_and_records_pending_then_retry(tmp_path
     meta = dict(conn.execute("SELECT key,value FROM library_meta"))
     conn.close()
     assert meta.get("xlsx_pending") == "0"
-    assert meta.get("xlsx_error") in (None, "")
+    assert meta.get("xlsx_error") in (None, "", "未就绪")
 
 
 def test_refresh_preserves_conflicting_notes_until_identity_is_repaired(tmp_path):
@@ -379,14 +377,14 @@ def test_refresh_preserves_conflicting_notes_until_identity_is_repaired(tmp_path
 
     assert result["status"] == "pending"
     assert result["error"]["code"] == "xlsx_identity_conflict"
-    assert result["updated"] == 1
+    assert result["updated"] == 0
     assert result["conflicts"] == 1
     assert service.target.read_bytes() == original
     conn = sqlite3.connect(tmp_path / "library.sqlite")
     notes = dict(conn.execute("SELECT paper_id, user_notes FROM items"))
     meta = dict(conn.execute("SELECT key,value FROM library_meta"))
     conn.close()
-    assert "正常行的笔记" in notes.values()
+    assert "正常行的笔记" not in notes.values()
     assert not notes[paper_id]
     assert meta["xlsx_pending"] == "1"
     assert meta["xlsx_error"] == "xlsx_identity_conflict"
@@ -408,7 +406,7 @@ def test_refresh_preserves_conflicting_notes_until_identity_is_repaired(tmp_path
     assert meta["xlsx_conflicts"] == "[]"
 
 
-@pytest.mark.parametrize("sheet_name", ["文献", "_身份"])
+@pytest.mark.parametrize("sheet_name", ["文献", "_同步"])
 def test_refresh_preserves_workbook_when_required_sheet_is_missing(tmp_path, sheet_name):
     _seed(tmp_path, 1)
     service = XlsxSnapshotService(tmp_path)
@@ -453,7 +451,7 @@ def test_refresh_preserves_workbook_when_identity_header_is_invalid(tmp_path, co
     service = XlsxSnapshotService(tmp_path)
     service.refresh()
     workbook = openpyxl.load_workbook(service.target)
-    workbook["_身份"].cell(1, column, "invalid_header")
+    workbook["_同步"].cell(1, column, "invalid_header")
     workbook.save(service.target)
     workbook.close()
     original = service.target.read_bytes()
@@ -461,7 +459,7 @@ def test_refresh_preserves_workbook_when_identity_header_is_invalid(tmp_path, co
     result = service.refresh()
 
     assert result["status"] == "pending"
-    assert result["error"]["code"] == "xlsx_identity_columns_invalid"
+    assert result["error"]["code"] == "xlsx_baseline_missing"
     assert service.target.read_bytes() == original
 
 
@@ -515,7 +513,7 @@ def test_refresh_does_not_misattribute_notes_when_identity_row_is_duplicated(tmp
     sheet.cell(2, headers["文献 ID"], second_id)
     sheet.cell(2, headers["用户笔记"], "属于第一行的笔记")
     sheet.cell(3, headers["用户笔记"], "属于第二行的笔记")
-    workbook["_身份"].append((2, second_id))
+    sheet.cell(2, headers["行标识"], sheet.cell(3, headers["行标识"]).value)
     workbook.save(service.target)
     workbook.close()
     original = service.target.read_bytes()
@@ -529,7 +527,7 @@ def test_refresh_does_not_misattribute_notes_when_identity_row_is_duplicated(tmp
     notes = dict(conn.execute("SELECT paper_id, user_notes FROM items"))
     conn.close()
     assert notes[first_id] is None
-    assert notes[second_id] == "属于第二行的笔记"
+    assert not notes[second_id]
 
 
 def test_refresh_preserves_unreadable_workbook_and_allows_file_repair(tmp_path):

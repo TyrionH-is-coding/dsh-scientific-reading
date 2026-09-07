@@ -132,9 +132,17 @@ class EnvironmentStatusService:
                 pending = int(connection.execute(
                     "SELECT COUNT(*) FROM items WHERE COALESCE(xlsx_sync_state, '') != 'ready'"
                 ).fetchone()[0])
+                has_meta = connection.execute("SELECT 1 FROM sqlite_master WHERE name='library_meta'").fetchone()
+                meta = dict(connection.execute("SELECT key,value FROM library_meta WHERE key IN ('xlsx_pending','xlsx_error','xlsx_last_export')")) if has_meta else {}
         except sqlite3.Error:
             return {**location, "status": "failed", "papers": 0, "xlsx_pending": 0}
-        return {**location, "status": "ready", "papers": papers, "xlsx_pending": pending}
+        try:
+            last_export = json.loads(meta.get("xlsx_last_export", "null"))
+        except ValueError:
+            last_export = None
+        return {**location, "status": "ready", "papers": papers, "xlsx_pending": pending,
+                "xlsx_status": "pending" if pending or meta.get("xlsx_pending") == "1" else "ready",
+                "xlsx_error": meta.get("xlsx_error"), "xlsx_last_export": last_export}
 
     @staticmethod
     def _probe_download() -> dict[str, object]:
