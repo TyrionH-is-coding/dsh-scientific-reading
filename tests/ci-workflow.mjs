@@ -11,7 +11,10 @@ const workflow = readFileSync(workflowPath, 'utf8')
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 assert.match(workflow, /^on:\s*\r?\n\s+push:\s*\r?\n\s+pull_request:/m, 'workflow 必须覆盖 push 与 pull request')
-assert.match(workflow, /runs-on:\s*windows-latest/, 'workflow 必须使用 windows-latest')
+assert.match(workflow, /runs-on:\s*\$\{\{ matrix.os \}\}/, 'workflow 必须运行跨平台矩阵')
+for (const runner of ['windows-latest', 'ubuntu-22.04', 'ubuntu-24.04-arm', 'macos-14', 'macos-15-intel']) {
+  assert.ok(workflow.includes(runner), '缺少平台 ' + runner)
+}
 
 const uses = [...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)\s*$/gm)].map((match) => match[1])
 const runs = [...workflow.matchAll(/^\s*(?:-\s*)?run:\s*(.+?)\s*$/gm)].map((match) => match[1])

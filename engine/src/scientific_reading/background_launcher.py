@@ -58,6 +58,16 @@ def process_start_identity(pid: int) -> str | None:
             return f"linux:{fields[19]}"
         except (OSError, IndexError):
             return None
+    if sys.platform == "darwin" and isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        try:
+            value = subprocess.check_output(
+                ["/bin/ps", "-p", str(pid), "-o", "lstart="],
+                text=True, stderr=subprocess.DEVNULL, timeout=3,
+                env={**os.environ, "LC_ALL": "C"},
+            ).strip()
+            return "darwin:" + value if value else None
+        except (OSError, subprocess.SubprocessError):
+            return None
     return None
 
 

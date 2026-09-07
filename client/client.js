@@ -477,7 +477,7 @@ window.__ModuleLoader__.load({
       function locateExcel(paperId) {
         controls.batchNotice.textContent = '正在定位 Excel 记录…';
         return api('/sr/api/excel/locate?paper_id=' + encodeURIComponent(paperId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-          .then(function () { controls.batchNotice.textContent = '已在 Excel 总表中定位该文献。'; })
+          .then(function (result) { controls.batchNotice.textContent = result.selected ? '已在 Excel 总表中定位该文献。' : '已打开文献总表，请按论文名查找对应记录。'; })
           .catch(function (error) { controls.batchNotice.textContent = '定位 Excel 失败：' + error.message; });
       }
 
@@ -801,7 +801,7 @@ window.__ModuleLoader__.load({
       function showError(error) { if (!disposed) notice.textContent = '操作失败：' + (error && error.message ? error.message : '请求失败'); }
       function load() { if (active) active.abort(); active = new AbortController(); return api('/sr/api/settings/status', { signal: active.signal }).then(renderSnapshot).catch(function (error) { if (error.name !== 'AbortError') showError(error); }); }
       if (initialSnapshot) renderSnapshot(initialSnapshot); else load();
-      shell.appendChild(el('p', 'sr-settings-footnote', '模型沿用 DSH 模型设置。密钥使用 Windows DPAPI 加密保存在本机；使用 MinerU API 解析时才会发送论文 PDF。'));
+      shell.appendChild(el('p', 'sr-settings-footnote', '模型沿用 DSH 模型设置。密钥保存在本机系统凭据库（Windows DPAPI / macOS Keychain / Linux Secret Service）；使用 MinerU API 解析时才会发送论文 PDF。'));
       return { root: root, dispose: function () { disposed = true; if (active) active.abort(); } };
     }
     // ── 设置卡片（settings.plugin.item，key=scientific-reading）─────

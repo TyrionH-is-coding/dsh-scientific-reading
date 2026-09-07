@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import shutil
+import subprocess
 import sqlite3
 import tempfile
 import re
@@ -580,6 +583,17 @@ class XlsxSnapshotService:
 
     @staticmethod
     def _open_excel(path: Path, row_number: int) -> bool:
+        if sys.platform != "win32":
+            command = "/usr/bin/open" if sys.platform == "darwin" else shutil.which("xdg-open")
+            if not command:
+                raise ValueError("spreadsheet_opener_unavailable")
+            try:
+                subprocess.run([command, str(path)], check=True, timeout=15,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise ValueError("spreadsheet_open_failed") from error
+            return False
         try:
             import win32com.client  # type: ignore[import-not-found]
 

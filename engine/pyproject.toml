@@ -15,6 +15,7 @@ dependencies = [
   "latex2mathml>=3.81,<4",
   "Pillow>=12,<13",
   "openpyxl>=3.1,<4",
+  "keyring>=25.7,<26; sys_platform != 'win32'",
 ]
 
 [project.optional-dependencies]
