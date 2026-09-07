@@ -19,9 +19,11 @@ from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
     FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION,
     FULL_TRANSLATION_CONTRACT_VERSION,
+    FULL_TRANSLATION_INPUT_VERSION,
     FullReviewSubmission,
     Translation,
     TranslationBatchSubmission,
+    compact_translations,
 )
 from .full_read_renderer import FullReadRenderer
 from .identifiers import stable_paper_id
@@ -182,13 +184,68 @@ class FullReadService:
                     expected_source_sha256=source["source_sha256"],
                 )
             except (OSError, json.JSONDecodeError, ValueError):
-                translation_path.unlink(missing_ok=True)
+                archive = root / "invalid"
+                archive.mkdir(exist_ok=True)
+                digest = _sha256_bytes(translation_path.read_bytes())
+                translation_path.replace(archive / f"{translation_path.stem}-{digest}.json")
                 if pending is None:
                     pending = source
                 continue
             if pending is not None:
                 raise FullReadError("full_read_artifact_inconsistent")
+        if pending is not None:
+            batch = next(row for row in result.plan["batches"] if row["batch_id"] == pending["batch_id"])
+            accepted = self._draft_translations(root, pending, batch["input_sha256"])
+            pending.update({"submission_contract_version": FULL_TRANSLATION_INPUT_VERSION,
+                            "batch_sha256": batch["input_sha256"], "accepted_blocks": len(accepted),
+                            "remaining_block_ids": [row["block_id"] for row in pending["blocks"] if row["block_id"] not in accepted]})
         return pending
+
+    @staticmethod
+    def _draft_path(root: Path, source: dict) -> Path:
+        return root / "batches" / f"{source['batch_id']}.draft.json"
+
+    def _draft_translations(self, root: Path, source: dict, batch_sha256: str) -> dict[str, Translation]:
+        path = self._draft_path(root, source)
+        if not path.exists():
+            return {}
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            accepted = compact_translations(value, source, batch_sha256)
+            if len(accepted) != len(value["translations"]):
+                raise ValueError("invalid_draft_row")
+            return accepted
+        except (ValueError, KeyError, TypeError) as error:
+            raise FullReadError("translation_draft_invalid") from error
+
+    def _compact_submission(self, root: Path, batch: dict, source: dict, value: dict) -> TranslationBatchSubmission | None:
+        if _sha256_bytes((root / batch["source_file"]).read_bytes()) != batch["input_sha256"]:
+            raise ValueError("translation_batch_sha_mismatch")
+        incoming = compact_translations(value, source, batch["input_sha256"])
+        if not incoming:
+            raise ValueError("translation_rows_incomplete")
+        destination = root / batch["translation_file"]
+        if destination.exists():
+            completed = TranslationBatchSubmission.from_dict(
+                json.loads(destination.read_text(encoding="utf-8")), expected_blocks=source["blocks"],
+                expected_batch_id=source["batch_id"], expected_source_sha256=source["source_sha256"],
+            )
+            accepted = {row.block_id: row for row in completed.translations}
+        else:
+            accepted = self._draft_translations(root, source, batch["input_sha256"])
+        for block_id, row in incoming.items():
+            if block_id in accepted and accepted[block_id].translation_zh != row.translation_zh:
+                raise ValueError("translation_batch_conflict")
+            accepted.setdefault(block_id, row)
+        ordered = [accepted[row["block_id"]] for row in source["blocks"] if row["block_id"] in accepted]
+        if len(ordered) < len(source["blocks"]):
+            _atomic_write_json_lf(self._draft_path(root, source), {
+                "contract_version": FULL_TRANSLATION_INPUT_VERSION, "batch_id": source["batch_id"],
+                "source_sha256": source["source_sha256"], "batch_sha256": batch["input_sha256"],
+                "translations": [{"block_id": row.block_id, "translation_zh": row.translation_zh} for row in ordered],
+            })
+            return None
+        return TranslationBatchSubmission(FULL_TRANSLATION_CONTRACT_VERSION, source["batch_id"], source["source_sha256"], tuple(ordered))
 
     @workspace_operation
     def save_next_translation(
@@ -223,12 +280,6 @@ class FullReadService:
         source = json.loads(
             (root / batch["source_file"]).read_text(encoding="utf-8")
         )
-        submission = TranslationBatchSubmission.from_dict(
-            value,
-            expected_blocks=tuple(source["blocks"]),
-            expected_batch_id=source["batch_id"],
-            expected_source_sha256=source["source_sha256"],
-        )
         destination = (
             root / batch["translation_file"]
         )
@@ -245,19 +296,35 @@ class FullReadService:
             if target_index >= first_missing:
                 raise ValueError("translation_batch_not_current")
         current = self.next_batch(workspace)
+        if not destination.exists():
+            if current is None:
+                raise ValueError("full_translation_already_complete")
+            if current["batch_id"] != batch_id:
+                raise ValueError("translation_batch_not_current")
+        if value.get("contract_version") == FULL_TRANSLATION_INPUT_VERSION:
+            submission = self._compact_submission(root, batch, source, value)
+            if submission is None:
+                return self._draft_path(root, source)
+        else:
+            submission = TranslationBatchSubmission.from_dict(
+                value, expected_blocks=tuple(source["blocks"]), expected_batch_id=source["batch_id"],
+                expected_source_sha256=source["source_sha256"],
+            )
+            accepted = self._draft_translations(root, source, batch["input_sha256"])
+            if any(row.block_id in accepted and row.translation_zh != accepted[row.block_id].translation_zh
+                   for row in submission.translations):
+                raise ValueError("translation_batch_conflict")
         if destination.exists():
             try:
                 existing = json.loads(destination.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as error:
                 raise FullReadError("full_read_artifact_inconsistent") from error
             if existing == submission.to_dict():
+                self._draft_path(root, source).unlink(missing_ok=True)
                 return destination
             raise FullReadError("translation_batch_conflict")
-        if current is None:
-            raise ValueError("full_translation_already_complete")
-        if current["batch_id"] != batch_id:
-            raise ValueError("translation_batch_not_current")
         _atomic_write_json_lf(destination, submission.to_dict())
+        self._draft_path(root, source).unlink(missing_ok=True)
         state = workspace.load_job()
         state.status = (
             "reviewing_full_read"

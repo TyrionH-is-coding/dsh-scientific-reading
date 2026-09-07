@@ -59,8 +59,16 @@ function scheduleDerived(config: Config, paperId: string, logger?: (message: str
   })
 }
 
-function fullReadGateGuidance(reasonCode: string): string {
+function fullReadGateGuidance(reasonCode: string, requiredInput?: unknown): string {
   if (reasonCode === 'translate_full_read' || reasonCode === 'full_translation_revision_required') {
+    if (requiredInput && typeof requiredInput === 'object' && 'submission_contract_version' in requiredInput
+      && requiredInput.submission_contract_version === 'full-translation-v4') {
+      return [
+        '翻译 gate：读取 required_input.source_manifest_path；只翻译 remaining_block_ids 指定的块，保持源顺序。已接受的有效译文已保存，不必重写。',
+        '每项只提交 block_id 和 translation_zh；reference 块的 translation_zh 必须为空字符串。原文由服务端绑定，高亮留给复核阶段。',
+        '调用 sr_continue_full_read，input={"full_translation":{"contract_version":"full-translation-v4","batch_id":required_input.batch_id,"source_sha256":required_input.source_sha256,"batch_sha256":required_input.batch_sha256,"translations":[{"block_id":"...","translation_zh":"..."}]}}。三个标识必须从当前 required_input 原样复制。',
+      ].join('\n')
+    }
     return [
       '翻译 gate：读取 required_input.source_manifest_path；按其中 blocks 原顺序逐项提交，block_id 和 source_text（blocks[].english）必须原样保留。',
       'reference 块必须 translation_zh=""、highlight="none"；其他块填写中文译文，highlight 只能是 result、method 或 none。',
@@ -328,6 +336,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
           mineru_api_quota_exceeded: 'MinerU API 今日额度或任务数已达上限',
           mineru_api_timeout: 'MinerU 解析仍未完成，可稍后继续',
           mineru_api_unavailable: 'MinerU 服务或网络暂时不可用，可稍后重试',
+          translation_retry_limit: '本批翻译已补试两次，有效译文已保留；请确认后用 {\"retry_translation\":true} 继续',
         }
         const reason = reasonCode ? '（' + (mineruHints[reasonCode] || reasonCode) + '）' : ''
         const lines = ['任务 ' + String(v.job_id) + '：' + String(v.status) + '，next_action=' + String(v.next_action) + reason]
@@ -336,7 +345,7 @@ export function registerLibraryTools(ctx: Context, config: Config): void {
         if (requiredInput && typeof requiredInput === 'object' && !Array.isArray(requiredInput)) {
           lines.push('required_input=' + JSON.stringify(requiredInput, null, 2))
         }
-        const guidance = fullReadGateGuidance(reasonCode)
+        const guidance = fullReadGateGuidance(reasonCode, requiredInput)
         if (guidance) lines.push(guidance)
         return text(lines.join('\n'))
       },

@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 
 FULL_TRANSLATION_CONTRACT_VERSION = "full-translation-v3"
+FULL_TRANSLATION_INPUT_VERSION = "full-translation-v4"
 FULL_REVIEW_CONTRACT_VERSION = "full-review-v2"
 FULL_REVIEW_REPLACEMENT_CONTRACT_VERSION = "full-review-v3"
 HIGHLIGHT_KINDS = frozenset({"result", "method", "none"})
@@ -21,6 +22,29 @@ _MINERU_BLOCK_ID = re.compile(r"p[0-9]{4}-(?:m|c)[0-9]{4}")
 def _exact_keys(value: dict[str, Any], expected: set[str]) -> None:
     if set(value) != expected:
         raise ValueError("unexpected_keys")
+
+
+def validate_translation_input(value: Any) -> str:
+    """共享入口结构校验；原文、顺序与来源绑定由服务端另行核对。"""
+    if not isinstance(value, dict):
+        raise ValueError("translation_submission_invalid")
+    version = value.get("contract_version")
+    if version not in (FULL_TRANSLATION_CONTRACT_VERSION, FULL_TRANSLATION_INPUT_VERSION):
+        raise ValueError("translation_contract_invalid")
+    compact = version == FULL_TRANSLATION_INPUT_VERSION
+    _exact_keys(value, {"contract_version", "batch_id", "source_sha256", "translations"}
+                | ({"batch_sha256"} if compact else set()))
+    if any(not isinstance(value[key], str) for key in ("batch_id", "source_sha256")):
+        raise ValueError("translation_binding_invalid")
+    if compact and not isinstance(value["batch_sha256"], str):
+        raise ValueError("translation_binding_invalid")
+    rows = value["translations"]
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("translation_rows_required")
+    fields = {"block_id", "translation_zh"} | (set() if compact else {"source_text", "highlight"})
+    if any(not isinstance(row, dict) or set(row) != fields for row in rows):
+        raise ValueError("translation_row_invalid")
+    return version
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +103,36 @@ class Translation:
     @property
     def note(self) -> None:
         return None
+
+
+def compact_translations(value: dict[str, Any], source: dict[str, Any], batch_sha256: str) -> dict[str, Translation]:
+    if validate_translation_input(value) != FULL_TRANSLATION_INPUT_VERSION:
+        raise ValueError("translation_contract_invalid")
+    if value["batch_id"] != source["batch_id"]:
+        raise ValueError("translation_batch_mismatch")
+    if value["source_sha256"] != source["source_sha256"]:
+        raise ValueError("translation_source_sha_mismatch")
+    if value["batch_sha256"] != batch_sha256:
+        raise ValueError("translation_batch_sha_mismatch")
+    blocks = {block["block_id"]: block for block in source["blocks"]}
+    ids = [row["block_id"] for row in value["translations"]]
+    if any(not isinstance(block_id, str) or block_id not in blocks for block_id in ids):
+        raise ValueError("translation_block_id_invalid")
+    if len(set(ids)) != len(ids) or ids != [block_id for block_id in blocks if block_id in ids]:
+        raise ValueError("translation_block_order_mismatch")
+    accepted = {}
+    for row in value["translations"]:
+        block = blocks[row["block_id"]]
+        try:
+            accepted[row["block_id"]] = Translation.from_dict(
+                {**row, "source_text": block["english"], "highlight": "none"},
+                expected_source_text=block["english"], reference=block.get("source_type") == "reference",
+            )
+        except ValueError as error:
+            if str(error) not in {"translation_zh_required", "reference_translation_forbidden"}:
+                raise
+            # 无效译文仍是缺译；保留本批其他已验证条目供定向续传。
+    return accepted
 
 
 @dataclass(frozen=True, slots=True)

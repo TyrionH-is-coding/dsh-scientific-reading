@@ -86,3 +86,6 @@ def test_next_batch_skips_stale_translation_instead_of_failing(
 
     assert pending["batch_id"] == "batch-0001"
     assert not (batches / "batch-0001.translation.json").exists()
+    archived = list((root / "invalid").glob("*.json"))
+    assert len(archived) == 1
+    assert json.loads(archived[0].read_text(encoding="utf-8"))["translations"][0]["translation_zh"] == "旧译文。"

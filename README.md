@@ -2,11 +2,13 @@
 
 面向 DSH 的个人文献库：通过对话快速入库，按需获取 OA 正文或补入本地 PDF，生成可追溯的精读 HTML，并用 SQLite 与 Excel 长期维护。
 
-当前 rc.5 修复 MinerU 空图表条目触发 `img_path 不能为空` 的问题。仅确认解析条目无可用内容时记录原始索引、页码及人工复核警告，保留原始 JSON 和来源哈希；缺图但仍有内容时报告完整性错误，不静默丢弃。空条目不能证明原 PDF 没有内容，仍须按报告核对对应页和相邻条目。
+主线正在准备 rc.7：设置页改为模型与连接、PDF 解析、文献库、关于四组纵向设置行；翻译由服务端绑定原文和批次 SHA，保留已验证的部分，只补剩余块。本批初次提交后最多两次补试，随后暂停等待用户继续。rc.6 已整合六项个人记录、阅读成果与图表索引，以及工作簿排序和冲突保护。
+
+已公开的 rc.5 修复 MinerU 空图表条目触发 `img_path 不能为空` 的问题。仅确认解析条目无可用内容时记录原始索引、页码及人工复核警告，保留原始 JSON 和来源哈希；缺图但仍有内容时报告完整性错误，不静默丢弃。空条目不能证明原 PDF 没有内容，仍须按报告核对对应页和相邻条目。
 
 rc.4 已补充 Excel/LibreOffice 占用标记保护：Windows、macOS、Linux 检测到工作簿仍在使用时返回 `pending / xlsx_in_use`，保留原表，待保存关闭后重试三列个人记录的回写。部分表格软件不生成占用标记，仍须先保存关闭；桌面软件编辑与自动选行需在对应机器单独验收。
 
-**0.1.0-rc.1 已撤回为草稿，暂未公开放行。** 修复源码已通过 CI，旧 tag 与最终放行提交仍需核对，见[发布修复记录](docs/releases/v0.1.0/RELEASE_GATE.md)。持有冻结构建包的测试用户可按[候选安装指南](docs/releases/v0.1.0/INSTALL.md)核对 SHA 后测试；[实现与验收状态](docs/releases/v0.1.0/IMPLEMENTATION_GAPS.md)分别记录原生插件 A 和独立 Codex 工作台 B。源码目录和 GitHub 自动生成的 Source code 压缩包不能代替安装包。
+当前公开附件见 [GitHub Releases](https://github.com/TyrionH-is-coding/dsh-scientific-reading/releases)。新主线改动仍需按其源码提交和安装包单独验收；[早期 rc.1 发布修复记录](docs/releases/v0.1.0/RELEASE_GATE.md)仅作历史留存。源码目录和 GitHub 自动生成的 Source code 压缩包不能代替安装包。
 
 ## 首个发布版范围
 

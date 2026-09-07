@@ -36,6 +36,7 @@ class ReadingPipelineState:
     source_pdf_sha256: str | None = None
     reader_source_sha256: str | None = None
     required_action: dict[str, Any] | None = None
+    translation_attempts: dict[str, int] = field(default_factory=dict)
     last_error: str | None = None
     created_at: str = ""
     updated_at: str = ""

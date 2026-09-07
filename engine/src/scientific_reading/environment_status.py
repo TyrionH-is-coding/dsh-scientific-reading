@@ -43,8 +43,13 @@ class EnvironmentStatusService:
         download = self._status(saved.get("download"))
         download["mode"] = "oa_only"
         mineru_saved = saved.get("mineru") if isinstance(saved.get("mineru"), dict) else {}
+        try:
+            engine_version = version("dsh-scientific-reading-engine")
+        except PackageNotFoundError:
+            engine_version = None
         return {
             "contract_version": "environment-status-v1",
+            "engine_version": engine_version,
             "onboarding": {
                 "show_settings": not self.presented_path.is_file(),
                 "version": "v1",

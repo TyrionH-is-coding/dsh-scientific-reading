@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8')
-for (const label of ['设置与状态', '重新检测', 'OA 自动获取', '全文解析', '本地文献库', '保存密钥', '删除密钥', '资产位置', 'DSH 模型设置', '不代表 API 已完成真实调用']) {
+for (const label of ['设置与状态', '模型与连接', 'PDF 解析', '文献库', '关于', '重新检测', 'OA 自动获取', '全文解析', '本地文献库', '保存密钥', '删除密钥', '资产位置', 'DSH 模型设置', '不代表 API 已完成真实调用']) {
   assert.match(source, new RegExp(label), `设置页缺少：${label}`)
 }
 assert.match(source, /id: 'scientific-reading-settings'/, '必须注册独立设置视图')

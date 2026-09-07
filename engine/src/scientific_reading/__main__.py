@@ -25,7 +25,7 @@ from .export_service import ExportService
 from .foreground import ForegroundTimer
 from .full_read_models import (
     FULL_REVIEW_CONTRACT_VERSION,
-    FULL_TRANSLATION_CONTRACT_VERSION,
+    validate_translation_input,
 )
 from .models import PaperMetadata
 from .workspace import PaperWorkspace, atomic_write_json
@@ -585,6 +585,10 @@ def _validate_full_read_resume(status, supplied: dict) -> dict:
             raise ValueError("terminal_resume_input_invalid")
         return {}
     reason = status.reason_code
+    if reason == "translation_retry_limit":
+        if supplied != {"retry_translation": True}:
+            raise ValueError("translation_retry_confirmation_required")
+        return supplied
     if reason == "pdf_required":
         if not supplied:
             return {}
@@ -602,34 +606,10 @@ def _validate_full_read_resume(status, supplied: dict) -> dict:
         if set(supplied) != {"full_translation"}:
             raise ValueError("full_translation_resume_input_invalid")
         translation = supplied["full_translation"]
-        if (
-            not isinstance(translation, dict)
-            or set(translation)
-            != {
-                "contract_version",
-                "batch_id",
-                "source_sha256",
-                "translations",
-            }
-            or translation.get("contract_version")
-            != FULL_TRANSLATION_CONTRACT_VERSION
-            or not isinstance(translation.get("batch_id"), str)
-            or not isinstance(translation.get("source_sha256"), str)
-            or not isinstance(translation.get("translations"), list)
-            or not translation["translations"]
-            or any(
-                not isinstance(row, dict)
-                or set(row)
-                != {
-                    "block_id",
-                    "source_text",
-                    "translation_zh",
-                    "highlight",
-                }
-                for row in translation["translations"]
-            )
-        ):
-            raise ValueError("full_translation_resume_input_invalid")
+        try:
+            validate_translation_input(translation)
+        except ValueError as error:
+            raise ValueError("full_translation_resume_input_invalid") from error
         return {"full_translation": translation}
     if reason in {
         "review_full_read",

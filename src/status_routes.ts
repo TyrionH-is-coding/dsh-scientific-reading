@@ -3,6 +3,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Config } from './config.js'
 import { engineJson } from './cli.js'
 import { isPaperId } from './papers.js'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const pluginVersion = require('../package.json').version as string
+let dshVersion: string | null = null
+try { dshVersion = require('@deepseek-ai/dsh/package.json').version } catch { /* 非完整宿主环境不推测版本。 */ }
 
 const JSON_LIMIT = 16 * 1024
 
@@ -45,7 +51,7 @@ export function registerStatusRoutes(ctx: Context, config: Config): void {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'method_not_allowed' })
     const result = await engineJson(config, ['environment-status'])
     if (!result.ok || !result.json) return sendJson(res, 502, { error: 'environment_status_unavailable' })
-    sendJson(res, 200, result.json)
+    sendJson(res, 200, { ...result.json, versions: { plugin: pluginVersion, dsh: dshVersion } })
   })
 
   register('/sr/api/settings/recheck', async (req, res) => {

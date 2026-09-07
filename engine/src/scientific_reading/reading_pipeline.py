@@ -109,6 +109,11 @@ _REQUIRED_ACTION_FIELDS = {
     "stage",
     "source_sha256",
     "source_manifest_path",
+    "submission_contract_version",
+    "batch_sha256",
+    "remaining_block_ids",
+    "accepted_blocks",
+    "automatic_retries_remaining",
     "contract_version",
     "translations_json",
     "source_map_json",
@@ -124,6 +129,8 @@ _REQUIRED_ACTION_FIELDS = {
     "error",
 }
 _REQUIRED_ACTION_INTEGER_FIELDS = {
+    "accepted_blocks",
+    "automatic_retries_remaining",
     "batch",
     "translation_count",
     "substantive_block_count",
@@ -501,6 +508,7 @@ class ReadingPipeline:
             "stage": "translate_full",
             "batch_id": batch_id,
             "source_sha256": batch["source_sha256"],
+            **{key: batch[key] for key in ("submission_contract_version", "batch_sha256", "remaining_block_ids", "accepted_blocks") if key in batch},
             "source_manifest_path": str(
                 workspace.reading_dir
                 / "full"
@@ -700,6 +708,11 @@ class ReadingPipeline:
                 return state
 
             stage = state.current_stage
+            previous_action = state.required_action or {}
+            if previous_action.get("reason_code") == "translation_retry_limit":
+                if supplied_input != {"retry_translation": True}:
+                    return state
+                state.translation_attempts.pop(previous_action.get("batch_id"), None)
             state.state = stage
             state.required_action = None
             state.last_error = None
@@ -725,6 +738,17 @@ class ReadingPipeline:
             except UserActionRequired as gate:
                 return self._persist_gate(state, "needs_user", gate)
             except AgentRequired as gate:
+                if stage == "translate_full" and gate.required_input.get("batch_id"):
+                    batch_id = gate.required_input["batch_id"]
+                    if (isinstance(supplied_input, dict) and "full_translation" in supplied_input
+                            and previous_action.get("batch_id") == batch_id):
+                        state.translation_attempts[batch_id] = state.translation_attempts.get(batch_id, 0) + 1
+                    attempts = state.translation_attempts.get(batch_id, 0)
+                    gate.required_input["automatic_retries_remaining"] = max(0, 3 - max(1, attempts))
+                    if attempts >= 3:
+                        return self._persist_gate(state, "needs_user", UserActionRequired(
+                            "translation_retry_limit", {**gate.required_input, "kind": "retry_translation"},
+                        ))
                 return self._persist_gate(state, "waiting_agent", gate)
             except Exception as error:
                 if stage == "schedule_derived_updates":
@@ -1023,7 +1047,7 @@ class ReadingPipeline:
                 valid = isinstance(item, list) and all(
                     isinstance(option, str) for option in item
                 )
-            elif key == "available_source_block_ids":
+            elif key in {"available_source_block_ids", "remaining_block_ids"}:
                 valid = isinstance(item, list) and all(
                     isinstance(block_id, str) for block_id in item
                 )
