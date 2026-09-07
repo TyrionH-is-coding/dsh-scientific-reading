@@ -32,7 +32,7 @@ _TEXT_TYPES = {
 }
 
 
-def _clean_strings(value: Any, name: str) -> tuple[str, ...]:
+def _clean_strings(value: Any, name: str, *, allow_blank: bool = False) -> tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, list):
@@ -42,7 +42,7 @@ def _clean_strings(value: Any, name: str) -> tuple[str, ...]:
         for item in value
         if isinstance(item, str) and item.strip()
     )
-    if len(result) != len(value):
+    if any(not isinstance(item, str) for item in value) or (not allow_blank and len(result) != len(value)):
         raise ValueError(f"{name} 包含非文本值")
     return result
 
@@ -137,21 +137,48 @@ class MineruContentItem:
         footnote: tuple[str, ...] = ()
         table_body = None
         if item_type in {"image", "chart", "table"}:
-            asset_path = _relative_asset_path(value.get("img_path"))
+            raw_path = value.get("img_path")
+            if raw_path is not None and not (isinstance(raw_path, str) and not raw_path.strip()):
+                asset_path = _relative_asset_path(raw_path)
             prefix = item_type
             caption = _clean_strings(
                 value.get(f"{prefix}_caption", []),
                 f"{prefix}_caption",
+                allow_blank=True,
             )
             footnote = _clean_strings(
                 value.get(f"{prefix}_footnote", []),
                 f"{prefix}_footnote",
+                allow_blank=True,
             )
             if item_type == "table":
                 raw_body = value.get("table_body")
                 if raw_body is not None and not isinstance(raw_body, str):
                     raise ValueError("table_body 必须是文本")
                 table_body = raw_body.strip() if raw_body else None
+
+            if asset_path is None:
+                # Only an empty raw entry may be omitted, never content whose image is missing.
+                for field in ("text", "table_body", "structured_path", "structured_sha256", "sub_type"):
+                    if value.get(field) is not None and not isinstance(value[field], str):
+                        raise ValueError(f"{field} 必须是文本")
+                if value.get("content") is not None and not isinstance(value["content"], (str, list, dict)):
+                    raise ValueError("content 类型无效")
+                if "structured_reliable" in value and not isinstance(value["structured_reliable"], bool):
+                    raise ValueError("structured_reliable 必须是布尔值")
+                if "is_body" in value and not isinstance(value["is_body"], bool):
+                    raise ValueError("is_body 必须是布尔值")
+                metadata_fields = {"type", "page_idx", "bbox", "img_path", "text_level", "is_body", "sub_type",
+                                   f"{prefix}_caption", f"{prefix}_footnote", "structured_reliable"}
+                content_fields = [key for key, field in value.items() if key not in metadata_fields
+                                  and field is not None
+                                  and not (isinstance(field, str) and not field.strip())
+                                  and not (isinstance(field, (list, dict)) and not field)]
+                if caption or footnote or content_fields or value.get("structured_reliable") is True:
+                    raise ValueError(
+                        f"mineru_visual_asset_required:{item_type}:index={index}:page={page_idx + 1}: "
+                        "图表缺少 img_path 但仍有内容；请核对原始 MinerU 结果并补齐资产后重试"
+                    )
 
         structured_reliable = value.get("structured_reliable") is True
         structured_path = None

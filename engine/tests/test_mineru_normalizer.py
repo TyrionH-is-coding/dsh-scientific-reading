@@ -31,6 +31,72 @@ def _item(item_type: str, page: int, **values) -> dict:
     }
 
 
+@pytest.mark.parametrize("kind", ["table", "image", "chart"])
+def test_empty_visual_records_raw_provenance_and_review_warning(tmp_path, metadata, kind):
+    raw = tmp_path / "raw"
+    content = _write_content_list(raw, [
+        _item("text", 0, text=metadata.title),
+        _item(kind, 25, img_path="", **{f"{kind}_caption": [], f"{kind}_footnote": [], "table_body": ""}),
+        _item("text", 25, text="Following content is retained."),
+    ])
+    original = content.read_bytes()
+    output = tmp_path / "normalized"
+    result = MineruNormalizer().normalize(raw, output, metadata, "a" * 64)
+    assert result.report.status == "parsed_mineru"
+    assert result.report.page_count == 26
+    assert result.blocks[-1].source_index == 2
+    assert not result.assets
+    assert result.report.warnings == [f"empty_visual_item:{kind}:index=1:page=26:review_required"]
+    source_map = json.loads((output / "source_map.json").read_text(encoding="utf-8"))
+    report = json.loads((output / "parse_report.json").read_text(encoding="utf-8"))
+    assert report["content_review_required"] is True
+    assert report["omitted_items"] == source_map["omitted_items"]
+    assert source_map["omitted_items"][0]["source_index"] == 1
+    assert source_map["omitted_items"][0]["page"] == 26
+    assert source_map["raw_content_list_sha256"] == hashlib.sha256(original).hexdigest()
+    assert source_map["source_sha256"] == "a" * 64
+    assert content.read_bytes() == original
+
+
+@pytest.mark.parametrize("kind", ["image", "chart", "table"])
+@pytest.mark.parametrize("asset", ["../outside.png", "/outside.png", "C:/outside.png", "images/missing.png"])
+def test_empty_items_do_not_weaken_nonempty_asset_validation(tmp_path, metadata, kind, asset):
+    raw = tmp_path / "raw"
+    _write_content_list(raw, [_item("text", 0, text=metadata.title),
+                             _item(kind, 0, img_path=""), _item(kind, 0, img_path=asset)])
+    with pytest.raises(ValueError, match="img_path|资产"):
+        MineruNormalizer().normalize(raw, tmp_path / "out", metadata, "a" * 64)
+
+
+@pytest.mark.parametrize("materialize", [True, False])
+def test_empty_items_do_not_hide_structured_asset_hash_mismatch(tmp_path, metadata, materialize):
+    raw = tmp_path / "raw"
+    content = _write_content_list(raw, [_item("text", 0, text=metadata.title),
+        _item("table", 0, img_path=""),
+        _item("table", 0, img_path="table.png", structured_reliable=True,
+              structured_path="table.csv", structured_sha256="0" * 64)])
+    (content.parent / "table.png").write_bytes(b"image")
+    (content.parent / "table.csv").write_text("x,y\n1,2", encoding="utf-8")
+    with pytest.raises(ValueError, match="结构化表来源无效"):
+        MineruNormalizer().normalize(raw, tmp_path / "out", metadata, "a" * 64, materialize_assets=materialize)
+
+
+def test_empty_and_real_visuals_preserve_asset_bytes_and_original_indices(tmp_path, metadata):
+    raw = tmp_path / "raw"
+    items = [_item("text", 0, text=metadata.title)]
+    for kind in ("image", "chart", "table"):
+        items.extend([_item(kind, 0, img_path=""),
+                      _item(kind, 0, img_path=f"{kind}.png", **{f"{kind}_caption": [kind]})])
+    content = _write_content_list(raw, items)
+    for kind in ("image", "chart", "table"):
+        (content.parent / f"{kind}.png").write_bytes(kind.encode())
+    output = tmp_path / "out"
+    result = MineruNormalizer().normalize(raw, output, metadata, "a" * 64)
+    assert [asset.source_index for asset in result.assets] == [2, 4, 6]
+    for asset, kind in zip(result.assets, ("image", "chart", "table")):
+        assert (output / asset.relative_path.removeprefix("parsed/mineru/")).read_bytes() == kind.encode()
+
+
 def test_equations_and_flat_numbered_outline_are_preserved(tmp_path, metadata):
     raw = tmp_path / "raw"
     equation = "$$\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}(QK^T/\\sqrt{d_k})V$$"

@@ -91,6 +91,43 @@ def test_unknown_type_is_preserved_for_warning() -> None:
     assert item.item_type == "equation_group"
 
 
+@pytest.mark.parametrize("kind", ["table", "image", "chart"])
+@pytest.mark.parametrize("path_fields", [{}, {"img_path": None}, {"img_path": ""}, {"img_path": " \t"}])
+def test_empty_visual_can_be_reported_without_an_asset(kind, path_fields):
+    value = {"type": kind, "page_idx": 25, "bbox": [0, 0, 0, 0], **path_fields,
+             f"{kind}_caption": ["  "], f"{kind}_footnote": None, "table_body": " ", "content": None}
+    item = MineruContentItem.from_dict(value, index=7)
+    assert item.asset_path is None
+    assert item.page == 26
+    assert not item.caption
+
+
+@pytest.mark.parametrize("kind", ["table", "image", "chart"])
+@pytest.mark.parametrize("field,value", [
+    ("caption", ["Important caption"]), ("footnote", ["Footnote"]),
+    ("table_body", "<table>data</table>"), ("text", "Body text"),
+    ("content", "Chart values"), ("content", {"data": [1]}),
+    ("structured_path", "table.csv"), ("structured_sha256", "a" * 64),
+    ("future_content", {"text": "Do not discard"}),
+])
+def test_missing_image_with_content_requires_integrity_review(kind, field, value):
+    key = f"{kind}_{field}" if field in {"caption", "footnote"} else field
+    with pytest.raises(ValueError, match="mineru_visual_asset_required.*index=7.*page=26"):
+        MineruContentItem.from_dict({"type": kind, "page_idx": 25, "bbox": [0, 0, 0, 0], key: value}, index=7)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("img_path", []), ("img_path", 0), ("img_path", False),
+    ("table_caption", ""), ("table_caption", [None]), ("table_footnote", {}),
+    ("table_body", []), ("text", False), ("content", 0),
+    ("structured_path", []), ("structured_reliable", "false"),
+    ("sub_type", {}), ("is_body", "true"),
+])
+def test_empty_visual_does_not_accept_wrong_field_types(field, value):
+    with pytest.raises(ValueError):
+        MineruContentItem.from_dict({"type": "table", "page_idx": 0, "bbox": [0, 0, 0, 0], field: value}, index=0)
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [

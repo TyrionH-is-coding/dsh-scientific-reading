@@ -108,6 +108,7 @@ class MineruNormalizer:
         blocks: list[SourceBlock] = []
         assets: list[AssetRecord] = []
         warnings: list[str] = []
+        omitted_items: list[dict] = []
         page_characters: dict[int, int] = {}
         first_pages: list[str] = []
         image_counts: dict[int, int] = {}
@@ -120,6 +121,17 @@ class MineruNormalizer:
             if item.page < previous_page:
                 raise ValueError("content list 页码顺序无效")
             previous_page = item.page
+            if item.item_type in {"image", "chart", "table"} and item.asset_path is None:
+                warnings.append(
+                    f"empty_visual_item:{item.item_type}:index={item.index}:page={item.page}:review_required"
+                )
+                omitted_items.append({
+                    "source_index": item.index, "source_type": item.item_type,
+                    "page": item.page, "bbox": list(item.bbox),
+                    "reason": "empty_visual_item",
+                    "review": "原始条目无可用内容；须对照 PDF 及相邻条目核实，不代表原文无内容或已无损合并。",
+                })
+                continue
             if (
                 item.item_type
                 in {
@@ -303,6 +315,10 @@ class MineruNormalizer:
             **report.to_dict(),
             "assets": [asset.to_dict() for asset in assets],
         }
+        if omitted_items:
+            source_map["omitted_items"] = omitted_items
+            report_payload["omitted_items"] = omitted_items
+            report_payload["content_review_required"] = True
         atomic_write_json(output / "source_map.json", source_map)
         _write_text(
             output / "full.md",
