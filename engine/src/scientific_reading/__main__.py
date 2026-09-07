@@ -119,15 +119,7 @@ def _pid_is_alive(pid: int | None) -> bool:
         return False
     if os.name == "nt":
         return windows_pid_is_alive(pid)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    return BackgroundJobStore._pid_is_alive(pid)
 
 def resume_job(
     store: BackgroundJobStore,

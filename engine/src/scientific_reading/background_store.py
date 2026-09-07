@@ -5,6 +5,8 @@ import json
 import os
 import re
 import shutil
+import sys
+import subprocess
 import time
 import uuid
 from contextlib import contextmanager
@@ -371,11 +373,36 @@ class BackgroundJobStore:
     @staticmethod
     def _pid_is_alive(pid: int) -> bool:
         """跨平台只读探测 PID；Windows 上禁止使用会终止进程的 os.kill(pid, 0)。"""
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+            return False
         if os.name != "nt":
             try:
                 os.kill(pid, 0)
+            except PermissionError:
+                return True
             except (OSError, OverflowError):
                 return False
+            # kill(pid, 0) also succeeds for an exited, unreaped child. Such a
+            # zombie must not prevent a completed/waiting job from resuming.
+            if sys.platform.startswith("linux"):
+                try:
+                    stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+                    return stat[stat.rfind(")") + 2:].split()[0] not in {"Z", "X"}
+                except FileNotFoundError:
+                    return False
+                except (OSError, IndexError):
+                    return True
+            if sys.platform == "darwin":
+                try:
+                    state = subprocess.check_output(
+                        ["/bin/ps", "-p", str(pid), "-o", "stat="],
+                        text=True, stderr=subprocess.DEVNULL, timeout=3,
+                    ).strip()
+                    return bool(state) and state[0] not in {"Z", "X"}
+                except subprocess.CalledProcessError as error:
+                    return error.returncode != 1
+                except (OSError, subprocess.SubprocessError):
+                    return True
             return True
 
         return windows_pid_is_alive(pid)

@@ -2,9 +2,11 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import time
 import pytest
 from scientific_reading.secret_store import MineruSecretStore
 from scientific_reading.xlsx_snapshot import XlsxSnapshotService
+from scientific_reading.background_store import BackgroundJobStore
 
 
 class MemoryKeyring:
@@ -77,6 +79,19 @@ def test_headless_spreadsheet_open_failure_is_actionable(tmp_path, monkeypatch):
     monkeypatch.setattr(xlsx_snapshot.shutil, "which", lambda name: None)
     with pytest.raises(ValueError, match="spreadsheet_opener_unavailable"):
         XlsxSnapshotService._open_excel(tmp_path / "library.xlsx", 2)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix zombie lifecycle")
+def test_exited_unreaped_worker_does_not_block_job_retry():
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and BackgroundJobStore._pid_is_alive(child.pid):
+            time.sleep(0.02)
+        # Do not poll/wait before checking: the child is deliberately unreaped.
+        assert not BackgroundJobStore._pid_is_alive(child.pid)
+    finally:
+        child.wait(timeout=5)
 
 
 @pytest.mark.skipif(os.environ.get("SR_NATIVE_KEYRING_TEST") != "1", reason="requires unlocked OS credential service")
