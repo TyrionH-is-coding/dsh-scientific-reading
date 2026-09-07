@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -7,7 +8,7 @@ import { tmpdir } from 'node:os'
 
 import { registerRoutes } from '../lib/routes.js'
 
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
+
 assert.ok(python)
 const fixture = mkdtempSync(join(tmpdir(), 'sr-navigation-contract-'))
 const fakeRoot = join(fixture, 'fake')

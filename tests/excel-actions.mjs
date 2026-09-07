@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os'
 
 import { registerStatusRoutes } from '../lib/status_routes.js'
 
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).map((x) => x.trim()).find((x) => x.toLowerCase().endsWith('.exe'))
+
 const fixture = mkdtempSync(join(tmpdir(), 'sr-excel-action-'))
 const fakeRoot = join(fixture, 'fake')
 const logPath = join(fixture, 'argv.json')

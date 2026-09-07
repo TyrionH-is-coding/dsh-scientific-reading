@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -80,7 +81,7 @@ const dataRoot = join(fixture, 'data')
 const jobsRoot = join(dataRoot, 'jobs', 'downloads')
 const fakeRoot = join(fixture, 'fake')
 const saveLog = join(fixture, 'download-save.jsonl')
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
+
 assert.ok(python)
 mkdirSync(join(fakeRoot, 'scientific_reading'), { recursive: true })
 writeFileSync(join(fakeRoot, 'scientific_reading', '__init__.py'), '', 'utf8')

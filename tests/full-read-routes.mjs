@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -47,7 +48,7 @@ writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), [
   `elif cmd=="artifact-resolve" and a[a.index("--kind")+1]=="reader": print(json.dumps({"rel_path":"generations/${generation}/reading/reader.html","manifest":{"reader_sha256":"${readerSha}"}}))`,
   `else: print(json.dumps({"rel_path":"generations/${generation}/exports","manifest":{"contract":"asset-export-v1","paper_id":pid,"source_pdf_sha256":"${'b'.repeat(64)}","assets":[{"export_path":"figures/Fig_01.png","export_sha256":"${assetSha}"}]}}))`,
 ].join('\n'))
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).find((x) => x.trim().toLowerCase().endsWith('.exe')).trim()
+
 const oldPath = process.env.PYTHONPATH
 process.env.PYTHONPATH = oldPath ? fakeRoot + delimiter + oldPath : fakeRoot
 const oldEmail = process.env.UNPAYWALL_EMAIL

@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -136,8 +137,7 @@ function response() {
   }
 }
 
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' })
-  .split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
+
 assert.ok(python)
 const fixture = mkdtempSync(join(tmpdir(), 'sr-library-search-ui-'))
 const dataRoot = join(fixture, 'data')

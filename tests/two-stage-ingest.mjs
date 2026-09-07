@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -7,9 +8,8 @@ import { tmpdir } from 'node:os'
 import { engineJson, engineStartDetached, engineDerivedEnqueue, engineAbstractReadSubmit } from '../lib/cli.js'
 import { isPaperId, paperMetadataPath } from '../lib/papers.js'
 
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' })
-  .split(/\r?\n/).map((line) => line.trim()).find((line) => line.toLowerCase().endsWith('.exe'))
-assert.ok(python, '需要 PATH 中存在 python.exe')
+
+assert.ok(python, '需要配置可用的 Python 运行时')
 
 const root = await mkdtemp(join(tmpdir(), 'sr-two-stage-ingest-'))
 const packageDir = join(root, 'scientific_reading')

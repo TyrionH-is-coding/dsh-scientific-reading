@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -59,7 +60,7 @@ const envLog = join(fixture, 'env.json')
 mkdirSync(join(fakeRoot, 'scientific_reading'), { recursive: true })
 writeFileSync(join(fakeRoot, 'scientific_reading', '__init__.py'), '')
 writeFileSync(join(fakeRoot, 'scientific_reading', '__main__.py'), `import json,os\njson.dump({'wrapper':os.environ.get('SR_SCANSCI_PROVIDER_WRAPPER')},open(${JSON.stringify(envLog)},'w'))\nprint(json.dumps({'parent_job_id':'job_0123456789abcdef'}))\n`)
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).find((line) => line.trim().toLowerCase().endsWith('.exe')).trim()
+
 const old = { PYTHONPATH: process.env.PYTHONPATH, SCANSCI_PDF_DATA_DIR: process.env.SCANSCI_PDF_DATA_DIR }
 process.env.PYTHONPATH = old.PYTHONPATH ? fakeRoot + delimiter + old.PYTHONPATH : fakeRoot
 process.env.SCANSCI_PDF_DATA_DIR = join(fixture, 'scansci')

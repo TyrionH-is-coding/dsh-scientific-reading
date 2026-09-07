@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { delimiter, join } from 'node:path'
@@ -6,9 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 
 import { runEngine } from '../lib/cli.js'
 
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' })
-  .split(/\r?\n/).map((line) => line.trim())
-  .find((line) => line.toLowerCase().endsWith('.exe'))
+
 assert.ok(python)
 const fixture = mkdtempSync(join(tmpdir(), 'sr-evidence-adapter-'))
 const fakeRoot = join(fixture, 'fake')

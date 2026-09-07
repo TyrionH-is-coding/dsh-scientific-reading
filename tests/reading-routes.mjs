@@ -1,3 +1,4 @@
+import { python } from './python-runtime.mjs'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -17,7 +18,7 @@ const rootPdfPath = join(fixture, 'papers', paperId, 'source.pdf')
 const pdfAuditFlagPath = join(fixture, 'audit-root-pdf.flag')
 const exportsDir = join(generationDir, 'exports')
 const fakeRoot = join(fixture, 'fake')
-const python = execFileSync('where.exe', ['python'], { encoding: 'utf8' }).split(/\r?\n/).find((line) => line.trim().toLowerCase().endsWith('.exe')).trim()
+
 
 mkdirSync(fullOutputDir, { recursive: true })
 mkdirSync(canonicalDir, { recursive: true })
