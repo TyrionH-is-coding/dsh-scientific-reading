@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-scientific-reading",
   "version": "0.1.0-rc.7",
-  "description": "DSH 文献工作流：合法下载、MinerU 解析、精读 HTML、本地库与 Excel 总表",
+  "description": "Deep Literature for DSH：OA 文献获取、双语 HTML 精读与本地文献管理",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",

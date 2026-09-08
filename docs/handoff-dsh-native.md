@@ -1,4 +1,6 @@
-# DSH Scientific Reading 开发交接
+# DSH Scientific Reading 历史开发交接
+
+> 本文保留早期工程快照。当前安装与验证请使用 [Deep Literature for DSH 开发指南](development.md)；原生插件现行下载范围是 OA 与本地 PDF，本文旧机构通道、Chrome 设置及 Windows 专用说明不作为当前产品合同。发布状态见[核对记录](release-readiness.md)。
 
 这份文档面向下一位直接接手实现和验收的 agent。当前代码已整合设置页、文献模式、MinerU 工程化改动和 Reader 审核入口；代码已整合不等于真实 DSH、浏览器、MinerU 或 Excel 场景均已验收。统一验收结果见[可靠性整合验收记录](superpowers/executions/2026-09-05-reliability-integration.md)。
 
