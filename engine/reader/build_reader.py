@@ -9,7 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 
-READER_BUILD_VERSION = "reader-html-v2.4.6-content-fidelity"
+READER_BUILD_VERSION = "reader-html-v2.4.7-guide-readability"
 ALLOWED_HIGHLIGHT_KINDS = frozenset({"result", "method"})
 ALLOWED_HIGHLIGHT_SOURCES = ALLOWED_HIGHLIGHT_KINDS
 
@@ -37,7 +37,7 @@ CSS = r"""
   --review-soft: #e8f0f8;
   --quick-dot: #f3b51b;
   --review-dot: #2f80ed;
-  --sidebar: 260px;
+  --sidebar: 300px;
   --text-width: 800px;
   --asset-width: 1020px;
   --shadow: 0 14px 38px rgba(49, 47, 40, .055);
@@ -188,7 +188,7 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 
 .sidebar-guide {
   flex: 0 0 auto;
-  max-height: 43vh;
+  max-height: 60vh;
   margin: 13px 0 4px;
   padding: 0 8px 10px 0;
   overflow-y: auto;
@@ -197,14 +197,12 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 .guide-heading {
   margin: 0 0 6px 12px;
   color: var(--muted);
-  font: 700 11px/1.4 "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  font: 700 12px/1.5 "Source Han Sans SC", "Microsoft YaHei", sans-serif;
   letter-spacing: .14em;
 }
 .sidebar-guide-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
-  padding: 7px 10px 8px 12px;
+  position: relative;
+  padding: 12px;
   border-top: 1px solid rgba(64, 95, 84, .1);
   font-family: "Source Han Sans SC", "Microsoft YaHei", sans-serif;
 }
@@ -212,27 +210,27 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 .sidebar-guide-item details { min-width: 0; }
 .sidebar-guide-item summary { cursor: pointer; list-style: none; }
 .sidebar-guide-item summary::-webkit-details-marker { display: none; }
-.sidebar-guide-item summary strong { display: block; color: #315348; font-size: 12px; }
+.sidebar-guide-item summary strong { display: block; padding-right: 64px; color: #315348; font-size: 13px; line-height: 1.5; }
 .sidebar-guide-preview {
   display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  color: #737970;
-  font-size: 11px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
-.sidebar-guide-item details[open] .sidebar-guide-preview { white-space: normal; }
-.sidebar-guide-content { grid-column: 1 / -1; color: #59615b; font-size: 11px; line-height: 1.5; }
+.sidebar-guide-item details[open] .sidebar-guide-preview { display: none; }
+.sidebar-guide-content { color: var(--ink); font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
 .sidebar-guide-content .guide-list { margin: 6px 0 0; padding-left: 1rem; }
 .sidebar-guide-content .guide-entry { margin: 5px 0; }
 .guide-empty { margin: 5px 0 0; color: #8a8d86; }
 .sidebar-guide-jump {
-  align-self: start;
-  margin-top: 1px;
+  position: absolute;
+  top: 12px;
+  right: 12px;
   color: #2f6656;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.8;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
