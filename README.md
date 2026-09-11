@@ -31,7 +31,7 @@
 | **把阅读页带走** | 导出包含正文、译文、公式和图片的单文件 HTML，在电脑或手机浏览器中离线阅读、分享。个人随记与对话不随文件导出。 |
 | **按课题整理和发现文献** | 自定义 Excel 列、研究字段与阅读模板；文献雷达按研究方向发现候选论文，由你决定是否入库。 |
 
-以上为 `main` 的 v0.2 候选功能，尚未发布 v0.2 安装包；当前公开包仍为 [v0.1.0-rc.5](https://github.com/TyrionH-is-coding/deep-literature-for-dsh/releases/tag/v0.1.0-rc.5)。尝试候选版请按[源码构建步骤](docs/development.md#从源码构建)操作，升级前备份完整文献库。
+已发布 [v0.2.0-rc.2 预发布版](https://github.com/TyrionH-is-coding/deep-literature-for-dsh/releases/tag/v0.2.0-rc.2)。已有用户先备份文献库，在原 DSH Profile 中安装新版插件，保留文献与配置；版本要求和迁移说明见[升级指南](docs/getting-started.md#备份更新与卸载)。
 
 <details>
 <summary><strong>已验证到哪里？</strong></summary>

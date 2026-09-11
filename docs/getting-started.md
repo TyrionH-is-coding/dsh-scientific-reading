@@ -9,7 +9,7 @@
 | 系统 | Windows x64、macOS Apple Silicon / Intel、Linux x64 / ARM64 |
 | Node.js | 22 |
 | Python | 3.11，可从当前 DSH 进程环境中发现 |
-| DSH | 当前验证的宿主为 `@deepseek-ai/dsh@0.1.0-rc.7` |
+| DSH | 当前验证的宿主为 `@deepseek-ai/dsh@0.1.5-rc.1` |
 | 模型 | 在 DSH 原生设置中配置可用模型服务 |
 | PDF 解析 | MinerU API Key，或已配置且验证可用的本机 MinerU |
 
@@ -18,7 +18,7 @@
 已有 DSH 时先运行 `dsh --version` 核对版本。新装 DSH 的命令为：
 
 ~~~sh
-npm install --global pnpm@11 @deepseek-ai/dsh@0.1.0-rc.7
+npm install --global pnpm@11 @deepseek-ai/dsh@0.1.5-rc.1
 ~~~
 
 ## 下载并校验插件
@@ -114,8 +114,10 @@ https://doi.org/10.48550/arXiv.1706.03762
 
 - **备份**：在文献对话中请求把完整文献库备份到库外的新目录。备份包含数据库、PDF、Reader 和相关资产。
 - **恢复**：恢复到新建或空目录，校验后再决定切换数据位置。重新配置模型与 MinerU，明确继续未完成的任务。
-- **更新**：先备份并停止 DSH，核对新包哈希后，在同一 Profile 执行安装命令，重启后确认原文献与笔记仍在。
+- **更新**：先保存并关闭 Excel、等待文献任务结束，备份后停止 DSH。v0.2 配套 DSH `0.1.5-rc.1`；核对宿主版本及新插件包哈希，在原 Profile 执行上面的安装命令，重启后确认原文献、笔记和配置仍在。使用自定义 Profile 时，将示例 `web` 换成原名称。
 - **回退**：旧程序未必支持新数据库格式。使用升级前备份恢复到新目录，不让旧程序直接写入新版文献库。
+
+v0.2 将文献数据格式升级至 6，并使用 DSH V3 会话；不能直接装回 v0.1 读取已迁移的数据。文献备份不包含模型凭据或完整旧会话；更新宿主前也应保留 DSH 自己的配置与会话备份。使用 **Deep Literature for Codex 独立版**的用户，应按其[升级指南](https://github.com/TyrionH-is-coding/deep-literature-for-codex/blob/main/docs/upgrading.md)更新整个工作台与 Skill。
 
 正常停止对应 DSH 后可卸载插件：
 
