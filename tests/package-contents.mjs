@@ -46,6 +46,7 @@ const requiredFiles = [
   'LICENSE',
   'THIRD_PARTY_NOTICES.md',
   'MIGRATION.md',
+  'docs/v0.2-guide.md',
 ]
 
 const exportPaths = Object.values(pkg.exports).flatMap((entry) => (
@@ -63,7 +64,7 @@ for (const file of manifestPaths) {
   if (!fileSet.has(file)) violations.push(`package.json 路径未打包: ${file}`)
 }
 for (const file of files) {
-  if (/^(?:tests|docs|src|client)\//.test(file)) violations.push(`禁止打包目录: ${file}`)
+  if (/^(?:tests|docs|src|client)\//.test(file) && file !== 'docs/v0.2-guide.md') violations.push(`禁止打包目录: ${file}`)
   if (file.startsWith('scripts/') && !['scripts/scansci_wrap.py', 'scripts/oa-requirements.txt'].includes(file)) {
     violations.push(`禁止打包开发脚本: ${file}`)
   }

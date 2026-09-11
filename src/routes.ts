@@ -1,4 +1,5 @@
 import type { Context } from 'cordis'
+import { readerPage, readerDisplaySha } from './reader_chat.js'
 import type { Context as CordisContext } from 'cordis'
 
 declare module 'cordis' {
@@ -32,6 +33,7 @@ import {
   engineContinueFullRead,
   engineExportAssets,
   engineResolveArtifact,
+  engineJson,
   engineAttachAndResumeFullReadPdf,
   runEngine,
 } from './cli.js'
@@ -722,7 +724,20 @@ export function registerRoutes(
       const manifest = artifactJson.manifest as Record<string, unknown> | undefined
       const expectedSha = typeof artifactJson.sha256 === 'string' ? artifactJson.sha256 : typeof manifest?.reader_sha256 === 'string' ? manifest.reader_sha256 : ''
       if (!/^[0-9a-f]{64}$/.test(expectedSha) || sha256(bytes) !== expectedSha) throw new Error('reader_sha_mismatch')
-      const html = bytes.toString('utf8')
+      let html = bytes.toString('utf8')
+      const view = await engineJson(config, ['library-views'], {action:'reader_render', paper_id:id})
+      if (view.ok && typeof view.json?.html === 'string' && view.json.base_sha256 === expectedSha) {
+        html = view.json.html
+        res.setHeader('X-SR-Reader-Base-SHA256', expectedSha)
+        res.setHeader('X-SR-Reader-Display-SHA256', String(view.json.display_sha256))
+      } else {
+        html = html.replace(/<body([^>]*)>/i, '<body$1><p role="status">阅读外观暂不可用，可在文献详情恢复默认。</p>')
+      }
+      const offline = new URL(_req.url || '/', 'http://localhost').searchParams.get('download') === '1'
+      html = readerPage(html, offline)
+      res.setHeader('X-SR-Reader-Base-SHA256', expectedSha)
+      res.setHeader('X-SR-Reader-Display-SHA256', readerDisplaySha(html))
+      if (offline) res.setHeader('Content-Disposition', `attachment; filename="Reader-${id}.html"`)
       sendText(res, 200, _req.method === 'HEAD' ? '' : html, 'text/html; charset=utf-8')
     } catch {
       sendText(res, 404, 'no full read yet')

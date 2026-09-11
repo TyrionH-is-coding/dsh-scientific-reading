@@ -137,7 +137,7 @@ function npmRuntime() {
 }
 
 
-async function buildAndPack(root, evidence) {
+export async function buildAndPack(root, evidence) {
   const env = sanitizedDshEnvironment()
   const npm = npmRuntime()
   const build = await runForeground(
@@ -203,7 +203,7 @@ async function resolvedPythonCommand() {
 }
 
 
-async function prepareEngine(dataRoot, evidence) {
+export async function prepareEngine(dataRoot, evidence) {
   const python = await resolvedPythonCommand()
   if (process.env.DSH_ACCEPTANCE_TEST_MODE === '1') {
     return {
@@ -250,7 +250,7 @@ async function prepareEngine(dataRoot, evidence) {
 }
 
 
-async function materializeFixture(dataRoot, nonce, evidence) {
+export async function materializeFixture(dataRoot, nonce, evidence) {
   const code = `
 import hashlib
 import json
@@ -376,7 +376,7 @@ async function atomicJson(file, value) {
 }
 
 
-async function installPlugin(runtime, home, tarball, dataRoot, enginePython, evidence) {
+export async function installPlugin(runtime, home, tarball, dataRoot, enginePython, evidence) {
   const env = sanitizedDshEnvironment()
   env.DSH_HOME = home
   const args = [
@@ -509,7 +509,6 @@ function startHost(runtime, env, port) {
       '--profile', PROFILE,
       '--host', '127.0.0.1',
       '--port', String(port),
-      '--no-open',
     ],
     hiddenDshSpawnOptions({
       cwd: repositoryRoot,
@@ -544,7 +543,7 @@ async function waitForReader(host, port, paperId, nonce) {
   const pathname = `/sr/reader/${encodeURIComponent(paperId)}`
   const deadline = Date.now() + 30000
   while (Date.now() < deadline) {
-    const response = await request(port, pathname)
+    const response = await request(port, pathname, 5000)
     if (response.status === 200 && response.body.includes(nonce)) return response
     if (host.child.exitCode !== null) {
       throw new DshAcceptanceError('dsh_start_failed')

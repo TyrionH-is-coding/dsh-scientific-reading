@@ -756,6 +756,8 @@ def _run_navigation_command(args) -> int:
             else:
                 result = ClassificationService(service).undo(args.operation_id)
         except ValueError as error:
+            if args.command == "personal-record-update" and str(error) == "personal_record_conflict":
+                return _navigation_error("personal_record_conflict", "personal_record_changed")
             if args.command == "library-item-v2" and str(error) in {
                 "paper_id_invalid",
                 "paper_not_found",
@@ -814,6 +816,9 @@ def _build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("library-ingest")
+    commands.add_parser("paper-chat")
+    commands.add_parser("library-views")
+    commands.add_parser("radar")
     backup = commands.add_parser("library-backup")
     backup.add_argument("--output", type=Path, required=True)
     backup.add_argument("--timeout", type=float, default=30.0)
@@ -896,8 +901,9 @@ def _build_parser() -> argparse.ArgumentParser:
     commands.add_parser("mineru-secret-delete")
     xlsx_locate = commands.add_parser("xlsx-locate")
     xlsx_locate.add_argument("--paper-id", required=True)
-    commands.add_parser("xlsx-import-user-fields")
-    commands.add_parser("xlsx-refresh")
+    xlsx_locate.add_argument("--folder-id")
+    commands.add_parser("xlsx-import-user-fields").add_argument("--folder-id")
+    commands.add_parser("xlsx-refresh").add_argument("--folder-id")
     commands.add_parser("review-session-get")
     commands.add_parser("review-session-bind")
     commands.add_parser("review-context")
@@ -1006,7 +1012,7 @@ def _run_mineru_secret(args) -> int:
 def _run_xlsx(args) -> int:
     from .xlsx_snapshot import XlsxSnapshotService
 
-    service = XlsxSnapshotService(args.data_root)
+    service = XlsxSnapshotService(args.data_root, getattr(args, "folder_id", None))
     if args.command == "xlsx-locate":
         result = service.locate(args.paper_id)
     elif args.command == "xlsx-import-user-fields":
@@ -1126,6 +1132,7 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
                 library.close()
         if current_scope() is not None:
             allowed = {"library-list-v2", "library-item-v2", "folder-list", "library-ingest", "derived-enqueue", "job-status", "full-read-pipeline-start", "full-read-pipeline-resume", "full-read-pdf-attach-resume", "pdf-attach-library", "artifact-resolve", "export-assets", "abstract-read-submit", "review-session-get", "review-session-bind", "review-context", "review-confirm", "evidence-locate", "resolve-conclusion", "personal-record-update"}
+            allowed.update({"paper-chat", "library-views"})
             if args.command not in allowed:
                 raise ScopeError("scope_command_forbidden")
             if getattr(args, "paper_id", None):
@@ -1166,6 +1173,21 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
 def _dispatch(args) -> int:
     timer = ForegroundTimer()
     try:
+        if args.command in {"paper-chat", "library-views", "radar"}:
+            if args.command == "paper-chat":
+                from .paper_chat import execute
+            elif args.command == "radar":
+                from .radar import execute
+            else:
+                from .library_views import execute
+            from .library_service import LibraryService
+            library = LibraryService(args.data_root)
+            try:
+                result = execute(library, json.load(sys.stdin))
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+            finally:
+                library.close()
         if args.command == "download-job-save":
             if re.fullmatch(r"job_[0-9a-f]{16}", args.job_id) is None:
                 raise ValueError("download_job_id_invalid")

@@ -25,6 +25,18 @@ const createPaperActionController = loadNamedFunction('createPaperActionControll
 const createDrawerSessionController = loadNamedFunction('createDrawerSessionController')
 const nextDialogFocus = loadNamedFunction('nextDialogFocus')
 const createLiteratureLifecycle = loadNamedFunction('createLiteratureLifecycle')
+const userMessage = loadNamedFunction('userMessage')
+const modelOptionLabel = loadNamedFunction('modelOptionLabel')
+assert.equal(userMessage(new Error('model_policy_changed')), '设置已更新，请刷新后重试。')
+assert.equal(userMessage(new Error('reader_source_changed')), '原文已更新，请重新打开阅读页。')
+assert.equal(userMessage(new Error('内部失败 Error: {"token":"test"}')), '暂时无法完成，请重试。')
+assert.equal(userMessage(new Error('请先保存并核对方向')), '请先保存并核对方向')
+assert.equal(userMessage(new Error('TypeError: failed at C:/private/path')), '暂时无法完成，请重试。')
+const primaryModel = {id:'gpt-5.6-sol',name:'gpt-5.6-sol',provider:'internal-a',providerName:'我的订阅'}
+const secondModel = {...primaryModel,provider:'internal-b',providerName:'实验室连接'}
+assert.equal(modelOptionLabel(primaryModel, [primaryModel]), 'gpt-5.6-sol')
+assert.equal(modelOptionLabel(primaryModel, [primaryModel, secondModel]), 'gpt-5.6-sol（我的订阅）')
+assert.equal(modelOptionLabel(secondModel, [primaryModel, secondModel]), 'gpt-5.6-sol（实验室连接）')
 
 assert.equal(isSafeHttpUrl('https://example.test/record'), true)
 assert.equal(isSafeHttpUrl('http://example.test/record'), true)

@@ -39,7 +39,8 @@ export function buildClient({ sourcePath = defaultSourcePath, outputPath = defau
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
   if (process.argv[2] === '--check') {
-    if (checkClient()) {
+    if (checkClient() && ['reader-client.js', 'reader-client.css'].every(name =>
+      checkClient({sourcePath:resolve(rootPath, 'client', name), outputPath:resolve(rootPath, 'lib', name)}))) {
       console.log('PASS: 客户端产物与规范源一致')
     } else {
       console.error('错误：客户端产物缺失或已过期，请运行 node scripts/build-client.mjs')
@@ -47,6 +48,9 @@ if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
     }
   } else if (process.argv.length === 2) {
     buildClient()
+    for (const name of ['reader-client.js', 'reader-client.css']) {
+      buildClient({ sourcePath: resolve(rootPath, 'client', name), outputPath: resolve(rootPath, 'lib', name) })
+    }
     console.log('PASS: 已生成客户端产物')
   } else {
     console.error('错误：仅支持 --check 参数')

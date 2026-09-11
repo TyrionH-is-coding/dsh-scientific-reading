@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from bs4 import BeautifulSoup
 
@@ -162,8 +163,7 @@ def test_reader_embeds_a_manual_exportable_next_reading_queue(tmp_path):
     assert soup.select_one("#clear-reading-queue")
     assert soup.select_one("#export-reading-queue")
     dsh = soup.select_one("#submit-reading-queue")
-    assert dsh.has_attr("disabled")
-    assert "下一阶段接通" in dsh.get_text(" ", strip=True)
+    assert dsh is None
     script = soup.script.string
     assert "sr-next-reading:v1" in script
     assert "sr-next-reading-v1" in script
@@ -174,4 +174,5 @@ def test_reader_embeds_a_manual_exportable_next_reading_queue(tmp_path):
     assert "setTimeout(() => URL.revokeObjectURL(url), 1000)" in script
     assert "queueItem.textContent" in script
     assert "readingQueueItems.innerHTML" not in script
-    assert "fetch(" not in html
+    # The local queue remains offline; only the explicit Figure discussion control sends a request.
+    assert re.findall(r"fetch\(([^,\n]+)", html) == ["'/sr/api/chats/figure'"]

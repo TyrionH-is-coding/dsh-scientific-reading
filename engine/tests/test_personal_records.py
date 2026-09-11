@@ -116,6 +116,23 @@ def test_personal_record_whitelist_and_expected_value_guard(tmp_path):
     library.close()
 
 
+def test_cli_conflict_preserves_record_and_returns_actionable_code(tmp_path, capsys, monkeypatch):
+    import io
+    import json
+    from scientific_reading.__main__ import run_cli
+    paper_id = seed(tmp_path)[0]
+    library = LibraryService(tmp_path)
+    library.update_personal_record(paper_id, {"user_notes": "其他页面的新记录"})
+    library.close()
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({
+        "fields": {"user_notes": "旧页面草稿"}, "expected": {"user_notes": ""}
+    })))
+    code = run_cli(["--data-root", str(tmp_path), "personal-record-update", "--paper-id", paper_id])
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "personal_record_conflict"
+    assert record(tmp_path, paper_id)["user_notes"] == "其他页面的新记录"
+
+
 def legacy_workbook(service, paper_id, note):
     book = openpyxl.Workbook()
     sheet = book.active

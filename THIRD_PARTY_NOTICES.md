@@ -6,6 +6,8 @@
 - latex2mathml — MIT License
 - Pillow — HPND License
 - openpyxl — MIT License
+- tinycss2 — BSD-3-Clause，Copyright (c) 2013-2020, Simon Sapin and contributors；用于解析 Reader 自定义 CSS。许可证随安装的官方 wheel 分发。
+- webencodings — BSD-3-Clause，Copyright (c) 2012, Simon Sapin；tinycss2 的编码依赖。许可证随安装的官方 wheel 分发。
 - DeepSeek Harness 相关 npm 包 — 以各包随附许可证为准
 - Cordis 与 Schemastery — MIT License
 

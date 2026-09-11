@@ -12,6 +12,7 @@ from scientific_reading.evidence_locator import (
     build_locator,
     resolve_locator,
 )
+from scientific_reading.assets import AssetManifest
 from scientific_reading.library_service import LibraryService
 from scientific_reading.mineru_normalizer import MineruNormalizer
 from scientific_reading.models import PaperMetadata, StageRecord
@@ -34,6 +35,8 @@ def _fixture(
     *,
     duplicate_text: bool = False,
     repeated_quote_in_block: bool = False,
+    content_items: list | None = None,
+    asset_files: dict | None = None,
 ) -> tuple[str, PaperWorkspace, str]:
     metadata = PaperMetadata(
         title="Synthetic locator study",
@@ -93,10 +96,16 @@ def _fixture(
     raw = generation.root / "raw-fixture"
     content = raw / "paper" / "auto" / "paper_content_list.json"
     content.parent.mkdir(parents=True)
-    _write_json(content, items)
+    _write_json(content, items if content_items is None else content_items)
+    for relative, image_bytes in (asset_files or {}).items():
+        target = content.parent / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(image_bytes)
     parsed = generation.parsed_dir / "mineru"
     version = "mineru-local-v1:locator-fixture"
-    MineruNormalizer(version).normalize(raw, parsed, metadata, source_sha)
+    normalized = MineruNormalizer(version).normalize(raw, parsed, metadata, source_sha)
+    for asset in normalized.assets:
+        AssetManifest(generation.manifest_path).upsert(asset)
     shutil.copytree(raw, parsed / "raw")
     for name in ("source_map.json", "parse_report.json"):
         path = parsed / name

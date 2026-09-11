@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsh-scientific-reading-engine"
-version = "0.1.0"
+version = "0.2.0rc2"
 description = "Codex 驱动的可复现个人文献阅读工作流"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
@@ -12,6 +12,7 @@ authors = [{ name = "TyrionH-is-coding" }]
 requires-python = ">=3.11"
 dependencies = [
   "beautifulsoup4>=4.12,<5",
+  "tinycss2>=1.4,<2",
   "latex2mathml>=3.81,<4",
   "Pillow>=12,<13",
   "openpyxl>=3.1,<4",

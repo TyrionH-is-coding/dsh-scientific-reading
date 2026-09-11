@@ -27,9 +27,12 @@ from .xlsx_sync import import_fields, archive_workbook
 
 
 class XlsxSnapshotService:
-    def __init__(self, data_root: Path) -> None:
+    def __init__(self, data_root: Path, folder_id: str | None = None) -> None:
         self.data_root = Path(data_root).resolve()
-        self.target = self.data_root / "library" / "scientific-reading.xlsx"
+        if folder_id is not None and (not isinstance(folder_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", folder_id) or ".." in folder_id):
+            raise ValueError("folder_id_invalid")
+        self.folder_id = folder_id
+        self.target = self.data_root / "library" / (f"category-{folder_id}.xlsx" if folder_id else "scientific-reading.xlsx")
 
     @root_operation
     def refresh(self) -> dict[str, Any]:
@@ -45,8 +48,9 @@ class XlsxSnapshotService:
             if imported.get("status") == "pending":
                 return imported
         rows = self._rows()
-        review_rows = self._review_rows()
-        asset_rows = self._asset_rows()
+        selected_ids = {row["文献 ID"] for row in rows}
+        review_rows = [row for row in self._review_rows() if row["文献 ID"] in selected_ids]
+        asset_rows = [row for row in self._asset_rows() if row[0] in selected_ids]
         self.target.parent.mkdir(parents=True, exist_ok=True)
         temporary: Path | None = None
         try:
@@ -82,10 +86,12 @@ class XlsxSnapshotService:
         from .environment_status import EnvironmentStatusService
         status = EnvironmentStatusService(self.data_root)
         with sqlite3.connect(str(library_path(self.data_root))) as conn:
-            conn.executemany("UPDATE items SET xlsx_sync_state='ready',xlsx_error=NULL WHERE paper_id=? "
+            if not self.folder_id:
+                conn.executemany("UPDATE items SET xlsx_sync_state='ready',xlsx_error=NULL WHERE paper_id=? "
                              "AND coalesce(personal_updated_at,'')=? AND updated_at=?",
                              [(r["文献 ID"], r["个人记录更新时间"], r["处理更新时间"]) for r in rows])
-            conn.execute("INSERT OR REPLACE INTO library_meta VALUES('xlsx_last_export',?)", (json.dumps({**self._receipt, "rows": len(rows)}, ensure_ascii=False),))
+            key = "xlsx_last_export" + ("." + self.folder_id if self.folder_id else "")
+            conn.execute("INSERT OR REPLACE INTO library_meta VALUES(?,?)", (key, json.dumps({**self._receipt, "rows": len(rows)}, ensure_ascii=False)))
         status._write(status.snapshot())
         return {"status": "success", "path": str(self.target), "rows": len(rows),
                 "updated": imported["updated"], "conflicts": 0, **self._receipt}
@@ -98,13 +104,16 @@ class XlsxSnapshotService:
         migrate_library(self.data_root)
         with sqlite3.connect(str(library_path(self.data_root))) as conn:
             conn.row_factory = sqlite3.Row
+            if self.folder_id and not conn.execute("SELECT 1 FROM folders WHERE folder_id=?", (self.folder_id,)).fetchone():
+                raise ValueError("folder_not_found")
             rows = conn.execute(
                 "SELECT i.*, f.name AS folder_name, a.rel_path AS pdf_path, a.sha256 AS pdf_sha, "
                 "(SELECT rel_path FROM artifacts WHERE paper_id=i.paper_id AND kind='reader' "
                 "AND status='ready' LIMIT 1) AS reader_path, "
                 "(SELECT GROUP_CONCAT(tag, ', ') FROM item_tags WHERE paper_id=i.paper_id) AS tags "
                 "FROM items i LEFT JOIN folders f ON f.folder_id=i.folder_id "
-                "LEFT JOIN attachments a ON a.paper_id=i.paper_id ORDER BY i.created_at,i.paper_id"
+                "LEFT JOIN attachments a ON a.paper_id=i.paper_id WHERE (? IS NULL OR i.folder_id=?) ORDER BY i.created_at,i.paper_id",
+                (self.folder_id, self.folder_id),
             ).fetchall()
         result = []
         for row in rows:
@@ -344,7 +353,12 @@ class XlsxSnapshotService:
         try:
             sheet = workbook["文献"]
             headers = {cell.value: cell.column for cell in sheet[1]}
-            column = headers.get("文献 ID")
+            label = "文献 ID"
+            if "_同步" in workbook.sheetnames:
+                meta = dict(workbook["_同步"].iter_rows(values_only=True))
+                if meta.get("contract") == "xlsx-library-v3":
+                    label = next(row["label"] for row in json.loads(meta["columns_json"]) if row["field_id"] == "paper_id")
+            column = headers.get(label)
             row_number = next((row for row in range(2, sheet.max_row + 1) if sheet.cell(row, column).value == paper_id), None) if column else None
         finally:
             workbook.close()
@@ -382,12 +396,13 @@ class XlsxSnapshotService:
 
     def _set_meta(self, pending: str, error: str | None) -> None:
         conn = sqlite3.connect(str(library_path(self.data_root)))
+        suffix = "." + self.folder_id if self.folder_id else ""
         try:
-            conn.execute("INSERT OR REPLACE INTO library_meta(key,value) VALUES('xlsx_pending',?)", (pending,))
+            conn.execute("INSERT OR REPLACE INTO library_meta(key,value) VALUES(?,?)", ("xlsx_pending" + suffix, pending))
             if error:
-                conn.execute("INSERT OR REPLACE INTO library_meta(key,value) VALUES('xlsx_error',?)", (error,))
+                conn.execute("INSERT OR REPLACE INTO library_meta(key,value) VALUES(?,?)", ("xlsx_error" + suffix, error))
             else:
-                conn.execute("DELETE FROM library_meta WHERE key='xlsx_error'")
+                conn.execute("DELETE FROM library_meta WHERE key=?", ("xlsx_error" + suffix,))
             conn.commit()
         finally:
             conn.close()

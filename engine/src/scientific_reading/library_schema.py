@@ -16,7 +16,7 @@ from pathlib import Path
 from .data_guard import data_root_operation
 
 
-TARGET_VERSION = 5
+TARGET_VERSION = 6
 
 _V1_SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -138,6 +138,25 @@ def _add_v5(conn):
         if name not in existing:
             conn.execute(f"ALTER TABLE items ADD COLUMN {name} {declaration}")
     conn.execute("CREATE TABLE IF NOT EXISTS xlsx_exports (export_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, baseline_json TEXT NOT NULL)")
+
+
+def _add_v6(conn):
+    from .paper_chat import create_schema
+    from .library_views import create_schema as create_views
+    from .radar import create_schema as create_radar
+    create_schema(conn)
+    create_views(conn)
+    create_radar(conn)
+
+
+def _validate_v6(conn):
+    from .paper_chat import validate_schema
+    from .library_views import validate_schema as validate_views
+    from .radar import validate_schema as validate_radar
+    _validate_schema(conn, _V5_REQUIRED_COLUMNS, "v5")
+    validate_schema(conn)
+    validate_views(conn)
+    validate_radar(conn)
 
 _V1_REQUIRED_FOREIGN_KEYS = {
     "attachments": {("paper_id", "items", "paper_id")},
@@ -429,9 +448,11 @@ def _initialize_v4(path: Path) -> MigrationResult:
         _create_v3_tables(conn)
         _add_v4_columns(conn)
         _add_v5(conn)
+        _add_v6(conn)
         _ensure_search_index(conn)
         _store_warnings(conn, ())
         _validate_schema(conn, _V5_REQUIRED_COLUMNS, "v5")
+        _validate_v6(conn)
         _validate_foreign_keys(conn)
         conn.execute(f"PRAGMA user_version = {TARGET_VERSION}")
         conn.commit()
@@ -578,11 +599,11 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
             _add_v4_columns(conn)
             _add_v5(conn)
             _ensure_search_index(conn)
-            _validate_schema(conn, _V5_REQUIRED_COLUMNS, "v5")
+            _validate_v6(conn)
             _validate_foreign_keys(conn)
             conn.commit()
             return MigrationResult(TARGET_VERSION, TARGET_VERSION, None, ())
-        if raw_version not in (0, 1, 2, 3, 4):
+        if raw_version not in (0, 1, 2, 3, 4, 5):
             raise sqlite3.DatabaseError(f"unsupported_library_schema_version:{raw_version}")
         backup_version = 1 if raw_version in (0, 1) else raw_version
         backup_path = _backup_version(conn, root, backup_version)
@@ -592,8 +613,10 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
             _validate_schema(conn, _V2_REQUIRED_COLUMNS, "v2")
         elif raw_version == 3:
             _validate_schema(conn, _V3_REQUIRED_COLUMNS, "v3")
-        else:
+        elif raw_version == 4:
             _validate_schema(conn, _V4_REQUIRED_COLUMNS, "v4")
+        else:
+            _validate_schema(conn, _V5_REQUIRED_COLUMNS, "v5")
         _validate_foreign_keys(conn)
         warnings = _migrate_v1(conn) if raw_version in (0, 1) else ()
         if raw_version in (0, 1, 2):
@@ -601,8 +624,9 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
         if raw_version < 4:
             _migrate_v3(conn)
         _add_v5(conn)
+        _add_v6(conn)
         _ensure_search_index(conn)
-        _validate_schema(conn, _V5_REQUIRED_COLUMNS, "v5")
+        _validate_v6(conn)
         conn.execute(f"PRAGMA user_version = {TARGET_VERSION}")
         conn.commit()
         return MigrationResult(backup_version, TARGET_VERSION, backup_path, warnings)
@@ -622,7 +646,7 @@ def _migrate_library_locked(root: Path) -> MigrationResult:
 
 
 def migrate_library(data_root: Path) -> MigrationResult:
-    """初始化新库，或在可验证备份保护下迁移到 v5。"""
+    """初始化新库，或在可验证备份保护下迁移到 v6。"""
     root = Path(data_root).resolve()
     with data_root_operation(root):
         root.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -49,6 +49,7 @@ try {
 
   const hostRegistrations = []
   const hostCtx = {
+    on() {},
     effect(fn, label) { hostRegistrations.push(label); try { fn() } catch {} },
     tools: { register(tool) { hostRegistrations.push('tool:' + tool.name) } },
     webServer: { register(route) { hostRegistrations.push(route.kind + ':' + route.path); return () => {} } },
@@ -66,11 +67,24 @@ try {
   const installedYml = await readFile(join(tempHome, '.agent-presets', 'scientific-reading', 'preset.yml'), 'utf8')
   assert.match(installedYml, /^name:\s*文献模式\s*$/m)
 
+  const presetDir = join(tempHome, '.agent-presets', 'scientific-reading')
+  const compositionPath = join(presetDir, 'agent.cordis.yml')
+  const customized = packagedComposition.replace('prefix:', 'text:').replace('你是', '用户自定义：你是')
+  await writeFile(compositionPath, customized, 'utf8')
+  await installPreset({ logger() {} }, 'scientific-reading')
+  assert.equal(await readFile(compositionPath, 'utf8'), customized.replace('text:', 'prefix:'))
+  const backups = (await readdir(presetDir)).filter(name => name.includes('.before-dsh-0.1.5-'))
+  assert.equal(backups.length, 1)
+  assert.equal(await readFile(join(presetDir, backups[0]), 'utf8'), customized)
+  await installPreset({ logger() {} }, 'scientific-reading')
+  assert.equal((await readdir(presetDir)).filter(name => name.includes('.before-dsh-0.1.5-')).length, 1)
+
   const SCOPE = Symbol('dsh.scope')
   const standingKey = { id: 'scientific-reading-standing' }
   const standingCtx = { [SCOPE]: standingKey }
   const scopedRegistrations = []
   const presetCtx = {
+    on() {},
     effect(fn, label) { scopedRegistrations.push(label); try { fn() } catch {} },
     tools: { register(tool) { scopedRegistrations.push('tool:' + tool.name) } },
     webServer: { register(route) { scopedRegistrations.push(route.kind + ':' + route.path); return () => {} } },
@@ -88,7 +102,7 @@ try {
     'sr_setup', 'sr_scansci_status', 'sr_scansci_fetch',
     'sr_download_papers', 'sr_start_full_read', 'sr_continue_full_read', 'sr_attach_pdf', 'sr_export_assets',
     'sr_ingest', 'sr_abstract_submit', 'sr_library_list', 'sr_folder_manage', 'sr_classification_apply',
-    'sr_classification_undo', 'sr_job_status',
+    'sr_classification_undo', 'sr_job_status', 'sr_paper_context', 'sr_read_job_input', 'sr_research_submit', 'sr_radar',
   ]
   for (const name of expectedTools) {
     assert.ok(scopedRegistrations.includes('tool:' + name), `文献模式必须注册 ${name}`)

@@ -362,6 +362,7 @@ class FullReadRenderer:
                 guide=review.to_dict()["guide"],
                 paper_id=paper_id,
                 reader_revision=reader_revision,
+                source_pdf_sha256=source_sha,
             )
             reader_sha = self._sha256(staged_html)
             manifest = {
@@ -689,6 +690,7 @@ class FullReadRenderer:
                 guide=review.to_dict()["guide"],
                 paper_id=paper_id,
                 reader_revision=reader_revision,
+                source_pdf_sha256=self._sha256(workspace.source_pdf),
             )
         finally:
             base_path.unlink(missing_ok=True)

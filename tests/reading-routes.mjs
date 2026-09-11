@@ -65,6 +65,7 @@ function response() {
     statusCode: 0,
     headers: {},
     body: '',
+    setHeader(name, value) { this.headers[name] = value },
     writeHead(statusCode, headers) {
       this.statusCode = statusCode
       this.headers = headers

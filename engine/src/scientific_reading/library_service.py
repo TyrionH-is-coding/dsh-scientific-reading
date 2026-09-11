@@ -427,6 +427,12 @@ class LibraryService:
 
         where: list[str] = []
         parameters: list[Any] = []
+        if scope is not None and scope.get("scopePaperId"):
+            require_paper(self.conn, scope["scopePaperId"])
+            where.append("i.paper_id = ?")
+            parameters.append(scope["scopePaperId"])
+            if scope["scopeFolderId"] == "__paper__":
+                folder_id = None
         if reading_state is not None:
             where.append("i.reading_state = ?")
             parameters.append(reading_state)

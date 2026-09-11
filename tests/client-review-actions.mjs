@@ -65,7 +65,8 @@ const missingParent = createReviewSessionController({
 })
 await assert.rejects(() => missingParent.open('library_a'), /literature_parent_session_required/)
 
-assert.match(source, /整理入库/, '文献行必须显示整理入库按钮')
-assert.match(source, /renderLiterature\(ctx\.sessions, openNativeModels\)/, '文献页必须使用当前 DSH sessions 服务')
+assert.match(source, /文献对话/, '文献行使用稳定的单篇 chat 入口')
+assert.match(source, /历史对话/, '旧 Review 保留历史入口')
+assert.match(source, /renderLiterature\(ctx\.sessions,/, '文献页必须使用当前 DSH sessions 服务')
 
 console.log('PASS: 文献页整理入库会幂等打开当前父会话下的 continuable 子会话')

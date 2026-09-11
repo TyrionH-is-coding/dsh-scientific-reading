@@ -23,3 +23,8 @@ export function engineScopeEnvironment(): NodeJS.ProcessEnv {
   const scope = context.getStore()
   return { SR_SCOPE_CONTEXT: scope ? JSON.stringify(scope) : undefined }
 }
+
+/** 仅用于可信宿主解析真实会话绑定；业务操作仍必须继承当前作用域。 */
+export function withoutEngineScope<T>(action: () => T): T {
+  return context.exit(action)
+}

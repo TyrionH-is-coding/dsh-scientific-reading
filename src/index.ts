@@ -13,13 +13,18 @@ import { registerRoutes } from './routes.js'
 import { registerSettings } from './settings.js'
 import { registerStatusRoutes } from './status_routes.js'
 import { registerReviewSessionRoutes } from './review_sessions.js'
+import { registerPaperSessionRoutes } from './paper_sessions.js'
+import { registerRadarRoutes } from './radar.js'
+import { registerModelPolicy } from './model_policy.js'
+import { registerReaderChat } from './reader_chat.js'
 
 export const name = '@dsh-external/dsh-scientific-reading'
-export const inject = ['tools', 'webServer', 'agentPresets', 'agents', 'subagents']
+export const inject = ['tools', 'webServer', 'agentPresets', 'agents', 'subagents', 'llm', 'typertGateway']
 
 export { Config }
-export { withEngineScope, type EngineScope } from './engine_scope.js'
+export { withEngineScope, withoutEngineScope, type EngineScope } from './engine_scope.js'
 export { engineJson, engineStartFullRead, engineContinueFullRead, engineAttachAndResumeFullReadPdf } from './cli.js'
+export { createNativeRpc, readSelectedChats, readLegacyChat, PAPER_TOOLS } from './paper_sessions.js'
 export {
   DEFAULT_PRESET_ID,
   PRESET_DISPLAY_NAME,
@@ -34,6 +39,10 @@ export async function apply(ctx: Context, config: PluginConfig): Promise<void> {
     registerRoutes(ctx, config)
     registerStatusRoutes(ctx, config)
     registerReviewSessionRoutes(ctx, config)
+    registerPaperSessionRoutes(ctx, config)
+    registerRadarRoutes(ctx, config)
+    registerModelPolicy(ctx, config)
+    registerReaderChat(ctx, config)
   } catch (e) {
     try { writeFileSync(join(resolveDataRoot(config), '.sr-apply-error.log'), String((e as Error).stack ?? e), 'utf8') } catch { /* ignore */ }
     throw e

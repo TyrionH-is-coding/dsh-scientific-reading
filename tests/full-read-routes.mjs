@@ -59,7 +59,7 @@ const routes = []
 registerRoutes({ effect(fn) { fn() }, logger() {}, webServer: { register(r) { routes.push(r); return () => {} } } }, { dataRoot: join(fixture, 'data'), python: 'python', scansciExe: 'untrusted.exe', school: '', legalOnly: true, outputDir: '', loginType: 'carsi', scansciPython: python, enginePython: python })
 const prefix = (path) => routes.find((r) => r.kind === 'prefix' && r.path === path)
 const req = (method, url, value = {}) => { const body = JSON.stringify(value); return { method, url, on(event, cb) { if (event === 'data') cb(Buffer.from(body)); if (event === 'end') queueMicrotask(cb) } } }
-const res = () => ({ statusCode: 0, body: '', writeHead(s, h) { this.statusCode = s; this.headers = h }, end(v = '') { this.body = Buffer.isBuffer(v) ? v : String(v) } })
+const res = () => ({ statusCode: 0, body: '', headers: {}, setHeader(k, v) { this.headers[k] = v }, writeHead(s, h) { this.statusCode = s; Object.assign(this.headers, h) }, end(v = '') { this.body = Buffer.isBuffer(v) ? v : String(v) } })
 
 try {
   for (const [url, body] of [[`/sr/api/paper/${paperId}/start`, {}], [`/sr/api/paper/${paperId}/export`, {}]]) {

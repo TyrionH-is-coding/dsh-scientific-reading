@@ -9,7 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 
-READER_BUILD_VERSION = "reader-html-v2.4.6-content-fidelity"
+READER_BUILD_VERSION = "reader-html-v2.5.0-paper-chat"
 ALLOWED_HIGHLIGHT_KINDS = frozenset({"result", "method"})
 ALLOWED_HIGHLIGHT_SOURCES = ALLOWED_HIGHLIGHT_KINDS
 
@@ -37,7 +37,7 @@ CSS = r"""
   --review-soft: #e8f0f8;
   --quick-dot: #f3b51b;
   --review-dot: #2f80ed;
-  --sidebar: 260px;
+  --sidebar: 300px;
   --text-width: 800px;
   --asset-width: 1020px;
   --shadow: 0 14px 38px rgba(49, 47, 40, .055);
@@ -90,6 +90,16 @@ body.sidebar-collapsed .reader-shell {
   width: min(var(--asset-width), calc(100% - 40px));
 }
 body.sidebar-collapsed .reader-sidebar { display: none; }
+.sidebar-toggle {
+  position: fixed; left: 0; top: 104px; z-index: 81;
+  width: 32px; min-height: 48px; padding: 8px 4px;
+  border: 1px solid var(--line); border-left: 0; border-radius: 0 8px 8px 0;
+  background: var(--paper); color: var(--accent); font-size: 20px; cursor: pointer;
+}
+.sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+.sidebar-guide > summary { cursor: pointer; padding: 8px 0; }
+.sidebar-guide:not([open]) { overflow: visible; }
 
 .reader-mark {
   padding: 10px 12px 17px;
@@ -188,7 +198,7 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 
 .sidebar-guide {
   flex: 0 0 auto;
-  max-height: 43vh;
+  max-height: 60vh;
   margin: 13px 0 4px;
   padding: 0 8px 10px 0;
   overflow-y: auto;
@@ -197,14 +207,12 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 .guide-heading {
   margin: 0 0 6px 12px;
   color: var(--muted);
-  font: 700 11px/1.4 "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  font: 700 12px/1.5 "Source Han Sans SC", "Microsoft YaHei", sans-serif;
   letter-spacing: .14em;
 }
 .sidebar-guide-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
-  padding: 7px 10px 8px 12px;
+  position: relative;
+  padding: 12px;
   border-top: 1px solid rgba(64, 95, 84, .1);
   font-family: "Source Han Sans SC", "Microsoft YaHei", sans-serif;
 }
@@ -212,27 +220,27 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 .sidebar-guide-item details { min-width: 0; }
 .sidebar-guide-item summary { cursor: pointer; list-style: none; }
 .sidebar-guide-item summary::-webkit-details-marker { display: none; }
-.sidebar-guide-item summary strong { display: block; color: #315348; font-size: 12px; }
+.sidebar-guide-item summary strong { display: block; padding-right: 64px; color: #315348; font-size: 13px; line-height: 1.5; }
 .sidebar-guide-preview {
   display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  color: #737970;
-  font-size: 11px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
-.sidebar-guide-item details[open] .sidebar-guide-preview { white-space: normal; }
-.sidebar-guide-content { grid-column: 1 / -1; color: #59615b; font-size: 11px; line-height: 1.5; }
+.sidebar-guide-item details[open] .sidebar-guide-preview { display: none; }
+.sidebar-guide-content { color: var(--ink); font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
 .sidebar-guide-content .guide-list { margin: 6px 0 0; padding-left: 1rem; }
 .sidebar-guide-content .guide-entry { margin: 5px 0; }
 .guide-empty { margin: 5px 0 0; color: #8a8d86; }
 .sidebar-guide-jump {
-  align-self: start;
-  margin-top: 1px;
+  position: absolute;
+  top: 12px;
+  right: 12px;
   color: #2f6656;
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.8;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
@@ -261,15 +269,6 @@ body.sidebar-collapsed .reader-sidebar { display: none; }
 .toolbar-primary, .toolbar-controls, .control-group { display: flex; align-items: center; }
 .toolbar-primary { gap: 6px; }
 .toolbar-controls { gap: 12px; }
-.sidebar-toggle {
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 0;
-  background: transparent;
-  color: #3f574e;
-  font: inherit;
-  cursor: pointer;
-}
 .resume-reading, .control-group button {
   min-height: 28px;
   padding: 4px 8px;
@@ -728,20 +727,16 @@ article.focus-only .reading-block.is-highlighted { break-inside: avoid; }
 
 @media (max-width: 1000px) {
   .reader-shell { display: block; width: min(920px, calc(100% - 32px)); padding-top: 18px; }
-  .reader-sidebar { display: none; }
-  .sidebar-toggle { display: none; }
-  .mobile-nav {
-    display: block;
-    margin: 0 0 12px;
-    border: 1px solid rgba(64, 95, 84, .18);
-    border-radius: 9px;
-    background: rgba(255, 254, 249, .75);
+  .reader-sidebar {
+    display: none; position: fixed; inset: 0 auto 0 0; z-index: 80;
+    width: min(340px, calc(100vw - 48px)); height: 100dvh;
+    padding: 18px 20px 20px 32px; background: var(--canvas);
+    box-shadow: 12px 0 40px #25282226; overscroll-behavior: contain;
   }
-  .mobile-nav > summary { padding: 11px 14px; color: #3f574e; cursor: pointer; font-size: 13px; font-weight: 650; }
-  .mobile-nav-panel { padding: 0 10px 12px; }
-  .mobile-nav .sidebar-guide { max-height: none; }
-  .mobile-nav .toc { max-height: 42vh; margin: 0; padding: 4px 10px 12px; overflow-y: auto; }
-  .mobile-nav .toc::before { display: none; }
+  body.sidebar-open .reader-sidebar { display: flex; }
+  body.sidebar-open .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 79; background: #25282255; border: 0; }
+  body.sidebar-open { overflow: hidden; }
+  body.sidebar-collapsed .reader-shell { width: min(920px, calc(100% - 32px)); }
   .reader-toolbar { flex-wrap: wrap; }
 }
 
@@ -749,7 +744,7 @@ article.focus-only .reading-block.is-highlighted { break-inside: avoid; }
   body { overflow-x: hidden; }
   .reader-shell { width: 100%; padding: 0 0 28px; }
   .reader-main { width: 100%; max-width: 100%; overflow: clip; }
-  .mobile-nav { margin: 10px 10px 8px; }
+  body.sidebar-collapsed .reader-shell { width: 100%; }
   .reader-toolbar { justify-content: space-between; gap: 5px; padding: 4px 8px; margin: 0; }
   .toolbar-controls { gap: 5px; }
   .control-group button { min-width: 39px; padding-right: 6px; padding-left: 6px; }
@@ -767,7 +762,7 @@ article.focus-only .reading-block.is-highlighted { break-inside: avoid; }
 
 @media print {
   body { background: #fff; }
-  .reading-progress, .reader-sidebar, .reader-toolbar, .mobile-nav { display: none !important; }
+  .reading-progress, .reader-sidebar, .reader-toolbar, .sidebar-toggle, .sidebar-backdrop { display: none !important; }
   .reader-shell { display: block; width: auto; padding: 0; }
   .paper-card { border: 0; box-shadow: none; }
   .paper-hero, article { padding-right: 0; padding-left: 0; }
@@ -775,6 +770,31 @@ article.focus-only .reading-block.is-highlighted { break-inside: avoid; }
   .asset-image-trigger { display: contents; }
   .asset-table-trigger, #asset-dialog { display: none !important; }
 }
+"""
+
+
+FIGURE_DISCUSSION_SCRIPT = r"""
+  document.querySelectorAll('.figure-discuss-trigger').forEach(button => {
+    if (button.dataset.figureChatBound) return;
+    button.dataset.figureChatBound = '1';
+    button.addEventListener('click', async () => {
+      const notice = button.closest('figure').querySelector('.figure-chat-status');
+      const question = button.closest('figure').querySelector('.figure-chat-question').value.trim() || '请结合图片、图注和原文解释此图，区分可见事实、作者结论与推断。';
+      button.disabled = true;
+      notice.textContent = '正在发送图片…';
+      try {
+        const response = await fetch('/sr/api/chats/figure', {method:'POST', headers:{'Content-Type':'application/json','x-sr-csrf':'1'},
+          body:JSON.stringify({paper_id:paperId, asset_id:button.dataset.assetId, source_pdf_sha256:body.dataset.sourcePdfSha256, question, text_only:button.dataset.textOnly === 'true'})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'figure_submit_failed');
+        document.querySelectorAll('.figure-chat-status').forEach(node => { node.textContent = ''; });
+        notice.textContent = result.context.image_status === 'supplied_to_native_chat' ? '图片已发送，请使用支持图像的模型。' : '已发送图注与正文，未包含图片。';
+        if (!result.context.explicit_reference_count) notice.append('未找到明确正文图号引用。');
+        const link = document.createElement('a'); link.href = result.chat_url; link.target = '_blank'; link.rel = 'noopener'; link.textContent = '打开文献对话'; notice.append(' ', link);
+      } catch (error) { notice.textContent = '发送失败，请重试；也可选择讨论图注与正文。'; }
+      finally { button.disabled = false; }
+    });
+  });
 """
 
 
@@ -793,6 +813,7 @@ SCRIPT = r"""
   const lowValueRegions = [...document.querySelectorAll('details.low-value-region')];
   const paperId = body.dataset.paperId || '';
   const readerRevision = body.dataset.readerRevision || '';
+""" + FIGURE_DISCUSSION_SCRIPT + r"""
   const storageKey = `sr-reader:${paperId}`;
   const translationStorageKey = `sr-reader-translations:${paperId}:${readerRevision}`;
   const regionStorageKey = `sr-reader-regions:${paperId}:${readerRevision}`;
@@ -835,9 +856,46 @@ SCRIPT = r"""
   resumeButton.disabled = !savedAtLoad;
   resumeButton.hidden = !savedAtLoad;
 
+  const sidebar = document.querySelector('.reader-sidebar');
+  const sidebarBackdrop = document.querySelector('.sidebar-backdrop');
+  const narrowScreen = matchMedia('(max-width: 1000px)');
+  let desktopSidebarOpen = true;
+  try { desktopSidebarOpen = localStorage.getItem('sr-reader:sidebar') !== 'closed'; } catch (_) {}
+  function setSidebar(open, preservePosition = false) {
+    const visible = preservePosition && [...article.querySelectorAll('.reading-block')].find(block => block.getBoundingClientRect().bottom > 80);
+    const top = visible && visible.getBoundingClientRect().top;
+    body.classList.toggle('sidebar-collapsed', !narrowScreen.matches && !open);
+    body.classList.toggle('sidebar-open', narrowScreen.matches && open);
+    sidebarButton.setAttribute('aria-expanded', String(open));
+    sidebarButton.setAttribute('aria-label', open ? '收起侧栏' : '展开侧栏');
+    sidebarButton.title = open ? '收起侧栏' : '展开侧栏';
+    sidebarButton.textContent = open ? '‹' : '›';
+    sidebar.inert = !open;
+    document.querySelector('.reader-main').inert = narrowScreen.matches && open;
+    if (visible) window.scrollBy(0, visible.getBoundingClientRect().top - top);
+  }
+  setSidebar(!narrowScreen.matches && desktopSidebarOpen);
   sidebarButton.addEventListener('click', () => {
-    const collapsed = body.classList.toggle('sidebar-collapsed');
-    sidebarButton.setAttribute('aria-expanded', String(!collapsed));
+    const open = sidebarButton.getAttribute('aria-expanded') !== 'true';
+    setSidebar(open, !narrowScreen.matches);
+    if (narrowScreen.matches && open) sidebar.querySelector('summary, a, button')?.focus();
+    if (!narrowScreen.matches) {
+      desktopSidebarOpen = open;
+      try { localStorage.setItem('sr-reader:sidebar', open ? 'open' : 'closed'); } catch (_) {}
+    }
+  });
+  function closeSidebar() { setSidebar(false); sidebarButton.focus(); }
+  sidebarBackdrop.addEventListener('click', closeSidebar);
+  narrowScreen.addEventListener('change', () => setSidebar(!narrowScreen.matches && desktopSidebarOpen));
+  document.addEventListener('keydown', event => {
+    if (!narrowScreen.matches || !body.classList.contains('sidebar-open')) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeSidebar(); }
+    if (event.key === 'Tab') {
+      const focusable = [sidebarButton, ...sidebar.querySelectorAll('summary, a, button')].filter(node => node.getClientRects().length);
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
   });
 
   const persistTranslations = () => {
@@ -1038,8 +1096,8 @@ SCRIPT = r"""
   }, { rootMargin: '-10% 0px -78% 0px' });
   headings.forEach((heading) => observer.observe(heading));
 
-  document.querySelectorAll('.mobile-nav a').forEach((link) => {
-    link.addEventListener('click', () => link.closest('details').removeAttribute('open'));
+  sidebar.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => { if (narrowScreen.matches) closeSidebar(); });
   });
 
   const assetDialog = document.querySelector('#asset-dialog');
@@ -1071,7 +1129,7 @@ SCRIPT = r"""
         : [...asset.querySelectorAll('table, img')];
       if (!sources.length) return;
       dialogContent.replaceChildren(...sources.map((source) => source.cloneNode(true)));
-      dialogTitle.textContent = kind === 'figure' ? 'Figure 放大' : 'Table 放大';
+      dialogTitle.textContent = kind === 'figure' ? '图片放大' : '表格放大';
       lastDialogTrigger = trigger;
       assetDialog.showModal();
     } catch (_error) {
@@ -1814,6 +1872,30 @@ def decorate_numeric_citations(
             node.replace_with(*replacement)
 
 
+def add_figure_discussion(soup, asset):
+    asset_id = str(asset["data-asset"])
+    question = soup.new_tag("textarea")
+    question["class"] = ["figure-chat-question"]
+    question["aria-label"] = f"向阅读助手提问：{asset_id}"
+    question["placeholder"] = "想了解此图的什么？"
+    question["maxlength"] = "8000"
+    question["rows"] = "2"
+    question["style"] = "display:block;width:100%;margin:12px 0;padding:10px;font:inherit;box-sizing:border-box"
+    asset.append(question)
+    for text_only, label in ((False, "讨论此图"), (True, "讨论图注与正文")):
+        discuss = soup.new_tag("button", type="button")
+        discuss["class"] = ["figure-discuss-trigger"]
+        discuss["data-asset-id"] = asset_id
+        discuss["data-text-only"] = str(text_only).lower()
+        discuss.string = label
+        asset.append(discuss)
+    status = soup.new_tag("p")
+    status["class"] = ["figure-chat-status"]
+    status["role"] = "status"
+    asset.append(status)
+
+
+
 def build_reader(
     source: Path,
     output: Path,
@@ -1822,6 +1904,7 @@ def build_reader(
     guide: dict[str, list[dict[str, object]]],
     paper_id: str,
     reader_revision: str,
+    source_pdf_sha256: str = "",
 ) -> None:
     if not isinstance(paper_id, str) or not paper_id.strip():
         raise ValueError("paper_id_required")
@@ -2027,9 +2110,8 @@ def build_reader(
         grouped_detail["data-blocks"] = ",".join(block_ids)
         grouped_detail["data-pages"] = ",".join(dict.fromkeys(pages))
         summary = soup.new_tag("summary")
-        page_label = f"p{'–'.join(dict.fromkeys(pages))}" if pages else ""
-        block_label = f"{block_ids[0]}–{block_ids[-1]}" if block_ids else ""
-        summary.string = f"英文原文 · {page_label} {block_label} · {len(block_ids)} 条"
+        page_label = f" · 第 {'、'.join(dict.fromkeys(pages))} 页" if pages else ""
+        summary.string = f"英文原文{page_label}"
         grouped_detail.append(summary)
         grouped_detail.append(source_list)
         group.append(grouped_detail)
@@ -2088,6 +2170,8 @@ def build_reader(
 
         asset_id = str(asset.get("data-asset", "图表"))
         if asset_kind == "figure":
+            if re.fullmatch(r"[0-9a-f]{64}", source_pdf_sha256):
+                add_figure_discussion(soup, asset)
             image = asset.find("img")
             if image is not None:
                 trigger = soup.new_tag("button", type="button")
@@ -2182,6 +2266,7 @@ def build_reader(
     body["class"] = ["periodical-first"]
     body["data-paper-id"] = paper_id.strip()
     body["data-reader-revision"] = reader_revision
+    body["data-source-pdf-sha256"] = source_pdf_sha256
     body["data-language"] = "en"
     body["data-reading"] = "full"
     progress = soup.new_tag("div")
@@ -2195,6 +2280,8 @@ def build_reader(
 
     sidebar = soup.new_tag("aside")
     sidebar["class"] = ["reader-sidebar"]
+    sidebar["id"] = "reader-sidebar"
+    sidebar["aria-label"] = "阅读导览与目录"
     mark = soup.new_tag("div")
     mark["class"] = ["reader-mark"]
     mark.append("Scientific Reader")
@@ -2203,10 +2290,10 @@ def build_reader(
     mark.append(mark_title)
     sidebar.append(mark)
 
-    sidebar_guide = soup.new_tag("section")
+    sidebar_guide = soup.new_tag("details", open="")
     sidebar_guide["class"] = ["sidebar-guide"]
     sidebar_guide["aria-label"] = "阅读导览"
-    guide_heading = soup.new_tag("div")
+    guide_heading = soup.new_tag("summary")
     guide_heading["class"] = ["guide-heading"]
     guide_heading.string = "阅读导览"
     sidebar_guide.append(guide_heading)
@@ -2265,25 +2352,16 @@ def build_reader(
     main["class"] = ["reader-main"]
     shell.append(main)
 
-    mobile_nav = soup.new_tag("details")
-    mobile_nav["class"] = ["mobile-nav"]
-    mobile_summary = soup.new_tag("summary")
-    mobile_summary.string = "导读与目录"
-    mobile_nav.append(mobile_summary)
-    mobile_panel = soup.new_tag("div")
-    mobile_panel["class"] = ["mobile-nav-panel"]
-    mobile_panel.append(
-        BeautifulSoup(str(sidebar_guide), "html.parser").section
+    handle = BeautifulSoup(
+        '<button id="toggle-sidebar" class="sidebar-toggle" type="button" aria-controls="reader-sidebar" aria-expanded="true" aria-label="收起侧栏">‹</button>'
+        '<button class="sidebar-backdrop" type="button" aria-label="收起侧栏" tabindex="-1"></button>',
+        "html.parser",
     )
-    mobile_panel.append(
-        BeautifulSoup(str(sidebar.select_one(".toc")), "html.parser").nav
-    )
-    mobile_nav.append(mobile_panel)
-    main.append(mobile_nav)
+    for element in list(handle.contents):
+        body.append(element)
 
     toolbar = BeautifulSoup(
         '<div class="reader-toolbar"><div class="toolbar-primary">'
-        '<button id="toggle-sidebar" class="sidebar-toggle" type="button" aria-expanded="true">目录</button>'
         '<button id="resume-reading" class="resume-reading" type="button" disabled hidden>回到上次</button>'
         '<button id="open-reading-queue" class="reading-queue-open" type="button">待读 0</button></div>'
         '<div class="toolbar-controls">'
@@ -2380,12 +2458,8 @@ def build_reader(
     clear_queue = soup.new_tag("button", id="clear-reading-queue", type="button")
     clear_queue.string = "清空"
     export_queue = soup.new_tag("button", id="export-reading-queue", type="button")
-    export_queue.string = "导出 JSON"
-    submit_queue = soup.new_tag("button", id="submit-reading-queue", type="button")
-    submit_queue["disabled"] = ""
-    submit_queue["title"] = "下一阶段接通 DSH"
-    submit_queue.string = "交给 DSH 处理 · 下一阶段接通"
-    queue_actions.extend([clear_queue, export_queue, submit_queue])
+    export_queue.string = "导出清单"
+    queue_actions.extend([clear_queue, export_queue])
     queue_panel.append(queue_actions)
     queue_dialog.append(queue_panel)
     body.append(queue_dialog)

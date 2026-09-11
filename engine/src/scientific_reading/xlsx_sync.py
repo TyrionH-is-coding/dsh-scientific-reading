@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 import sqlite3
+from .library_service import _now
 
 from openpyxl import load_workbook
 
@@ -39,12 +40,9 @@ def import_fields(service):
         sheet = book["文献"]
         names = [cell.value for cell in sheet[1]]
         fields = USER_FIELDS if modern else {name: USER_FIELDS[name] for name in ("个人思考", "个人理解程度", "用户笔记")}
-        required = {"文献 ID", *fields} | ({"行标识"} if modern else set())
-        if not required.issubset(names):
-            return service._pending_import("xlsx_user_columns_missing", "个人字段或身份列缺失；已保留原工作簿。")
-        if any(names.count(name) != 1 for name in required):
-            return service._pending_import("xlsx_user_columns_ambiguous", "个人字段或身份列重复；已保留原工作簿。")
         headers = {value: index + 1 for index, value in enumerate(names)}
+        required = {"文献 ID", *fields} | ({"行标识"} if modern else set())
+        display_required = required
         conflicts = []
         with sqlite3.connect(service.data_root / "library.sqlite") as conn:
             conn.row_factory = sqlite3.Row
@@ -53,9 +51,18 @@ def import_fields(service):
             if modern:
                 meta = dict(book["_同步"].iter_rows(values_only=True))
                 export = conn.execute("SELECT baseline_json FROM xlsx_exports WHERE export_id=?", (meta.get("export_id"),)).fetchone()
-                if meta.get("contract") != "xlsx-library-v2" or export is None:
+                if meta.get("contract") not in {"xlsx-library-v2", "xlsx-library-v3"} or export is None:
                     return service._pending_import("xlsx_baseline_missing", "此表的导出基线不在当前库；请恢复完整备份，不能直接覆盖笔记。")
                 baseline = json.loads(export[0])
+                if meta["contract"] == "xlsx-library-v3":
+                    columns = baseline["columns"]
+                    if json.loads(meta.get("columns_json", "null")) != columns or baseline.get("scope_folder_id", "") != (getattr(service, "folder_id", None) or ""):
+                        return service._pending_import("xlsx_column_identity_changed", "列身份或分类范围与导出基线不一致；已保留原表。")
+                    fields = {column["key"]: column["field_id"] for column in columns if column["editable"]}
+                    required = {"文献 ID", "行标识", *fields}
+                    display_required = {column["label"] for column in columns if column["key"] in required}
+                    headers = {column["key"]: names.index(column["label"]) + 1 for column in columns if column["label"] in names}
+                    baseline = baseline["rows"]
             else:
                 identity = book["_身份"]
                 if tuple(cell.value for cell in identity[1][:2]) != ("row", "paper_id"):
@@ -65,8 +72,12 @@ def import_fields(service):
                         conflicts.append({"row": row, "code": "identity_ambiguous"})
                     else:
                         legacy_ids[row] = paper_id
+            if not display_required.issubset(names):
+                return service._pending_import("xlsx_user_columns_missing", "个人字段或身份列缺失/改名；请在工作台设置列名，已保留原工作簿。")
+            if any(names.count(name) != 1 for name in display_required):
+                return service._pending_import("xlsx_user_columns_ambiguous", "个人字段或身份列重复；已保留原工作簿。")
             conn.execute("BEGIN IMMEDIATE")
-            seen_keys, seen_ids, updates = set(), set(), []
+            seen_keys, seen_ids, updates, custom_updates = set(), set(), [], []
             for number in range(2, sheet.max_row + 1):
                 paper_id = sheet.cell(number, headers["文献 ID"]).value
                 key = sheet.cell(number, headers["行标识"]).value if modern else number
@@ -87,8 +98,10 @@ def import_fields(service):
                 for label, field in fields.items():
                     cell = sheet.cell(number, headers[label])
                     excel = "" if cell.value is None else str(cell.value)
-                    database = normalize(field, current[field])
-                    base = baseline[key]["fields"][field] if modern else database
+                    custom = field.startswith("custom_")
+                    custom_row = conn.execute("SELECT value,revision FROM research_values WHERE paper_id=? AND field_id=?", (paper_id, field)).fetchone() if custom else None
+                    database = (custom_row[0] if custom_row else "") if custom else normalize(field, current[field])
+                    base = baseline[key]["custom"][field]["value"] if custom else baseline[key]["fields"][field] if modern else database
                     if cell.data_type == "f":
                         conflicts.append({"paper_id": paper_id, "field": field, "code": "personal_formula_not_supported"})
                         continue
@@ -96,11 +109,15 @@ def import_fields(service):
                         continue
                     if not modern and excel == database:
                         continue
-                    if (modern and database != base) or (not modern and database):
+                    stale_custom = custom and (custom_row[1] if custom_row else 0) != baseline[key]["custom"][field]["revision"]
+                    if stale_custom or (modern and database != base) or (not modern and database):
                         conflicts.append({"paper_id": paper_id, "field": field, "code": "field_conflict",
                                           "baseline": base if modern else None, "excel": excel, "database": database})
                     else:
-                        changed[field] = excel
+                        if custom:
+                            custom_updates.append((paper_id, field, excel, (custom_row[1] if custom_row else 0) + 1))
+                        else:
+                            changed[field] = excel
                 if changed:
                     updates.append((paper_id, changed))
             expected_keys = set(baseline) if modern else set(legacy_ids)
@@ -112,6 +129,12 @@ def import_fields(service):
                 try:
                     for paper_id, changes in updates:
                         update_personal(conn, paper_id, changes)
+                    for paper_id, field, value, revision in custom_updates:
+                        if len(value) > 32767:
+                            raise ValueError("research_value_invalid")
+                        conn.execute("INSERT INTO research_values VALUES(?,?,?,'manual','[]',?,?) ON CONFLICT(paper_id,field_id) DO UPDATE SET value=excluded.value,origin='manual',evidence_json='[]',revision=excluded.revision,updated_at=excluded.updated_at",
+                                     (paper_id, field, value, revision, _now()))
+                        conn.execute("UPDATE items SET xlsx_sync_state='pending' WHERE paper_id=?", (paper_id,))
                 except ValueError as error:
                     conn.rollback()
                     conflicts.append({"code": str(error)})
@@ -122,6 +145,6 @@ def import_fields(service):
             code = "xlsx_field_conflict" if any(c["code"] == "field_conflict" for c in conflicts) else "xlsx_identity_conflict"
             return {**service._pending_import(code, "未回写或覆盖原表；请核对冲突中的论文和字段后重试。"),
                     "updated": 0, "conflicts": len(conflicts), "details": conflicts}
-        return {"status": "success", "updated": len(updates), "conflicts": 0, "legacy_migrated": not modern}
+        return {"status": "success", "updated": len({paper for paper, _ in updates} | {paper for paper, *_ in custom_updates}), "conflicts": 0, "legacy_migrated": not modern}
     finally:
         book.close()

@@ -93,11 +93,11 @@ assert.equal(nodes.some((node) => node.tagName === 'IMG' || node.tagName === 'SC
 assert.equal(nodes.some((node) => node.textContent.includes('<script>')), true, '文本内容不得被解释为 DOM')
 assert.deepEqual(
   nodes.filter((node) => node.className === 'sr-search-kind').map((node) => node.textContent),
-  ['元数据', '英文摘要', '中文摘要', '已确认结论'],
+  ['文献信息', '英文摘要', '中文摘要', '已确认结论'],
 )
 assert.equal(nodes.some((node) => node.textContent === '依据：论文定位'), true)
 assert.equal(nodes.some((node) => node.textContent === '定位有效'), true)
-assert.equal(nodes.some((node) => node.textContent === '科学有效性未评估'), true)
+assert.equal(nodes.some((node) => node.textContent === '结论待核对'), true)
 const evidenceLinks = nodes.filter((node) => node.tagName === 'A')
 assert.equal(evidenceLinks.length, 1)
 assert.equal(evidenceLinks[0].href, `/sr/evidence?conclusion_id=${encodeURIComponent(verifiedId)}`)

@@ -76,6 +76,14 @@ def require_paper(conn, paper_id):
     if scope is None:
         return
     row = conn.execute("SELECT folder_id FROM items WHERE paper_id=?", (paper_id,)).fetchone()
+    if scope["scopeFolderId"] == "__paper__":
+        binding = conn.execute("SELECT paper_id FROM paper_chats WHERE session_id=?", (scope["scopeSessionId"],)).fetchone()
+        if row is None or not binding or binding[0] != paper_id or scope.get("scopePaperId") != paper_id:
+            raise ScopeError("scope_paper_forbidden")
+        archived = conn.execute("SELECT value FROM library_meta WHERE key=?", ("csr.scope.archived." + str(row[0]),)).fetchone()
+        if archived and archived[0] == "1":
+            raise ScopeError("scope_changed")
+        return
     archived = conn.execute("SELECT value FROM library_meta WHERE key=?", ("csr.scope.archived." + scope["scopeFolderId"],)).fetchone()
     if row is None or row[0] != scope["scopeFolderId"] or (archived and archived[0] == "1"):
         raise ScopeError("scope_changed")
@@ -93,6 +101,8 @@ def capture_scope(data_root, paper_id):
         return None
     with sqlite3.connect(Path(data_root) / "library.sqlite") as conn:
         require_paper(conn, paper_id)
+        if value["scopeFolderId"] == "__paper__":
+            return value
         revision = conn.execute("SELECT value FROM library_meta WHERE key=?", ("csr.scope.paper." + paper_id,)).fetchone()
     return {**value, "scopePaperId": paper_id, "scopePaperRevision": int(revision[0] if revision else 0)}
 

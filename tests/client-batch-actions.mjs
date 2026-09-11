@@ -94,7 +94,7 @@ const failedController = createBatchController({
 await failedController.submit('move_folder', {})
 assert.deepEqual(failedSelection.values(), ['paper_pending', 'paper_failed'])
 assert.equal(failedNotices.length, 1)
-assert.match(failedNotices[0], /^批量失败：batch_operation_failed｜成功 1｜待处理 1｜失败 1$/)
+assert.match(failedNotices[0], /^批量操作未完成：成功 1｜待处理 1｜失败 1$/)
 
 const runningSelection = createSelectionStore(); runningSelection.toggle('paper_wait', true)
 const runningNotices = []
@@ -102,7 +102,7 @@ await createBatchController({ selection: runningSelection, api() { return Promis
 assert.equal(runningNotices[0], '批量处理中：待处理 1')
 assert.deepEqual(runningSelection.values(), ['paper_wait'])
 
-for (const label of ['已选 ', '下载缺失 PDF', '移动文件夹', '添加标签', '移除标签', '取消选择']) {
+for (const label of ['已选 ', '下载缺失 PDF', '移动到文件夹', '添加标签', '移除标签', '取消选择']) {
   assert.match(source, new RegExp(label), `缺少批量工具栏：${label}`)
 }
 for (const retired of ['加入精读队列', '重试失败任务']) assert.doesNotMatch(source, new RegExp(retired), `批量栏不得保留：${retired}`)

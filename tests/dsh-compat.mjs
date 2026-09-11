@@ -8,27 +8,27 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const configSource = readFileSync(join(root, 'src', 'config.ts'), 'utf8')
 
-assert.equal(manifest.dshCompatibility?.testedHost, '0.1.0-rc.7')
+assert.equal(manifest.dshCompatibility?.testedHost, '0.1.5-rc.1')
 assert.equal(manifest.dshCompatibility?.node, '22')
 assert.equal(manifest.dshCompatibility?.python, '3.11')
 assert.match(configSource, /from ['"]@deepseek-ai\/schemastery['"]/, '配置源码必须导入 DSH scoped schemastery')
 assert.doesNotMatch(configSource, /from ['"]schemastery['"]/, '配置源码不得导入历史 schemastery 别名')
-assert.equal(manifest.peerDependencies?.['@deepseek-ai/schemastery'], '^3.18.0')
+assert.equal(manifest.peerDependencies?.['@deepseek-ai/schemastery'], '^3.18.2')
 assert.equal(Object.hasOwn(manifest.peerDependencies ?? {}, 'schemastery'), false)
 assert.equal(Object.hasOwn(manifest.devDependencies ?? {}, 'schemastery'), false)
 
 const expectedDependencies = {
-  '@deepseek-ai/dsh-agent': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-subagent': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-tools': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-llm': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-scope': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-session': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-settings': '0.1.0-rc.7',
-  '@deepseek-ai/dsh-timeout': '0.1.0-rc.7',
-  '@deepseek-ai/cordis': '4.0.1',
-  '@deepseek-ai/schemastery': '3.18.1',
-  cordis: 'npm:@deepseek-ai/cordis@4.0.1',
+  '@deepseek-ai/dsh-agent': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-subagent': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-tools': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-llm': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-scope': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-session': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-settings': '0.1.5-rc.1',
+  '@deepseek-ai/dsh-timeout': '0.1.5-rc.1',
+  '@deepseek-ai/cordis': '4.0.2',
+  '@deepseek-ai/schemastery': '3.18.2',
+  cordis: 'npm:@deepseek-ai/cordis@4.0.2',
   '@types/node': '24.13.3',
   typescript: '5.9.3',
 }
@@ -53,17 +53,17 @@ function readInstalledPackage(name, expectedName) {
 }
 
 for (const [name, expectedName, version] of [
-  ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-agent', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-subagent', '@deepseek-ai/dsh-subagent', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-tools', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-llm', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-scope', '@deepseek-ai/dsh-scope', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-session', '@deepseek-ai/dsh-session', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-settings', '@deepseek-ai/dsh-settings', '0.1.0-rc.7'],
-  ['@deepseek-ai/dsh-timeout', '@deepseek-ai/dsh-timeout', '0.1.0-rc.7'],
-  ['@deepseek-ai/cordis', '@deepseek-ai/cordis', '4.0.1'],
-  ['@deepseek-ai/schemastery', '@deepseek-ai/schemastery', '3.18.1'],
-  ['cordis', '@deepseek-ai/cordis', '4.0.1'],
+  ['@deepseek-ai/dsh-agent', '@deepseek-ai/dsh-agent', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-subagent', '@deepseek-ai/dsh-subagent', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-tools', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-llm', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-scope', '@deepseek-ai/dsh-scope', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-session', '@deepseek-ai/dsh-session', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-settings', '@deepseek-ai/dsh-settings', '0.1.5-rc.1'],
+  ['@deepseek-ai/dsh-timeout', '@deepseek-ai/dsh-timeout', '0.1.5-rc.1'],
+  ['@deepseek-ai/cordis', '@deepseek-ai/cordis', '4.0.2'],
+  ['@deepseek-ai/schemastery', '@deepseek-ai/schemastery', '3.18.2'],
+  ['cordis', '@deepseek-ai/cordis', '4.0.2'],
 ]) {
   assert.equal(readInstalledPackage(name, expectedName).version, version, `${name} 安装版本必须为 ${version}`)
 }

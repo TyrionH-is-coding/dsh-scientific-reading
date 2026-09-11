@@ -146,25 +146,25 @@ function hostDependencies(ctx: Context, config: Config): ReviewSessionDependenci
   }
 }
 
-function sendJson(res: ServerResponse, status: number, value: unknown): void {
+export function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(value))
 }
 
-function sameOrigin(req: IncomingMessage): boolean {
+export function sameOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin
   const host = req.headers.host
   if (typeof origin !== 'string' || typeof host !== 'string' || req.headers['x-sr-csrf'] !== '1') return false
   try { return new URL(origin).host === host } catch { return false }
 }
 
-function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+export function readJson(req: IncomingMessage, limit = JSON_LIMIT): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
     req.on('data', (chunk: Buffer) => {
       size += chunk.length
-      if (size > JSON_LIMIT) { reject(new Error('body_too_large')); req.destroy() } else chunks.push(chunk)
+      if (size > limit) { reject(new Error('body_too_large')); req.destroy() } else chunks.push(chunk)
     })
     req.on('end', () => {
       try {

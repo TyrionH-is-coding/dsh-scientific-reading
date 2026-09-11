@@ -2,12 +2,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8')
-for (const label of ['设置与状态', '模型与连接', 'PDF 解析', '文献库', '关于', '重新检测', 'OA 自动获取', '全文解析', '本地文献库', '保存密钥', '删除密钥', '资产位置', 'DSH 模型设置', '不代表 API 已完成真实调用']) {
+for (const label of ['设置与状态', '模型与连接', 'PDF 解析', '文献库', '关于', '重新检测', 'PDF 自动获取', 'PDF 解析', '本地文献库', '保存密钥', '删除密钥', '存储位置', '管理模型连接', '密钥已保存，连接待验证']) {
   assert.match(source, new RegExp(label), `设置页缺少：${label}`)
 }
-assert.match(source, /id: 'scientific-reading-settings'/, '必须注册独立设置视图')
+assert.match(source, /id:\s*'scientific-reading-settings'/, '必须注册独立设置视图')
 assert.match(source, /show_settings[^]*mark-presented/, '首次展示必须读取 onboarding 并立即标记已展示')
-assert.match(source, /进入文献库/, '首次设置覆盖层必须提供返回文献库的明确入口')
+assert.match(source, /btn\('文献设置',openSettings/, '首次配置提示必须提供设置页签入口')
+assert.doesNotMatch(source, /onboardingMount/, '未配置服务也不得用设置覆盖文献库')
+assert.doesNotMatch(source, /input\('阅读主题'/, '阅读外观不得提供会被全局主题覆盖的另一套配色选择')
+assert.match(source, /btn\('主题设置'[^]*openSettings/, '阅读外观应链接到同一套主题设置')
 assert.match(source, /type = 'password'/, 'MinerU Key 输入必须使用 password')
 assert.match(source, /keyInput\.value = ''/, '提交后必须清空 Key 输入')
 assert.match(source, /x-sr-csrf[^]*'1'/, '设置写操作必须发送 CSRF header')

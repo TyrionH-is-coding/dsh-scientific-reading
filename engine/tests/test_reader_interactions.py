@@ -88,7 +88,7 @@ def test_reader_throttles_progress_and_keeps_initial_resume_target(
     assert "250" in rendered_html
     assert "readingAnchors" not in rendered_html
     assert "asset.dataset.progressAnchor" in rendered_html
-    assert "getBoundingClientRect" not in rendered_html
+    assert "getBoundingClientRect" not in rendered_html.split("const persistTranslations")[1]
     assert "restoreSavedPosition(savedAtLoad" in rendered_html
     assert "updatedAt: new Date().toISOString()" in rendered_html
 
@@ -121,7 +121,7 @@ def test_sidebar_toggle_exposes_expanded_state(rendered_html):
     assert button.get("aria-expanded") == "true"
     assert "aria-pressed" not in button.attrs
     assert (
-        "sidebarButton.setAttribute('aria-expanded', String(!collapsed))"
+        "sidebarButton.setAttribute('aria-expanded', String(open))"
         in rendered_html
     )
 

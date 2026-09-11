@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from bs4 import BeautifulSoup
 
 from reader.build_reader import build_reader
@@ -112,4 +114,4 @@ def test_reader_persists_low_value_region_state_without_network(tmp_path):
     assert "region.addEventListener('toggle'" in html
     assert "region.open = savedRegions.has(region.id)" in html
     assert "closest('details.low-value-region')" in html
-    assert "fetch(" not in html
+    assert re.findall(r"fetch\(([^,\n]+)", html) == ["'/sr/api/chats/figure'"]

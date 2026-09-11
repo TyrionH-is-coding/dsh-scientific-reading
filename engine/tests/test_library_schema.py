@@ -60,9 +60,9 @@ def test_new_library_initializes_review_schema_v4(tmp_path: Path) -> None:
     result = migrate_library(tmp_path)
 
     assert result.from_version == 0
-    assert result.to_version == 5
+    assert result.to_version == 6
     with sqlite3.connect(tmp_path / "library.sqlite") as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         tables = {
             row[0]
             for row in connection.execute(
@@ -95,12 +95,12 @@ def test_v2_migration_backs_up_and_preserves_existing_items(tmp_path: Path) -> N
     result = migrate_library(tmp_path)
 
     assert result.from_version == 2
-    assert result.to_version == 5
+    assert result.to_version == 6
     assert result.backup_path is not None
     assert result.backup_path.is_file()
     assert result.backup_path.name.endswith("-v2.sqlite3")
     with sqlite3.connect(tmp_path / "library.sqlite") as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert connection.execute(
             "SELECT title, personal_thoughts FROM items WHERE paper_id='library_alpha'"
         ).fetchone() == ("Alpha paper", "保留我的原始思考")
@@ -112,7 +112,7 @@ def test_v3_migration_preserves_legacy_evidence_locator(tmp_path: Path) -> None:
     result = migrate_library(tmp_path)
 
     assert result.from_version == 3
-    assert result.to_version == 5
+    assert result.to_version == 6
     assert result.backup_path is not None
     assert result.backup_path.name.endswith("-v3.sqlite3")
     with sqlite3.connect(database) as connection:

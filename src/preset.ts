@@ -2,7 +2,7 @@
  * 文献模式 preset：安装到 `$DSH_HOME/.agent-presets/`，并把 sr_* 工具挂到该预设的 standing scope。
  * 对照 omdsh-dev/dsh-data-agent 的「数据模式」做法，避免在 preset YAML 里动态导入本包。
  */
-import { access, cp, mkdir, readFile } from 'node:fs/promises'
+import { access, cp, mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,9 @@ import type { Config as PluginConfig } from './config.js'
 import { registerLibraryTools } from './library_tools.js'
 import { registerReviewTools } from './review_tools.js'
 import { registerTools } from './tools.js'
+import { registerPaperTools } from './paper_sessions.js'
+import { registerRadarTools } from './radar.js'
+import { registerModelPolicyTools } from './model_policy.js'
 
 export const DEFAULT_PRESET_ID = 'scientific-reading'
 export const PRESET_DISPLAY_NAME = '文献模式'
@@ -60,17 +63,23 @@ export function resolvePresetId(config: Pick<PluginConfig, 'presetId'>): string 
 
 /**
  * 把打包的 `preset/scientific-reading/` 安装到 `$DSH_HOME/.agent-presets/<id>/`。
- * 已存在的目录不覆盖，避免改写用户手改过的 composition。
+ * 已存在的目录保留用户配置；仅迁移 DSH 0.1.5 的 persona 字段名，并保存旧文件。
  */
 export async function installPreset(ctx: Context, presetId: string): Promise<boolean> {
   const targetDir = join(resolveDshHome(), '.agent-presets', presetId)
   const sourceDir = packagedPresetDir()
-  try {
-    await access(targetDir)
+  const exists = await access(targetDir).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })
+  if (exists) {
+    const composition = join(targetDir, 'agent.cordis.yml')
+    const before = await readFile(composition, 'utf8')
+    const after = before.replace(/(^- id: persona\r?\n[ \t]+name: ['"]?@deepseek-ai\/dsh-persona['"]?\r?\n[ \t]+config:\r?\n)([ \t]+)text:/m, '$1$2prefix:')
+    if (after !== before) {
+      await writeFile(composition + '.before-dsh-0.1.5-' + Date.now(), before, {encoding:'utf8', flag:'wx'})
+      await writeFile(composition + '.upgrading', after, 'utf8')
+      await rename(composition + '.upgrading', composition)
+    }
     ctx.logger?.(`scientific-reading: preset "${presetId}" 已存在于 ${targetDir}，跳过安装`)
     return true
-  } catch {
-    // 目标不存在，继续安装。
   }
   try {
     await mkdir(targetDir, { recursive: true })
@@ -120,6 +129,9 @@ export async function mountPresetCapabilities(
   registerTools(scoped, config)
   registerLibraryTools(scoped, config)
   registerReviewTools(scoped, config)
+  registerPaperTools(scoped, config)
+  registerRadarTools(scoped, config)
+  registerModelPolicyTools(scoped, config)
 }
 
 export async function mountLiteratureTools(ctx: PresetHostContext, config: PluginConfig): Promise<boolean> {

@@ -255,7 +255,7 @@ def test_existing_v4_database_without_search_tables_is_repaired_on_open(
             "DROP TABLE IF EXISTS library_search_fts;"
             "DROP TABLE IF EXISTS library_search_documents;"
         )
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
 
     reopened = LibraryService(tmp_path)
     try:
@@ -265,7 +265,7 @@ def test_existing_v4_database_without_search_tables_is_repaired_on_open(
     finally:
         reopened.close()
 
-    assert version == 5
+    assert version == 6
     assert [item["paper_id"] for item in page["items"]] == [paper_id]
     assert [item["paper_id"] for item in legacy] == [paper_id]
     assert legacy[0]["search_matches"][0]["content_type"] == "abstract_zh"

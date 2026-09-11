@@ -17,6 +17,7 @@ const SCOPE = Symbol('dsh.scope')
 const standingKey = { id: 'scientific-reading-standing' }
 const standingCtx = { [SCOPE]: standingKey }
 const fakeCtx = {
+  on() {},
   effect: (fn, label) => { registrations.push(label); try { fn() } catch {} },
   tools: { register: (t) => { registrations.push('tool:' + t.name) } },
   webServer: {
@@ -63,6 +64,7 @@ const tools = registrations.filter((r) => r.startsWith('tool:'))
 const routes = registrations.filter((r) => r.startsWith('route:'))
 const expectedTools = ['sr_setup','sr_scansci_status','sr_scansci_fetch','sr_download_papers','sr_start_full_read','sr_continue_full_read','sr_attach_pdf','sr_export_assets','sr_ingest','sr_abstract_submit','sr_library_list','sr_folder_manage','sr_classification_apply','sr_classification_undo','sr_job_status','sr_review_context','sr_review_confirm']
 expectedTools.push('sr_library_backup', 'sr_library_restore', 'sr_library_search_rebuild', 'sr_evidence_locate', 'sr_candidate_rebuild')
+expectedTools.push('sr_paper_context', 'sr_read_job_input', 'sr_research_submit', 'sr_selected_chats', 'sr_radar', 'sr_model_step')
 for (const t of expectedTools) {
   if (!tools.some((x) => x === 'tool:' + t)) failures.push('缺工具: ' + t)
 }
